@@ -77,11 +77,15 @@ allLocsInMappings (LocationMappings m) =
     f Unmapped     = Nothing
     f (MappedTo a) = Just $ mapMaybe fst a
 
--- | Pre-fills the mappings from the context of a 'LocationTree'
-mappingsFromLocTree :: LocationTree a -> LocationMappings a
-mappingsFromLocTree (LocationTree n (HM.toList -> [])) =
+-- | Pre-fills the mappings from the context of a 'LocationTree'. When a node is
+-- 'Nothing', it means the mapping must be pre-filled to 'Unmapped'
+mappingsFromLocTree :: LocationTree (Maybe a) -> LocationMappings a
+mappingsFromLocTree (LocationTree mbNode (HM.toList -> [])) =
   LocationMappings $
-    HM.fromList [(LTP [], MappedTo [(Nothing, Just n)])]
+    HM.fromList [(LTP []
+                 ,case mbNode of
+                    Just n -> MappedTo [(Nothing, Just n)]
+                    Nothing -> Unmapped)]
 mappingsFromLocTree (LocationTree _ sub) =
   LocationMappings (mconcat $ map f $ HM.toList sub)
   where
