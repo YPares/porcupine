@@ -84,7 +84,7 @@ mappingsFromLocTree (LocationTree mbNode (HM.toList -> [])) =
   LocationMappings $
     HM.fromList [(LTP []
                  ,case mbNode of
-                    Just n -> MappedTo [(Nothing, Just n)]
+                    Just n  -> MappedTo [(Nothing, Just n)]
                     Nothing -> Unmapped)]
 mappingsFromLocTree (LocationTree _ sub) =
   LocationMappings (mconcat $ map f $ HM.toList sub)
