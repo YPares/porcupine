@@ -13,6 +13,7 @@
 
 module Data.Locations.Mappings
   ( LocationMappings
+  , WithDefaultUsage(..)
   , LocLayers(..)
   , allLocsInMappings
   , mappingsFromLocTree
@@ -77,15 +78,15 @@ allLocsInMappings (LocationMappings m) =
     f Unmapped     = Nothing
     f (MappedTo a) = Just $ mapMaybe fst a
 
--- | Pre-fills the mappings from the context of a 'LocationTree'. When a node is
--- 'Nothing', it means the mapping must be pre-filled to 'Unmapped'
-mappingsFromLocTree :: LocationTree (Maybe a) -> LocationMappings a
-mappingsFromLocTree (LocationTree mbNode (HM.toList -> [])) =
+-- | Pre-fills the mappings from the context of a 'LocationTree', with extra
+-- metadata saying whether each node should be explicitely mapped or unmapped.
+mappingsFromLocTree :: LocationTree (WithDefaultUsage a) -> LocationMappings a
+mappingsFromLocTree (LocationTree (WithDefaultUsage toBeMapped n) (HM.toList -> [])) =
   LocationMappings $
     HM.fromList [(LTP []
-                 ,case mbNode of
-                    Just n  -> MappedTo [(Nothing, Just n)]
-                    Nothing -> Unmapped)]
+                 , if toBeMapped
+                   then MappedTo [(Nothing, Just n)]
+                   else Unmapped)]
 mappingsFromLocTree (LocationTree _ sub) =
   LocationMappings (mconcat $ map f $ HM.toList sub)
   where
@@ -152,6 +153,10 @@ instance FromJSON (Mapping SerialMethod) where
       readPathAndFormat _            = fail
         "A location mapping must either be a map of one 'path: format' entry,\
         \ be just a 'format' string or be an array of some of these."
+
+-- | Just packs a value with a Bool indicating whether by default, this value
+-- should be used or not.
+data WithDefaultUsage a = WithDefaultUsage Bool a
 
 -- | This type is used to indicate that a location in a 'LocationTree' is mapped
 -- not to one but to several physical locs, at least one (LocLayers behaves like
