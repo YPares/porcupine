@@ -1,9 +1,11 @@
 module Data.Locations
-  ( module X
+  ( module Data.Locations.Loc
+  , module Data.Locations.LocationMonad
+  , module Data.Locations.LocationTree
+  , module Data.Locations.Mappings
   ) where
 
-import           Data.Locations.Loc           as X
-import           Data.Locations.Localizable   as X
-import           Data.Locations.LocationMonad as X
-import           Data.Locations.LocationTree  as X
-import           Data.Locations.Mappings      as X
+import           Data.Locations.Loc
+import           Data.Locations.LocationMonad
+import           Data.Locations.LocationTree
+import           Data.Locations.Mappings

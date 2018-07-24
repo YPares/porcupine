@@ -12,31 +12,30 @@
 
 module Data.Locations.LocationMonad where
 
-import           Data.Locations.Loc
-import qualified NovaS3.Upload                as S3
-
 import           Control.Lens
 import           Control.Monad.Catch
 import           Control.Monad.IO.Class
 import           Control.Monad.Reader
-import           Control.Monad.Trans.Control  (MonadBaseControl)
-import           Control.Monad.Trans.Resource (MonadResource, ResourceT)
-import qualified Data.ByteString.Lazy         as LBS
-import qualified Data.ByteString.Streaming    as BSS
+import           Control.Monad.Trans.Control      (MonadBaseControl)
+import           Control.Monad.Trans.Resource     (MonadResource, ResourceT)
+import qualified Data.ByteString.Lazy             as LBS
+import qualified Data.ByteString.Streaming        as BSS
+import           Data.Locations.Loc
 import           Data.String
-import qualified Data.Text                    as Text
-import qualified Data.Text.Encoding           as TE
+import qualified Data.Text                        as Text
+import qualified Data.Text.Encoding               as TE
 import           Formatting
 import           Formatting.Clock
-import           GHC.Generics                 (Generic)
-import           Network.AWS                  hiding (Error)
-import qualified Network.AWS                  as AWS
+import           GHC.Generics                     (Generic)
+import           Network.AWS                      hiding (Error)
+import qualified Network.AWS                      as AWS
 import           Network.AWS.S3
+import qualified Network.AWS.S3.TaskPipelineUtils as S3
 import           Streaming
 import           System.Clock
-import           System.Directory             (createDirectoryIfMissing)
-import qualified System.FilePath              as Path
-import qualified System.IO.Temp               as Tmp
+import           System.Directory                 (createDirectoryIfMissing)
+import qualified System.FilePath                  as Path
+import qualified System.IO.Temp                   as Tmp
 
 
 -- | Alias for the constraints needed to manipulate remote files
