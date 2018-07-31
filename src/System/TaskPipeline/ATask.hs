@@ -23,6 +23,7 @@ module System.TaskPipeline.ATask
   , unsafeLiftToATask
   , liftToATask
   , ataskInSubtree
+  , voidTask
   ) where
 
 import           Prelude                hiding (id, (.))
@@ -78,6 +79,10 @@ data ATask m n a b = ATask
 
 -- | The type used within a task for the resources must be a Monoid
 type IsTaskResource n = (Monoid (n WithDefaultUsage), Monoid (n LocLayers))
+
+-- | a tasks that discards its inputs and returns ()
+voidTask :: (Monad m, Monoid (n WithDefaultUsage), Monoid (n LocLayers)) => ATask m n a ()
+voidTask = arr (const ())
 
 -- | Turn an action into a ATask. BEWARE! The resulting 'ATask' will have NO
 -- requirements, so if the action uses files or resources, they won't appear in
