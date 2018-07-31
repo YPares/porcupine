@@ -37,7 +37,6 @@ import           Data.List
 import           Data.Locations.Loc
 import           Data.Locations.LocationTree
 import           Data.Maybe
-import           Data.Monoid
 import           Data.Representable
 import qualified Data.Text                   as T
 import           GHC.Generics
@@ -53,7 +52,9 @@ newtype LocationMappings n = LocationMappings
 
 instance Monoid (LocationMappings n) where
   mempty = LocationMappings mempty
-  mappend (LocationMappings m) (LocationMappings m') = LocationMappings $
+
+instance Semigroup (LocationMappings n) where
+  (LocationMappings m) <> (LocationMappings m') = LocationMappings $
     HM.unionWith f m m'
     where
       f Unmapped a                 = a

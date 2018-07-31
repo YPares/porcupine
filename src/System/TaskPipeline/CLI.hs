@@ -25,7 +25,6 @@ import           Data.Aeson
 import           Data.Char                          (toLower)
 import qualified Data.HashMap.Lazy                  as HashMap
 import           Data.Locations
-import           Data.Monoid
 import qualified Data.Text                          as T
 import qualified Data.Text.Encoding                 as T
 import qualified Data.Text.IO                       as T
@@ -91,8 +90,14 @@ cliYamlParser
 cliYamlParser progName configFile defCfg inputParsing cmds defCmd = do
   yamlFound <- doesFileExist configFile
   mcfg <- if yamlFound
-    then Y.decodeFile configFile else return Nothing
+    then decodeFile configFile else return Nothing
   return $ pureCliParser progName mcfg configFile defCfg inputParsing cmds defCmd
+  where
+    decodeFile f = do
+      decodeRes <- Y.decodeFileEither f
+      pure $ case decodeRes of
+        Right x -> Just x
+        Left _  -> Nothing
 
 -- | A shortcut to run a parser and defining the program help strings
 execCliParser

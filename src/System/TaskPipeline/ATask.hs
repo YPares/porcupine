@@ -38,7 +38,6 @@ import           Control.Monad.Catch
 import           Control.Monad.IO.Class
 import qualified Data.Foldable          as F
 import           Data.Locations
-import           Data.Monoid
 import           System.Clock
 
 
@@ -49,10 +48,12 @@ data RscAccess a = AccessConflict Int | AccessDone | AccessPending a
 
 instance (Monoid a) => Monoid (RscAccess a) where
   mempty = AccessPending mempty  -- So that mappend x mempty is still equal to x
-  mappend AccessDone (AccessPending _) = AccessDone
-  mappend (AccessPending _) AccessDone = AccessDone
-  mappend (AccessPending a) (AccessPending b) = AccessPending (a <> b)
-  mappend a b = AccessConflict (numConflict a + numConflict b)
+
+instance Semigroup a => Semigroup (RscAccess a) where
+  (<>) AccessDone (AccessPending _) = AccessDone
+  (<>) (AccessPending _) AccessDone = AccessDone
+  (<>) (AccessPending a) (AccessPending b) = AccessPending (a <> b)
+  (<>) a b = AccessConflict (numConflict a + numConflict b)
     where numConflict (AccessConflict nc) = nc
           numConflict AccessDone          = 1
           numConflict (AccessPending _)   = 0
@@ -158,7 +159,7 @@ clockATask (ATask reqs fn) = ATask reqs $ \i -> do
 -- subfolder of the 'LocationTree' and mark these accesses as done. This is the
 -- main way to create an ATask
 liftToATask
-  :: (LocationMonad m, MonadThrow m, Traversable t, IsTaskResource n)
+  :: (LocationMonad m, Traversable t, IsTaskResource n)
   => [LocationTreePathItem]  -- ^ Path to subfolder in 'LocationTree'
   -> t (LTPIAndSubtree (n WithDefaultUsage))    -- ^ Items of interest in the subfolder
   -> String  -- ^ A name for the task (for error messages)

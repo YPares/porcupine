@@ -15,7 +15,6 @@ import           Control.Monad.Catch
 import qualified Data.Aeson           as JSON
 import qualified Data.ByteString.Lazy as LBS
 import qualified Data.Locations       as Loc
-import           Data.Monoid
 import qualified Data.Text            as T
 
 
@@ -35,7 +34,6 @@ class OfHuman a where
 -- | Class of values which can be serialized in a human-readable form
 -- (json, csv, whatever…)
 type Serializable a = (ToHuman a, OfHuman a)
-
 
 data RetrievingError
   = FileReadError Loc.Error
@@ -61,7 +59,7 @@ persistAtLoc x loc =
 -- | Retrieve persistable data from some location
 loadFromLoc
   :: forall m a.
-     (Loc.LocationMonad m, OfHuman a, MonadThrow m )
+     (Loc.LocationMonad m, OfHuman a)
   => Loc.Loc
   -> m a
 loadFromLoc origFile = do

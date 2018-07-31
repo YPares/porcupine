@@ -65,7 +65,7 @@ type DocRecOfOptions = RecOfOptions DocField
 -- is yet to be bound to definitive values or paths, or whether is has been
 -- bound.
 newtype PipelineResource_ fld f = PRsc (Last (Either (RecOfOptions fld) (f SerialMethod)))
-  deriving (Monoid)
+  deriving (Semigroup, Monoid)
 
 -- | The type of resources that tasks running in the pipeline will try to
 -- access: either virtual files (see 'PRscVirtualFile') defined by a

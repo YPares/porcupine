@@ -16,19 +16,18 @@ module Network.AWS.S3.TaskPipelineUtils
 where
 
 import           Control.Lens
-import           Control.Monad                  (when)
-import           Control.Monad.Catch            (catch, try)
+import           Control.Monad               (when)
+import           Control.Monad.Catch         (catch, try)
 import           Control.Monad.Trans.AWS
-import qualified Data.ByteString.Streaming      as BSS
+import qualified Data.ByteString.Streaming   as BSS
+import           Data.Conduit.Binary         (sinkLbs)
 import           Data.String
-import           Network.AWS                    hiding (send)
-import           Network.AWS.Auth               (AuthError)
+import           Network.AWS                 hiding (send)
+import           Network.AWS.Auth            (AuthError)
 import           Network.AWS.S3
-import           Network.AWS.S3.StreamingUpload
-import           Streaming.TaskPipelineUtils    as S
-import           System.Directory               (createDirectoryIfMissing)
-import           System.FilePath                (takeDirectory, (</>))
-
+import           Streaming.TaskPipelineUtils as S
+import           System.Directory            (createDirectoryIfMissing)
+import           System.FilePath             (takeDirectory, (</>))
 
 runAll :: AWS b -> IO b
 runAll f = do
@@ -56,14 +55,10 @@ uploadObj :: (MonadAWS m, AWSConstraint r m)
              => BucketName
              -> ObjectKey
              -> BSS.ByteString m ()
-             -> m CompleteMultipartUploadResponse
+             -> m PutObjectResponse
 uploadObj buck object source = do
-  let sink =
-        streamUpload Nothing $
-          -- createMultipartUpload (fromString (bucketName info)) (fromString (objName info))
-          createMultipartUpload buck object
-  intoSink sink $ BSS.toChunks source
-  --return $ view crsResponseStatus ur
+  requestBody <- toBody <$> BSS.toStrict_ source
+  send $ putObject buck object requestBody
 
 -- | Upload a whole folder to an s3 bucket
 uploadFolder :: (MonadAWS m, AWSConstraint r m)
@@ -78,7 +73,7 @@ uploadFolder srcFolder destBucket destPath =
                   objectName = destPath </> f
                 crs <- uploadObj destBucket (fromString objectName) $ BSS.readFile f
                 liftIO $ putStrLn $
-                  if view crsResponseStatus crs == 200
+                  if view porsResponseStatus crs == 200
                   then objectName ++ " uploaded."
                   else objectName ++ " upload failed.")
 
@@ -104,7 +99,8 @@ streamObjInto :: (MonadAWS m, AWSConstraint r m)
 streamObjInto srcBuck srcObj f = try $ do
   let g = getObject srcBuck srcObj
   rs <- send g
-  view gorsBody rs `sinkBody` asConduit (lift . f . BSS.fromChunks)
+  resultingBS <- view gorsBody rs `sinkBody` sinkLbs
+  f (BSS.fromLazy resultingBS)
 
 streamObjIntoExt :: (MonadAWS m, AWSConstraint r m)
                      => BucketName

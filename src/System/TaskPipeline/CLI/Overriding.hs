@@ -17,7 +17,6 @@ import qualified Data.Aeson              as A
 import           Data.DocRecord
 import           Data.DocRecord.OptParse
 import qualified Data.HashMap.Lazy       as HashMap
-import           Data.Monoid
 import qualified Data.Text               as T
 import qualified Data.Text.Encoding      as T
 import qualified Data.Yaml               as Y
@@ -44,7 +43,7 @@ parseJSONEither x = case A.fromJSON x of
 
 -- | defCfg must be a 'DocRec' here. Uses it to generate one option per field in
 -- the DocRec, along with its documentation.  Every rs has quietness, it will
--- just return 0 when a ('["quietness"] '::: Int) field isn't present.
+-- just return 0 when a ('["quietness"] ':|: Int) field isn't present.
 docRecBasedCLIOverriding
   :: (RecordUsableWithCLI rs, HasQuietness rs)
   => DocRec rs -> CLIOverriding (DocRec rs) (Rec SourcedDocField rs)
@@ -110,12 +109,13 @@ overrideConfigFromKeyValues origCfg overrides =
       Left $ "Path `" ++ fullPath
              ++ "' contains unknown nested field(s): " ++ show fields
     parseAndOverride (w, cfg) override = case T.splitOn "=" override of
-      [path, val] -> case Y.decode $ T.encodeUtf8 val of
-        Just jsonVal -> do
+      [path, val] -> case Y.decodeEither' $ T.encodeUtf8 val of
+        Right jsonVal -> do
           (w', cfg') <- doOverride cfg (T.unpack path) (T.splitOn "." path) jsonVal
           return (w'++w, cfg')
-        Nothing -> Left $ "`" ++ T.unpack path ++ "': `"
-                   ++ T.unpack val ++ "' is not valid yaml"
+        Left e -> Left $ "`" ++ T.unpack path ++ "': `"
+                   ++ T.unpack val ++ "' is not valid yaml: got"
+                   ++ show e
       _ -> badPath $ T.unpack override
     doOverride _ _ [] v = Right ([],v)
     doOverride (A.Object cfg) fullPath (k:ks) v =

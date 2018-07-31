@@ -27,13 +27,13 @@ module Data.DocRecord.OptParse
 where
 
 import           Control.Lens
+import           Data.Bifunctor       (first)
 import           Data.DocRecord
 import qualified Data.HashMap.Strict  as HM
-import           Data.Monoid
 import qualified Data.Text            as T
 import           Data.Text.Encoding   (decodeUtf8, encodeUtf8)
 import qualified Data.Vinyl.Functor   as F
-import           Data.Vinyl.TypeLevel
+import           Data.Vinyl.TypeLevel hiding (Fst, Snd)
 import           Data.Yaml            (FromJSON, ToJSON)
 import qualified Data.Yaml            as Y
 import           GHC.TypeLits         (Symbol)
@@ -56,7 +56,9 @@ data SourceTag = Default | YAML | CLI
 
 instance Monoid SourceTag where
   mempty = Default
-  mappend a b = if a > b then a else b
+
+instance Semigroup SourceTag where
+  a <> b = if a > b then a else b
 
 instance NamedFieldTag SourceTag where
   defaultTag = Default
@@ -88,7 +90,7 @@ class (FromJSON (Snd r), m ~ MarkerOf (Snd r)) => FieldFromCLI_ m r where
     -> f r
     -> Parser (f r)
 
-instance (FromJSON a, ToJSON a, MarkerOf a ~ Regular, ShowPath s) => FieldFromCLI_ Regular (s:::a) where
+instance (FromJSON a, ToJSON a, MarkerOf a ~ Regular, ShowPath s) => FieldFromCLI_ Regular (s:|:a) where
   fieldFromCLI flagName field =
     option reader
      (  long flagName
@@ -98,7 +100,7 @@ instance (FromJSON a, ToJSON a, MarkerOf a ~ Regular, ShowPath s) => FieldFromCL
           Just x  -> value field <> showDefaultWith (const $ showJson x))
     where
       reader = eitherReader $ \string -> do
-        newVal <- Y.decodeEither . encodeUtf8 . T.pack $ string
+        newVal <- first show <$> Y.decodeEither' . encodeUtf8 . T.pack $ string
         return $ field & rfield .~ Just newVal
                        & fieldTag .~ CLI
                          -- We set the source of the new value so this field has
@@ -106,7 +108,7 @@ instance (FromJSON a, ToJSON a, MarkerOf a ~ Regular, ShowPath s) => FieldFromCL
                          -- from the Yaml file
       showJson = T.unpack . decodeUtf8 . Y.encode
 
-instance (ShowPath s) => FieldFromCLI_ Flag (s:::Bool) where
+instance (ShowPath s) => FieldFromCLI_ Flag (s:|:Bool) where
   fieldFromCLI flagName field =
     flag defState flipState
         (  long (flagPrefix++flagName)
@@ -121,7 +123,7 @@ instance (ShowPath s) => FieldFromCLI_ Flag (s:::Bool) where
                      )
           (flagPrefix, docPrefix) = if isOn then ("no-", "Deactivate: ") else ("", "")
 
-instance (FromJSON a, MarkerOf a ~ None) => FieldFromCLI_ None (s:::a) where
+instance (FromJSON a, MarkerOf a ~ None) => FieldFromCLI_ None (s:|:a) where
   fieldFromCLI _ _ = empty
 
 type FieldFromCLI a = FieldFromCLI_ (MarkerOf (Snd a)) a
@@ -135,8 +137,8 @@ instance RecFromCLI (Rec (f :: PathWithType [Symbol] * -> *) '[]) where
   allPaths _           = []
 
 instance (NamedField f, FieldWithTag T.Text f, FieldWithTag SourceTag f
-         , FieldFromCLI (s:::t), RecFromCLI (Rec f rs), ShowPath s)
-  => RecFromCLI (Rec f ((s:::t) ': rs)) where
+         , FieldFromCLI (s:|:t), RecFromCLI (Rec f rs), ShowPath s)
+  => RecFromCLI (Rec f ((s:|:t) ': rs)) where
   parseRecFromCLI_ fieldNames (f1 :& rest) = (:&)
     <$> (   fieldFromCLI (fieldNames HM.! fieldPathList f1) f1
         <|> pure f1 )
@@ -156,7 +158,7 @@ parseRecFromCLI defaultRec = parseRecFromCLI_ disambMap defaultRec
     disambOn n [uniq] = [(uniq, T.unpack $ T.intercalate (T.pack "-") $ nameOn n uniq)]
     disambOn n ps     = concatMap (disambOn (n+1)) $ ambiguousOn (n+1) ps
 
-type QuietnessField = '["quietness"] '::: Int
+type QuietnessField = '["quietness"] ':|: Int
 
 class (e ~ RIndex QuietnessField rs) => HasQuietness_ e rs where
   -- | Every record has a quietness. If the field "quietness" isn't explicitely

@@ -33,7 +33,7 @@ import           System.TaskPipeline.Resource
 -- | Accesses each layer mapped to the required file and combines the result of
 -- each access.
 layeredAccessTask
-  :: (LocationMonad m, MonadThrow m, Monoid o)
+  :: (LocationMonad m, Monoid o)
   => [LocationTreePathItem]   -- ^ Folder path
   -> LTPIAndSubtree SerialMethod  -- ^ File in folder
   -> String  -- ^ A name for the task (for the error message if wanted
@@ -54,7 +54,7 @@ layeredAccessTask path fname taskName f =
 -- permits for instance that the file is by default bound to @PRscVirtualFile
 -- Nothing@ (which will correspond to `null` in the yaml config file)
 layeredAccessTask'
-  :: (LocationMonad m, MonadThrow m, Monoid o)
+  :: (LocationMonad m, Monoid o)
   => [LocationTreePathItem]   -- ^ Folder path
   -> LTPIAndSubtree UnboundPipelineResource  -- ^ File in folder
   -> String  -- ^ A name for the task (for the error message if wanted
@@ -93,7 +93,7 @@ layeredAccessTask' path fname taskName f =
 -- extract a type 'b' which we will accumulate throughout the layers. See
 -- 'liftToATask' for more information
 loadLayeredInput
-  :: (LocationMonad m, MonadThrow m, OfHuman a)
+  :: (LocationMonad m, OfHuman a)
   => [LocationTreePathItem]       -- ^ The path of the file's folder in the
                                   -- 'LocationTree'
   -> LTPIAndSubtree SerialMethod  -- ^ The file in the 'LocationTree'

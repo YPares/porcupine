@@ -55,7 +55,6 @@ import qualified Data.HashMap.Strict as HM
 import           Data.List
 import           Data.Locations.Loc
 import           Data.Maybe
-import           Data.Monoid
 import           Data.Representable
 import           Data.String
 import qualified Data.Text           as T
@@ -129,14 +128,17 @@ parseSerMethList _            = fail
 instance Default SerialMethod where
   def = LocDefault
 
+instance Semigroup SerialMethod where
+  a <> b = min a b
 instance Monoid SerialMethod where
   mempty = LocDefault
-  a `mappend` b = min a b
 
 instance (Monoid a) => Monoid (LocationTree a) where
   mempty = LocationTree mempty mempty
-  LocationTree m1 s1 `mappend` LocationTree m2 s2 =
-    LocationTree (m1 `mappend` m2) (HM.unionWith mappend s1 s2)
+
+instance (Semigroup a) => Semigroup (LocationTree a) where
+  LocationTree m1 s1 <> LocationTree m2 s2 =
+    LocationTree (m1 <> m2) (HM.unionWith (<>) s1 s2)
 
 -- | LocationTree cannot be an applicative because pure cannot construct an
 -- infinite tree (since HashMaps are strict in their keys), but <*> can be
@@ -187,9 +189,10 @@ instance FromJSON LocationTreePath where
 instance ToJSONKey LocationTreePath
 instance FromJSONKey LocationTreePath
 
+instance Semigroup LocationTreePath where
+  (LTP a) <> (LTP b) = LTP $ a ++ b
 instance Monoid LocationTreePath where
   mempty = LTP []
-  mappend (LTP a) (LTP b) = LTP $ a ++ b
 
 singLTP :: LocationTreePathItem -> LocationTreePath
 singLTP = LTP . (:[])
@@ -287,12 +290,13 @@ addExtToLocIfMissing loc _ = loc
 data a :|| b = Unprioritized a | Prioritized b
 infixr 5 :||
 
+instance (Semigroup a, Semigroup b) => Semigroup (a :|| b) where
+  (<>) (Prioritized x) (Prioritized x')     = Prioritized (x<>x')
+  (<>) (Unprioritized x) (Unprioritized x') = Unprioritized (x<>x')
+  (<>) p@(Prioritized _) _                  = p
+  (<>) _ p@(Prioritized _)                  = p
 instance (Monoid a, Monoid b) => Monoid (a :|| b) where
   mempty = Unprioritized mempty
-  mappend (Prioritized x) (Prioritized x')     = Prioritized (x<>x')
-  mappend (Unprioritized x) (Unprioritized x') = Unprioritized (x<>x')
-  mappend p@(Prioritized _) _                  = p
-  mappend _ p@(Prioritized _)                  = p
 
 -- | Merges two trees of different node types, prioritizing those of the second
 -- tree when a node exists in both trees

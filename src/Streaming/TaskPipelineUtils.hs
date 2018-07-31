@@ -32,7 +32,7 @@ import           Control.Lens               hiding ((:>))
 import           Control.Monad              (forM_)
 import           Control.Monad.IO.Class
 import           Data.Aeson
-import           Data.Conduit               (Sink, ($$))
+import           Data.Conduit               (ConduitT, Void, runConduit, (.|))
 import           Data.Function              ((&))
 import           GHC.Generics
 import           Streaming
@@ -49,8 +49,8 @@ import           Network.AWS.Env            (Env, HasEnv, environment)
 import           Network.AWS.S3             (BucketName, ObjectKey (..), oKey)
 import qualified Network.AWS.S3.ListObjects as LO
 
-intoSink :: Monad m => Sink a m b -> Stream (Of a) m r -> m b
-intoSink snk src = fromStreamSource src $$ snk
+intoSink :: Monad m => ConduitT a Void m b -> Stream (Of a) m r -> m b
+intoSink snk src = runConduit $ fromStreamSource src .| snk
 
 streamFolder :: (MonadIO m) => FilePath -> Stream (Of FilePath) m ()
 streamFolder topPath = S.map (topPath </>) $ streamFolderRel topPath

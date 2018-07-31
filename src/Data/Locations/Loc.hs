@@ -54,8 +54,8 @@ instance Show Loc where
 -- | Lens to the path in the 'Loc'
 locPath :: Lens' Loc FilePath
 locPath f LocalFile{ filePath } = LocalFile <$> f filePath
-locPath f t@S3Obj{ objectName } =
-  (\n' -> t { objectName = n' }) <$> f objectName
+locPath f S3Obj{ bucketName, objectName } =
+  (\n' -> S3Obj { bucketName, objectName = n' }) <$> f objectName
 
 -- | Lens to the extension of the 'Loc'
 locExt :: Lens' Loc T.Text

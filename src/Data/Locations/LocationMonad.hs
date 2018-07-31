@@ -16,8 +16,8 @@ import           Control.Lens
 import           Control.Monad.Catch
 import           Control.Monad.IO.Class
 import           Control.Monad.Reader
-import           Control.Monad.Trans.Control      (MonadBaseControl)
-import           Control.Monad.Trans.Resource     (MonadResource, ResourceT)
+import           Control.Monad.Trans.Resource     (MonadResource, MonadUnliftIO,
+                                                   ResourceT)
 import qualified Data.ByteString.Lazy             as LBS
 import qualified Data.ByteString.Streaming        as BSS
 import           Data.Locations.Loc
@@ -58,7 +58,7 @@ instance Show Error where
 instance Exception Error
 
 -- | Runs computations accessing 'Loc's
-class (MonadMask m, MonadBaseControl IO m) => LocationMonad m where
+class (MonadMask m, MonadUnliftIO m) => LocationMonad m where
   writeBSS :: Loc -> BSS.ByteString m () -> m ()
 
   -- | Read a (streaming) bytestring from a location.
@@ -75,12 +75,13 @@ class (MonadMask m, MonadBaseControl IO m) => LocationMonad m where
 
   -- | Log a message
   logMsg :: String -> m ()
-  default logMsg :: MonadIO m => String -> m ()
+  -- Redundant since for now we impose a 'MonadIO' constraint anyways
+  -- default logMsg :: MonadIO m => String -> m ()
   logMsg = liftIO . putStrLn
 
   -- | Time an access duration
   clockAccess :: m a -> m a
-  default clockAccess :: MonadIO m => m a -> m a
+  -- default clockAccess :: MonadIO m => m a -> m a
   clockAccess act = do
     start <- liftIO $ getTime Monotonic
     res   <- act
@@ -121,10 +122,10 @@ selectRun (S3Obj{}) verbose act = do
   runResourceT $ runAWS awsEnv act
 
 instance LocationMonad AWS where
-  writeBSS l@(LocalFile{}) = writeBSS_Local l
-  writeBSS l               = writeBSS_S3 l
-  readBSS l@(LocalFile{}) = readBSS_Local l
-  readBSS l               = readBSS_S3 l
+  writeBSS (LocalFile l) = writeBSS_Local l
+  writeBSS l             = writeBSS_S3 l
+  readBSS (LocalFile l) = readBSS_Local l
+  readBSS l             = readBSS_S3 l
   withLocalBuffer f (LocalFile lf) = f lf
   withLocalBuffer f loc@S3Obj{} =
     Tmp.withSystemTempDirectory "simwork.tmp" writeAndUpload
@@ -145,8 +146,8 @@ type LocationMonadReader r m =
 -- | Can be instantiated to any 'LocationMonadReader'
 newtype AnyLocationMR r a = AnyLocationMR { unAnyLocationMR :: forall m. (LocationMonadReader r m) => m a }
 
-checkLocal :: [Char] -> (Loc -> p) -> Loc -> p
-checkLocal _ f l@(LocalFile{}) = f l
+checkLocal :: [Char] -> (FilePath -> p) -> Loc -> p
+checkLocal _ f (LocalFile fname) = f fname
 checkLocal funcName _ _ = error $ funcName ++ ": S3 location cannot be reached in IO! Need to use AWS"
 
 -- | The LocationMonad for programs needing only to access local files.
@@ -155,7 +156,7 @@ type LocalM = ResourceT IO
 instance LocationMonad LocalM where
   writeBSS = checkLocal "writeBSS" writeBSS_Local
   readBSS  = checkLocal "readBSS" readBSS_Local
-  withLocalBuffer f = checkLocal "withLocalBuffer" (\(LocalFile lf) -> f lf)
+  withLocalBuffer f = checkLocal "withLocalBuffer" (\lf -> f lf)
 
 writeText :: LocationMonad m
              => Loc
@@ -165,16 +166,15 @@ writeText loc body =
   let bsBody = BSS.fromStrict $ TE.encodeUtf8 body in
   writeBSS loc bsBody
 
-writeBSS_Local :: MonadResource m => Loc -> BSS.ByteString m b -> m b
-writeBSS_Local (LocalFile path) body = do
+writeBSS_Local :: MonadResource m => FilePath -> BSS.ByteString m b -> m b
+writeBSS_Local path body = do
   liftIO $ createDirectoryIfMissing True (Path.takeDirectory path)
   BSS.writeFile path body
-writeBSS_Local _ _ = undefined
 
 writeBSS_S3 :: (HasEnv r, MonadReader r m, MonadResource m, MonadAWS m) => Loc -> BSS.ByteString m () -> m ()
 writeBSS_S3 S3Obj { bucketName, objectName } body = do
   res <- S3.uploadObj (fromString bucketName) (fromString objectName) body
-  case view crsResponseStatus res of
+  case view porsResponseStatus res of
     200 -> pure ()
     _   -> error $ "Unable to upload to the object " ++ objectName ++ "."
 writeBSS_S3 _ _ = undefined
@@ -201,10 +201,13 @@ mapLeft :: (a -> b) -> Either a c -> Either b c
 mapLeft f (Left x)  = Left $ f x
 mapLeft _ (Right y) = Right y
 
-readBSS_Local :: forall f m a. (MonadCatch f, MonadResource m) => Loc -> (BSS.ByteString m () -> f a) -> f (Either Error a)
-readBSS_Local lf@(LocalFile f) k = mapLeft (Error lf . IOError) <$>
+readBSS_Local
+  :: forall f m a. (MonadCatch f, MonadResource m)
+  => FilePath
+  -> (BSS.ByteString m () -> f a)
+  -> f (Either Error a)
+readBSS_Local f k = mapLeft (Error (LocalFile f) . IOError) <$>
   try (k $ BSS.readFile f)
-readBSS_Local _ _             = undefined
 
 readBSS_S3 :: (HasEnv r, MonadReader r m, MonadResource m, MonadAWS m) => Loc -> (BSS.ByteString m () -> m b) -> m (Either Error b)
 readBSS_S3 obj@S3Obj{ bucketName, objectName } k =

@@ -24,6 +24,7 @@
 {-# OPTIONS_GHC -Wno-unticked-promoted-constructors #-}
 {-# OPTIONS_GHC -Wno-incomplete-patterns #-}
 {-# OPTIONS_GHC -Wno-orphans #-}
+{-# OPTIONS_GHC -Wno-redundant-constraints #-} -- FIXME: shouldn't need this
 
 -----------------------------------------------------------------------------
 -- |
@@ -116,16 +117,15 @@ import qualified Control.Category as Cat
 import           Data.Default
 import qualified Data.HashMap.Strict  as HM
 import           Data.Maybe           (fromMaybe)
-import           Data.Monoid
 import           Data.Proxy
 import qualified Data.Text            as T
 import           Data.Typeable
 import           Data.Vinyl.Core
 import           Data.Vinyl.Curry
-import           Data.Vinyl.Derived   hiding (rfield, (=:), Field)
+import           Data.Vinyl.Derived   hiding (rfield, (=:), Field, HasField)
 import           Data.Vinyl.Lens      (RElem, RSubset, rlens)
 import qualified Data.Vinyl.Lens      as VL
-import           Data.Vinyl.TypeLevel
+import           Data.Vinyl.TypeLevel hiding (Fst, Snd)
 import qualified Data.Vinyl.Functor   as F
 import           GHC.Exts             (Constraint)
 import           GHC.TypeLits         (ErrorMessage (..), KnownSymbol, Symbol,
@@ -177,8 +177,8 @@ instance Ord a => Ord (PossiblyEmpty a) where
   PE (Right a) `compare` PE (Right b) = a `compare` b
   PE (Left _) `compare` PE (Left _) = EQ
   _ `compare` _ = LT
-instance (Show (f (s:::a)), ShowPath s)
-      => Show (PossiblyEmpty (f (s:::a))) where
+instance (Show (f (s:|:a)), ShowPath s)
+      => Show (PossiblyEmpty (f (s:|:a))) where
   show x = case x of
     PE (Right a) -> show a
     PE (Left r)  ->
@@ -215,16 +215,16 @@ chooseHighestPriority f1@(F.Compose (Tagged s1 _))
   if s2 >= s1 then f2 else f1
 
 -- | Just a type-level tuple, for easier to read type signatures
-data PathWithType a b = a ::: b
+data PathWithType a b = a :|: b
 
 -- | The most basic field. We don't use ElField from vinyl so we can use the
 -- PathWithType kind instead of tuple and paths instead of just names.
 data Field (pathAndType :: ( PathWithType [Symbol] * )) where
-  Field :: (ShowPath s) => !t -> Field (s ::: t)
+  Field :: (ShowPath s) => !t -> Field (s :|: t)
 
-deriving instance (Eq a) => Eq (Field (s:::a))
-deriving instance (Ord a) => Ord (Field (s:::a))
-instance (Show t, ShowPath s) => Show (Field (s:::t)) where
+deriving instance (Eq a) => Eq (Field (s:|:a))
+deriving instance (Ord a) => Ord (Field (s:|:a))
+instance (Show t, ShowPath s) => Show (Field (s:|:t)) where
   show (Field x) =
     T.unpack (showPath (Proxy @s)) ++ " =: " ++ show x ++ "\n"
 
@@ -233,19 +233,19 @@ instance (Show (f (g a))) => Show (F.Compose f g a) where
 
 type PossiblyEmptyField = F.Compose PossiblyEmpty Field
 
-peToMb :: (NamedField field, ShowPath s) => Either r (field (s:::a)) -> Maybe a
+peToMb :: (NamedField field, ShowPath s) => Either r (field (s:|:a)) -> Maybe a
 peToMb (Left _) = Nothing
 peToMb (Right f) = f L.^. rfield
 
 peFromMb
   :: (ShowPath s, NamedField field)
-  => Maybe a -> Either MissingValueReason (field (s '::: a))
+  => Maybe a -> Either MissingValueReason (field (s ':|: a))
 peFromMb Nothing = Left NoDefault
 peFromMb (Just x) = Right $ fromValue x
 
 pattern PEField
   :: ( NamedField f, ShowPath s)
-  => Maybe a -> F.Compose PossiblyEmpty f (s:::a)
+  => Maybe a -> F.Compose PossiblyEmpty f (s:|:a)
 pattern PEField v <- F.Compose (PE (peToMb -> v)) where
   PEField v = F.Compose (PE (peFromMb v))
 
@@ -273,7 +273,7 @@ type DocRec = Rec DocField
 -- | To forget the field paths and get only the field types
 type family FieldTypes rs where
   FieldTypes '[] = '[]
-  FieldTypes ((s:::t) : rs) = t : FieldTypes rs
+  FieldTypes ((s:|:t) : rs) = t : FieldTypes rs
 
 fieldPathList :: forall st p. (ShowPath (Fst st)) => p st -> [T.Text]
 fieldPathList _ = showPathList (Proxy @(Fst st))
@@ -305,7 +305,7 @@ instance FromJSON (Rec PossiblyEmptyField '[]) where
   parseJSON (Object _) = pure RNil
   parseJSON _          = mempty
 instance (FromJSON t, FromJSON (Rec PossiblyEmptyField rs), ShowPath s)
-  => FromJSON (Rec PossiblyEmptyField ((s:::t) ': rs)) where
+  => FromJSON (Rec PossiblyEmptyField ((s:|:t) ': rs)) where
   parseJSON v = rebuild <$> parseField (L.view (jsonAtPath p) (Just v))
                         <*> parseJSON @(Rec PossiblyEmptyField rs) v
     where p = showPathList (Proxy @s)
@@ -340,9 +340,9 @@ fromJSONAs :: (FromJSON x) => x -> Value -> Result x
 fromJSONAs _ = fromJSON
 
 type family Fst a where
-  Fst (a:::b) = a
+  Fst (a:|:b) = a
 type family Snd a where
-  Snd (a:::b) = b
+  Snd (a:|:b) = b
 type family AllFst c p :: Constraint where
   AllFst c (r ': rs) = (c (Fst r), AllFst c rs)
   AllFst c '[] = ()
@@ -404,25 +404,25 @@ instance (ShowPath `AllFst` rs, Typeable `AllSnd` rs)
 -- different kinds of fields.
 class NamedField field where
   -- | Lens to the payload of a field
-  rfield :: (ShowPath s) => L.Lens (field (s ::: a)) (field (s ::: b)) (Maybe a) (Maybe b)
+  rfield :: (ShowPath s) => L.Lens (field (s :|: a)) (field (s :|: b)) (Maybe a) (Maybe b)
 
   -- | Construct a NamedField from a value
-  fromValue :: (ShowPath s) => a -> field (s ::: a)
+  fromValue :: (ShowPath s) => a -> field (s :|: a)
 
   -- | Transform the value inside the field if there is one
   mapField :: (ShowPath s)
-           => (t -> t') -> field (s:::t) -> field (s:::t')
+           => (t -> t') -> field (s:|:t) -> field (s:|:t')
   mapField = L.over (rfield . L._Just)
   {-# INLINE mapField #-}
 
   -- | Shorthand to create a NamedField with a single field, using a DocField as
   -- an example.
-  (=:) :: (ShowPath s) => DocField (s ::: a) -> a -> Rec field '[ s ::: a ]
+  (=:) :: (ShowPath s) => DocField (s :|: a) -> a -> Rec field '[ s :|: a ]
   infixl 7 =:
   _ =: x = fromValue x :& RNil
   {-# INLINE (=:) #-}
 
-  changePath :: (ShowPath s') => field (s:::a) -> field (s':::a)
+  changePath :: (ShowPath s') => field (s:|:a) -> field (s':|:a)
 
 type family FieldDirectlyContainsTag tag field where
   FieldDirectlyContainsTag tag (F.Compose (Tagged tag) f) = True
@@ -437,7 +437,7 @@ class (hasTag ~ FieldDirectlyContainsTag tag field) => FieldWithTag_ tag field h
 type FieldWithTag tag field = FieldWithTag_ tag field (FieldDirectlyContainsTag tag field)
 
 -- | Change the name of a field from the name of another
-renamedAs :: (ShowPath s', NamedField f) => proxy (s':::a) -> f (s:::a) -> f (s':::a)
+renamedAs :: (ShowPath s', NamedField f) => proxy (s':|:a) -> f (s:|:a) -> f (s':|:a)
 renamedAs _ = changePath
 
 instance NamedField Field where
@@ -499,14 +499,14 @@ instance (FieldWithTag tag f, FieldDirectlyContainsTag tag (F.Compose (Tagged ta
       => FieldWithTag_ tag (F.Compose (Tagged tag') f) False where
   fieldTag fn (F.Compose (Tagged t f)) = F.Compose . Tagged t <$> fieldTag fn f
 
--- | Turns a function (a -> b -> ... -> r) to (Field (s1:::a) -> Field (s2:::b)
+-- | Turns a function (a -> b -> ... -> r) to (Field (s1:|:a) -> Field (s2:|:b)
 -- -> ... r) so that it can be used with 'runcurry', 'runcurryA', etc.
 class OnFields ts f1 f2 | ts f1 -> f2 where
   onFields :: f1 -> f2
 instance OnFields '[] a a where
   onFields x = x
 instance (OnFields ts f1 f2) =>
-     OnFields ((s:::a) : ts) (a -> f1) (Field (s:::a) -> f2) where
+     OnFields ((s:|:a) : ts) (a -> f1) (Field (s:|:a) -> f2) where
   onFields f (Field x) = onFields @ts (f x)
 
 runcurryF :: forall ts f1 f a. (OnFields ts f1 (CurriedF f ts a))
@@ -564,15 +564,15 @@ type rs `EquivalentTo` ss = (rs `Includes` ss, ss `Includes` rs)
 
 -- | Lens for getting a field's value inside some NamedField. Shortcut for
 -- @rlens f . rfield@
-fld :: (NamedField field, rs `HasField` (s:::a), ShowPath s)
-    => proxy (s:::a)
+fld :: (NamedField field, rs `HasField` (s:|:a), ShowPath s)
+    => proxy (s:|:a)
     -> L.Lens' (Rec field rs) (Maybe a)
 fld f = VL.rlens f . rfield
 
 -- | @r ^^. n@ is just a shortcut for @r ^. fld n . _Just@. Since the field can be empty
 -- it requires it to be a Monoid
-(^^.) :: (NamedField field, rs `HasField` (s:::t), ShowPath s, Monoid t)
-      => Rec field rs -> proxy (s:::t) -> t
+(^^.) :: (NamedField field, rs `HasField` (s:|:t), ShowPath s, Monoid t)
+      => Rec field rs -> proxy (s:|:t) -> t
 record ^^. field = record L.^. fld field . L._Just
 infixl 8 ^^.
 
@@ -581,8 +581,8 @@ infixl 8 ^^.
 -- >>> v2^^?age
 -- Just 13
 --
-(^^?) :: (NamedField field, rs `HasField` (s:::t), ShowPath s)
-      => Rec field rs -> proxy (s:::t) -> (Maybe t)
+(^^?) :: (NamedField field, rs `HasField` (s:|:t), ShowPath s)
+      => Rec field rs -> proxy (s:|:t) -> (Maybe t)
 record ^^? field = record L.^. fld field
 infixl 8 ^^?
 
@@ -592,16 +592,16 @@ infixl 8 ^^?
 -- >>> v2^^?!age
 -- 13
 --
-(^^?!) :: (NamedField field, rs `HasField` (s:::t), ShowPath s)
-       => Rec field rs -> proxy (s:::t) -> t
+(^^?!) :: (NamedField field, rs `HasField` (s:|:t), ShowPath s)
+       => Rec field rs -> proxy (s:|:t) -> t
 record ^^?! field = record L.^?! fld field . L._Just
 infixl 8 ^^?!
 
 -- | @n %%~ f@ is just a shortcut for @fld n . _Just %~ f@. You can use it to set nested
 -- records. For instance, @myPerson & parent%%~age..~30@ sets to 30 the age of
 -- the parent in the object myPerson.
-(%%~) :: (NamedField field, rs `HasField` (s:::t), ShowPath s)
-      => proxy (s:::t) -> (t -> t) -> Rec field rs -> Rec field rs
+(%%~) :: (NamedField field, rs `HasField` (s:|:t), ShowPath s)
+      => proxy (s:|:t) -> (t -> t) -> Rec field rs -> Rec field rs
 field %%~ f = fld field . L._Just L.%~ f
 infixr 4 %%~
 
@@ -612,23 +612,23 @@ infixr 4 %%~
 -- , name =: "Bernard"
 -- , size =: 130.0
 -- }
-(..~) :: (NamedField field, rs `HasField` (s:::t), ShowPath s)
-      => proxy (s:::t) -> t -> Rec field rs -> Rec field rs
+(..~) :: (NamedField field, rs `HasField` (s:|:t), ShowPath s)
+      => proxy (s:|:t) -> t -> Rec field rs -> Rec field rs
 field ..~ v = fld field L..~ Just v
 infixr 4 ..~
 
 -- | A record with just an anonymous field. Useful when only the position of the
 -- field is important
-singleton :: (NamedField f) => t -> Rec f '[ ('[]:::t ) ]
+singleton :: (NamedField f) => t -> Rec f '[ ('[]:|:t ) ]
 singleton x = fromValue x :& RNil
 
 -- | Directly use a default value as part of a record. Will fail if @f@ doesn't
 -- have a default value
-useDef :: (NamedField f, ShowPath s) => DocField (s:::t) -> Rec f '[ (s:::t) ]
+useDef :: (NamedField f, ShowPath s) => DocField (s:|:t) -> Rec f '[ (s:|:t) ]
 useDef f = f =: (f L.^?! rfield . L._Just)
 
 -- | Used to create a field template
-docField :: forall s t. (KnownSymbol s) => t -> T.Text -> DocField ('[s]:::t)
+docField :: forall s t. (KnownSymbol s) => t -> T.Text -> DocField ('[s]:|:t)
 docField defVal doc = DocField doc $ Right $ Field defVal
 
 -- | Used to create an intermediary field
@@ -640,11 +640,11 @@ itmLevel doc content = ItmLvl $ DocField doc $ Right $ Field content
 -- | Used to create a field from a default
 fieldFromDef
   :: forall s t. (KnownSymbol s, Default t)
-  => T.Text -> DocField ('[s]:::t)
+  => T.Text -> DocField ('[s]:|:t)
 fieldFromDef = docField def
 
 -- | Used to create a field that will not have a default value
-fieldNoDef :: forall s t. (KnownSymbol s) => T.Text -> DocField ('[s]:::t)
+fieldNoDef :: forall s t. T.Text -> DocField ('[s]:|:t)
 fieldNoDef doc = DocField doc $ Left NoDefault
 
 type family DeleteIn a b where
@@ -700,8 +700,8 @@ class PrefixPath (s::[Symbol]) rs where
 instance PrefixPath s '[] where
   type s `PrefixingAll` '[] = '[]
   prefixPath _ = RNil
-instance (PrefixPath s ps, ShowPath (s++p1)) => PrefixPath s ( (p1:::t) : ps) where
-  type s `PrefixingAll` ( (p1:::t) : ps) = ( (s++p1:::t) : s `PrefixingAll` ps)
+instance (PrefixPath s ps, ShowPath (s++p1)) => PrefixPath s ( (p1:|:t) : ps) where
+  type s `PrefixingAll` ( (p1:|:t) : ps) = ( (s++p1:|:t) : s `PrefixingAll` ps)
   prefixPath (f :& fs) = (changePath f) :& prefixPath @s fs
 
 -- | Used to indicate that a field contains no useful value, only metadata (doc)
@@ -724,7 +724,7 @@ newtype IntermediaryLevel_ a = ItmLvl (DocField a)
 -- but will be used by 'rinclude', 'rdrill', '(-.)' and '(-/)' to pinpoint a
 -- subrecord in the hierarchy and indicate what this subrecord is meant to
 -- contain
-type IntermediaryLevel s rs = IntermediaryLevel_ (s:::DocRec rs)
+type IntermediaryLevel s rs = IntermediaryLevel_ (s:|:DocRec rs)
 
 -- | Transforming the type of an IntermediaryLevel into a regular record
 type FlattenedLevel s rs = s `PrefixingAll` rs
@@ -744,18 +744,18 @@ class ComposableNesting f lvl2 where
   -- final DocField or another IntermediaryLevel, depending on the second
   -- argument.
   (-.) :: (NestedLvlConstraints rs f p lvl2, ShowPath (s++p))
-       => IntermediaryLevel s rs -> f (p:::lvl2) -> NestedLvl s f p lvl2
+       => IntermediaryLevel s rs -> f (p:|:lvl2) -> NestedLvl s f p lvl2
   infixr 9 -.
 
 type family NestedLvl s f p lvl2 where
   NestedLvl s IntermediaryLevel_ p (DocRec rs') = IntermediaryLevel (s++p) rs'
-  NestedLvl s f p t = f ((s++p):::t)
+  NestedLvl s f p t = f ((s++p):|:t)
 
 type family NestedLvlConstraints rs f p lvl2 :: Constraint where
   NestedLvlConstraints rs IntermediaryLevel_ p (DocRec rs') =
     ( rs `Includes` (p `PrefixingAll` rs') )
   NestedLvlConstraints rs f p t =
-    ( rs `HasField` (p:::t) )
+    ( rs `HasField` (p:|:t) )
 
 instance ComposableNesting IntermediaryLevel_ (DocRec rs') where
   _ -. ItmLvl f = ItmLvl $ changePath f
@@ -766,7 +766,7 @@ instance (NamedField f) => ComposableNesting f t where
 -- | A version of '(-.)' for when you don't have an 'IntermediaryLevel' to use
 -- as prefix and just want a single-symbol prefix
 funder :: forall s p t. ( ShowPath (s ': p) )
-     => DocField (p:::t) -> DocField ((s ': p) ::: t)
+     => DocField (p:|:t) -> DocField ((s ': p) :|: t)
 funder = changePath
 
 -- | A version of '(-.)' for altering the paths of a whole record at once
@@ -794,9 +794,9 @@ instance UnprefixPath s '[] where
   type s `UnprefixingAll` '[] = '[]
   unprefixPath _ = RNil
 instance (UnprefixPath s ps, ShowPath (Strip s p1))
-       => UnprefixPath s ( (p1:::t) : ps) where
-  type s `UnprefixingAll` ( (p1:::t) : ps) =
-          ( (Strip s p1 ::: t) : s `UnprefixingAll` ps)
+       => UnprefixPath s ( (p1:|:t) : ps) where
+  type s `UnprefixingAll` ( (p1:|:t) : ps) =
+          ( (Strip s p1 :|: t) : s `UnprefixingAll` ps)
   unprefixPath (f :& fs) = changePath f :& unprefixPath @s fs
 
 -- | Selects a subrecord from a record @r@, using an 'IntermediaryLevel'. (This
@@ -830,9 +830,9 @@ rsplitDrill il outer = (rdrill il outer, rcast outer)
 rfoldSubset
   :: forall outer' inner outer p t proxy f.
   ( outer `Includes` inner
-  , ((p:::t) ': outer) `Includes` outer')
+  , ((p:|:t) ': outer) `Includes` outer')
   => proxy inner  -- ^ The list of fields to target
-  -> (Rec f inner -> f (p:::t))
+  -> (Rec f inner -> f (p:|:t))
   -> Rec f outer
   -> Rec f outer'
 rfoldSubset _ f r = rcast $ f (rcast r) :& r
@@ -860,13 +860,13 @@ instance ApplyRec '[] a a where
   appRec RNil r = r
 
 instance (ApplyRec fns fields results, ShowPath s)
-  => ApplyRec ( (a -> b) : fns ) ((s:::a) : fields) ((s:::b) : results) where
+  => ApplyRec ( (a -> b) : fns ) ((s:|:a) : fields) ((s:|:b) : results) where
   appRec (F.Identity f :& fns) (field :& fields) =
     L.over (rfield . L._Just) f field :& appRec fns fields
 
 -- | Whether the first field of a record should be ignored when constructing it
 type family FirstFieldSkipped rs where
-  FirstFieldSkipped ((s:::MD) : rs) = 'True
+  FirstFieldSkipped ((s:|:MD) : rs) = 'True
   FirstFieldSkipped a  = 'False
 
 class (skipFirst ~ FirstFieldSkipped rs)
@@ -879,22 +879,22 @@ instance BuildRecFrom f '[] acc 'False where
   buildRecFrom_ acc RNil = acc
   {-# INLINE buildRecFrom_ #-}
 
-instance ( BuildRecFrom f rs (acc ++ '[s:::a]) (FirstFieldSkipped rs)
-         , FirstFieldSkipped ((s:::a):rs) ~ 'False
+instance ( BuildRecFrom f rs (acc ++ '[s:|:a]) (FirstFieldSkipped rs)
+         , FirstFieldSkipped ((s:|:a):rs) ~ 'False
          , NamedField f, ShowPath s )
-      => BuildRecFrom f ((s:::a) : rs) acc 'False where
-  type RecCtor f ((s:::a) : rs) acc 'False =
-         a -> RecCtor f rs (acc ++ '[s:::a]) (FirstFieldSkipped rs)
+      => BuildRecFrom f ((s:|:a) : rs) acc 'False where
+  type RecCtor f ((s:|:a) : rs) acc 'False =
+         a -> RecCtor f rs (acc ++ '[s:|:a]) (FirstFieldSkipped rs)
   buildRecFrom_ acc (r :& rs) = \a -> buildRecFrom_ (acc <+> r =: a) rs
    -- The append at the of the record makes it quadratic in comlexity. It's not
    -- great, it could me made to be linear.
   {-# INLINE buildRecFrom_ #-}
 
-instance ( BuildRecFrom f rs (acc++'[s:::MD]) (FirstFieldSkipped rs)
+instance ( BuildRecFrom f rs (acc++'[s:|:MD]) (FirstFieldSkipped rs)
          , NamedField f, ShowPath s )
-      => BuildRecFrom f ((s:::MD) : rs) acc 'True where
-  type RecCtor f ((s:::MD) : rs) acc 'True =
-         RecCtor f rs (acc ++ '[s:::MD]) (FirstFieldSkipped rs)
+      => BuildRecFrom f ((s:|:MD) : rs) acc 'True where
+  type RecCtor f ((s:|:MD) : rs) acc 'True =
+         RecCtor f rs (acc ++ '[s:|:MD]) (FirstFieldSkipped rs)
   buildRecFrom_ acc (_ :& rs) = buildRecFrom_ (acc <+> fromValue @f @s MD :& RNil) rs
   {-# INLINE buildRecFrom_ #-}
 
@@ -940,14 +940,14 @@ RecBijection f fi <<|>> RecBijection g gi =
 
 -- | Creates a 'RecBijection' that just maps over a singleton 'Rec'
 bijectField :: forall s f a b. (ShowPath s, NamedField f)
-               => (a -> b) -> (b -> a) -> RecBijection f '[s:::a] '[s:::b]
+               => (a -> b) -> (b -> a) -> RecBijection f '[s:|:a] '[s:|:b]
 bijectField f g = RecBijection (\(fl :& RNil) -> mapField f fl :& RNil)
                                     (\(fl :& RNil) -> mapField g fl :& RNil)
 {-# INLINE bijectField #-}
 
 -- | Creates a 'RecBijection' that just maps over a singleton 'Rec' and changes the name along
 bijectField' :: forall s s' f a b. (ShowPath s, ShowPath s', NamedField f)
-               => (a -> b) -> (b -> a) -> RecBijection f '[s:::a] '[s':::b]
+               => (a -> b) -> (b -> a) -> RecBijection f '[s:|:a] '[s':|:b]
 bijectField' f g = RecBijection (\(fl :& RNil) -> changePath (mapField f fl) :& RNil)
                                     (\(fl :& RNil) -> changePath (mapField g fl) :& RNil)
 {-# INLINE bijectField' #-}
@@ -955,13 +955,13 @@ bijectField' f g = RecBijection (\(fl :& RNil) -> changePath (mapField f fl) :& 
 -- | Creates a 'RecBijection' that changes the path of the field in a singleton
 -- 'Rec'
 renameField :: forall s s' f a. (ShowPath s, ShowPath s', NamedField f)
-              => RecBijection f '[s:::a] '[s':::a]
+              => RecBijection f '[s:|:a] '[s':|:a]
 renameField = RecBijection (\(fl :& RNil) -> changePath fl :& RNil)
                              (\(fl :& RNil) -> changePath fl :& RNil)
 {-# INLINE renameField #-}
 
 -- | Just adds a field that will be constant
-addConstField :: forall s f a. f (s:::a) -> RecBijection f '[] '[s:::a]
+addConstField :: forall s f a. f (s:|:a) -> RecBijection f '[] '[s:|:a]
 addConstField x = RecBijection (\_ -> x :& RNil) (const RNil)
 {-# INLINE addConstField #-}
 
