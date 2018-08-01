@@ -3,6 +3,7 @@
 {-# LANGUAGE FlexibleContexts           #-}
 {-# LANGUAGE GADTs                      #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE InstanceSigs               #-}
 {-# LANGUAGE TemplateHaskell            #-}
 {-# LANGUAGE TupleSections              #-}
 {-# LANGUAGE TypeFamilies               #-}
@@ -10,6 +11,8 @@
 {-# LANGUAGE UndecidableInstances       #-}
 {-# OPTIONS_GHC -Wall #-}
 {-# OPTIONS_GHC -fno-warn-orphans       #-}
+{-# OPTIONS_GHC -fno-warn-missing-methods #-}
+
 
 module System.TaskPipeline.ATask
   ( module Control.Category
@@ -103,6 +106,15 @@ instance (Monad m, IsTaskResource n) => Arrow (ATask m n) where
     \((a,b),tt) -> combine <$> fn1 (a,tt) <*> fn2 (b,tt)
     where
       combine (a', tt1) (b', tt2) = ((a',b'), tt1 <> tt2)
+
+instance (Monad m, IsTaskResource n) => ArrowChoice (ATask m n)
+  -- where
+  --   left :: ATask m n b c -> ATask m n (Either b d) (Either c d)
+  --   left task@(ATask tree perf) = ATask tree f
+  --     where
+  --       f (Left l)  = do (b, ressourceTree) <- perf l
+  --                        return (Left b, ressourceTree)
+  --       f (Right r) = return (Right r, )
 
 instance (Functor m) => Functor (ATask m n a) where
   fmap f (ATask tree fn) = ATask tree (fmap (\(a,tt) -> (f a,tt)) . fn)
