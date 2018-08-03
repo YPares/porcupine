@@ -14,7 +14,7 @@
 {-# OPTIONS_GHC -Wno-unticked-promoted-constructors #-}
 
 module Data.DocRecord.OptParse
-  (RecFromCLI(..)
+  (RecFromCLI(..), FieldFromCLI
   ,RecordUsableWithCLI
   ,SourceTag(..)
   ,SourcedDocField

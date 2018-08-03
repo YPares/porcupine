@@ -15,6 +15,7 @@ module Data.Locations.Mappings
   ( LocationMappings
   , WithDefaultUsage(..)
   , LocLayers(..)
+  , Mapping
   , allLocsInMappings
   , mappingsFromLocTree
   , locLayers
