@@ -53,8 +53,9 @@ persistAtLoc
   => a
   -> Loc.Loc
   -> m ()
-persistAtLoc x loc =
+persistAtLoc x loc = do
   Loc.writeLazyByte loc $ encode x
+  Loc.logMsg $ "The file " <> show loc <> " has been saved"
 
 -- | Retrieve persistable data from some location
 loadFromLoc
