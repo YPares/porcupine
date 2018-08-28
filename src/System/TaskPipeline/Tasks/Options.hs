@@ -40,12 +40,17 @@ getOptionsTask path filep taskName defOpts =
      (Identity $
        filep & traversed .~ PRscOptions (RecOfOptions defOpts)) taskName run
   where
+    spacePrepend = replicate (length taskName + 2) ' '
     run _ (Identity (PRscVirtualFile _)) = throwM $ TaskRunError $
-      taskName ++ ": Reading options straight from a file is not supported yet"
+      taskName <> ": Reading options straight from a file is not supported yet"
     run _ (Identity (PRscOptions (RecOfOptions newDocRec))) =
       case castAs defOpts newDocRec of
         Nothing -> throwM $ TaskRunError $
-          taskName ++ ": The DocRec received isn't of the same type as the input one"
+          taskName        <> ": The DocRec received isn't of the same type as the input one\n"
+          <> spacePrepend <> "This might be caused by a duplicated Virtual Option file in the same location\n"
+          <> spacePrepend <> "To solve this case you need to change the Option virtual file name\n"
+          <> spacePrepend <> "from : opts  <- getOptionsTask locFolderPath (\"Options\" :: LTPIAndSubtree ()) taskName opts -< ()\n"
+          <> spacePrepend <> "to   : opts  <- getOptionsTask locFolderPath (\"MyOptions\" :: LTPIAndSubtree ()) taskName opts -< ()"
         Just newOpts -> return newOpts
     run _ (Identity PRscNothing) = return defOpts
     run _ _ = throwM $ TaskRunError $
