@@ -248,9 +248,8 @@ applyMappingsToResourceTree' tree mappings =
       Left rootLoc -> mappingRootOnly rootLoc
 
 -- | Temporary datatype parsed from command-line by 'rscTreeBasedCLIOverriding'
-data RscTreeBasedCLIOverrides =
-  Ovs { _ovsQuietness :: Int
-      , _ovsTree      :: LocationTree (PipelineResource_ SourcedDocField WithDefaultUsage) }
+newtype RscTreeBasedCLIOverrides =
+  Ovs { _ovsTree      :: LocationTree (PipelineResource_ SourcedDocField WithDefaultUsage) }
 
 -- | Works on a tree of PipelineResources and permits to override the whole of
 -- the tree (options and file mappings) through the Yaml configuration file and
@@ -260,14 +259,8 @@ rscTreeBasedCLIOverriding
   -> CLIOverriding ResourceTreeAndMappings RscTreeBasedCLIOverrides
 rscTreeBasedCLIOverriding (ResourceTreeAndMappings defTree _) = CLIOverriding{..}
   where
-    overridesParser = Ovs
-      <$> (length <$>
-           (many
-            (flag' ()
-             (  long "quiet"
-             <> short 'q'
-             <> help "Don't print configuration (-q) and warnings (-qq)"))))
-      <*> traverseOf (traversed.pRscOptions) parseOptions defTree
+    overridesParser =
+      Ovs <$> traverseOf (traversed.pRscOptions) parseOptions defTree
 
     parseOptions :: RecOfOptions DocField -> Parser (RecOfOptions SourcedDocField)
     parseOptions (RecOfOptions r) = RecOfOptions <$>
@@ -283,9 +276,9 @@ rscTreeBasedCLIOverriding (ResourceTreeAndMappings defTree _) = CLIOverriding{..
     overrideCfgFromYamlFile
       :: A.Value
       -> RscTreeBasedCLIOverrides
-      -> ([String], Int, Either String ResourceTreeAndMappings)
-    overrideCfgFromYamlFile aesonCfg (Ovs quietness optsTree) =
-      ([], quietness, do
+      -> ([String], Either String ResourceTreeAndMappings)
+    overrideCfgFromYamlFile aesonCfg (Ovs optsTree) =
+      ([], do
           ResourceTreeAndMappings
             <$> traverseOf allSubLocTrees integrateAesonCfg optsTree
             <*> (Right <$> getMappings))
