@@ -77,8 +77,7 @@ parseJSONEither x = case A.fromJSON x of
 {-# INLINE parseJSONEither #-}
 
 -- | defCfg must be a 'DocRec' here. Uses it to generate one option per field in
--- the DocRec, along with its documentation.  Every rs has quietness, it will
--- just return 0 when a ('["quietness"] ':|: Int) field isn't present.
+-- the DocRec, along with its documentation.
 docRecBasedCLIOverriding
   :: (RecordUsableWithCLI rs)
   => DocRec rs -> CLIOverriding (DocRec rs) (Rec SourcedDocField rs)
