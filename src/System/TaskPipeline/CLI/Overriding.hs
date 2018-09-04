@@ -35,7 +35,7 @@ data CLIOverriding cfg overrides = CLIOverriding
   , overrideCfgFromYamlFile
       :: A.Value -> overrides -> ([String], Either String cfg)
   -- ^ How to override the config read from YAML file. Returns: (Warnings,
-  -- Quietness, Overriden config or an error).
+  -- Overriden config or an error).
   }
 
 -- NOTE: Fields shouldn't be Int, they should be the relevant Katip's types
@@ -44,6 +44,7 @@ data LoggerScribeParams = LoggerScribeParams
   , loggerVerbosity :: Int
   }
 
+-- | Parses the CLI options that will be given to Katip's logger scribe
 parseScribeParams :: Parser LoggerScribeParams
 parseScribeParams = LoggerScribeParams
   <$> (length <$>

@@ -247,20 +247,16 @@ applyMappingsToResourceTree' tree mappings =
       Right m      -> m
       Left rootLoc -> mappingRootOnly rootLoc
 
--- | Temporary datatype parsed from command-line by 'rscTreeBasedCLIOverriding'
-newtype RscTreeBasedCLIOverrides =
-  Ovs { _ovsTree      :: LocationTree (PipelineResource_ SourcedDocField WithDefaultUsage) }
-
 -- | Works on a tree of PipelineResources and permits to override the whole of
 -- the tree (options and file mappings) through the Yaml configuration file and
 -- the CLI arguments
 rscTreeBasedCLIOverriding
   :: ResourceTreeAndMappings
-  -> CLIOverriding ResourceTreeAndMappings RscTreeBasedCLIOverrides
+  -> CLIOverriding ResourceTreeAndMappings (LocationTree (PipelineResource_ SourcedDocField WithDefaultUsage))
 rscTreeBasedCLIOverriding (ResourceTreeAndMappings defTree _) = CLIOverriding{..}
   where
     overridesParser =
-      Ovs <$> traverseOf (traversed.pRscOptions) parseOptions defTree
+      traverseOf (traversed.pRscOptions) parseOptions defTree
 
     parseOptions :: RecOfOptions DocField -> Parser (RecOfOptions SourcedDocField)
     parseOptions (RecOfOptions r) = RecOfOptions <$>
@@ -268,16 +264,16 @@ rscTreeBasedCLIOverriding (ResourceTreeAndMappings defTree _) = CLIOverriding{..
       -- updated by the user on the CLI
       parseRecFromCLI (tagWithDefaultSource r)
 
-    nullOverrides = allOf (traversed.pRscOptions) nullRec . _ovsTree
+    nullOverrides = allOf (traversed.pRscOptions) nullRec
 
     nullRec (RecOfOptions RNil) = True
     nullRec _                   = False
 
     overrideCfgFromYamlFile
       :: A.Value
-      -> RscTreeBasedCLIOverrides
+      -> LocationTree (PipelineResource_ SourcedDocField WithDefaultUsage)
       -> ([String], Either String ResourceTreeAndMappings)
-    overrideCfgFromYamlFile aesonCfg (Ovs optsTree) =
+    overrideCfgFromYamlFile aesonCfg optsTree =
       ([], do
           ResourceTreeAndMappings
             <$> traverseOf allSubLocTrees integrateAesonCfg optsTree
