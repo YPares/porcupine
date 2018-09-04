@@ -25,15 +25,15 @@ module Data.DocRecord.OptParse
 where
 
 import           Control.Lens
-import           Data.Bifunctor       (first)
+import           Data.Bifunctor      (first)
 import           Data.DocRecord
-import qualified Data.HashMap.Strict  as HM
-import qualified Data.Text            as T
-import           Data.Text.Encoding   (decodeUtf8, encodeUtf8)
-import qualified Data.Vinyl.Functor   as F
-import           Data.Yaml            (FromJSON, ToJSON)
-import qualified Data.Yaml            as Y
-import           GHC.TypeLits         (Symbol)
+import qualified Data.HashMap.Strict as HM
+import qualified Data.Text           as T
+import           Data.Text.Encoding  (decodeUtf8, encodeUtf8)
+import qualified Data.Vinyl.Functor  as F
+import           Data.Yaml           (FromJSON, ToJSON)
+import qualified Data.Yaml           as Y
+import           GHC.TypeLits        (Symbol)
 import           Options.Applicative
 
 

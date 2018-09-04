@@ -2,7 +2,7 @@
 {-# LANGUAGE GADTs             #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RecordWildCards   #-}
-{-# LANGUAGE TupleSections #-}
+{-# LANGUAGE TupleSections     #-}
 {-# OPTIONS_GHC -Wall #-}
 
 module System.TaskPipeline.CLI.Overriding
@@ -41,7 +41,7 @@ data CLIOverriding cfg overrides = CLIOverriding
 -- NOTE: Fields shouldn't be Int, they should be the relevant Katip's types
 data LoggerScribeParams = LoggerScribeParams
   { loggerSeverityThreshold :: Int
-  , loggerVerbosity :: Int
+  , loggerVerbosity         :: Int
   }
 
 -- | Parses the CLI options that will be given to Katip's logger scribe
