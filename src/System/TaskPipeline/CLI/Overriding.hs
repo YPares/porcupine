@@ -2,14 +2,17 @@
 {-# LANGUAGE GADTs             #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RecordWildCards   #-}
+{-# LANGUAGE TupleSections     #-}
 {-# OPTIONS_GHC -Wall #-}
 
 module System.TaskPipeline.CLI.Overriding
-  (CLIOverriding(..)
-  ,docRecBasedCLIOverriding
-  ,genericAesonBasedCLIOverriding
-  ,parseJSONEither
-  )where
+  ( CLIOverriding(..)
+  , LoggerScribeParams(..)
+  , docRecBasedCLIOverriding
+  , genericAesonBasedCLIOverriding
+  , parseJSONEither
+  , addScribeParamsParsing
+  ) where
 
 import           Control.Applicative
 import           Control.Monad
@@ -30,9 +33,41 @@ data CLIOverriding cfg overrides = CLIOverriding
   , nullOverrides      :: overrides -> Bool
   -- ^ True if no override has been provided on the CLI
   , overrideCfgFromYamlFile
-      :: A.Value -> overrides -> ([String], Int, Either String cfg)
+      :: A.Value -> overrides -> ([String], Either String cfg)
   -- ^ How to override the config read from YAML file. Returns: (Warnings,
-  -- Quietness, Overriden config or an error).
+  -- Overriden config or an error).
+  }
+
+-- NOTE: Fields shouldn't be Int, they should be the relevant Katip's types
+data LoggerScribeParams = LoggerScribeParams
+  { loggerSeverityThreshold :: Int
+  , loggerVerbosity         :: Int
+  }
+
+-- | Parses the CLI options that will be given to Katip's logger scribe
+parseScribeParams :: Parser LoggerScribeParams
+parseScribeParams = LoggerScribeParams
+  <$> (length <$>
+        (many
+          (flag' ()
+            (  long "severity"
+            <> short 'q'
+            <> help "Don't print configuration (-q) and warnings (-qq)"))))
+  <*> (length <$>
+        (many
+          (flag' ()
+            (  long "verbose"
+            <> short 'v'
+            <> help "Controls the amount of information to display for each logged message"))))
+
+-- | Modifies a CLI parsing so it features verbosity and severity flags
+addScribeParamsParsing :: CLIOverriding cfg ovs -> CLIOverriding (LoggerScribeParams, cfg) (LoggerScribeParams, ovs)
+addScribeParamsParsing super = CLIOverriding
+  { overridesParser = (,) <$> parseScribeParams <*> overridesParser super
+  , nullOverrides = \(_, ovs) -> nullOverrides super ovs
+  , overrideCfgFromYamlFile = \yaml (scribeParams, ovs) ->
+      let (warns, res) = overrideCfgFromYamlFile super yaml ovs
+      in (warns, (scribeParams,) <$> res)
   }
 
 parseJSONEither :: (A.FromJSON t) => A.Value -> Either String t
@@ -42,10 +77,9 @@ parseJSONEither x = case A.fromJSON x of
 {-# INLINE parseJSONEither #-}
 
 -- | defCfg must be a 'DocRec' here. Uses it to generate one option per field in
--- the DocRec, along with its documentation.  Every rs has quietness, it will
--- just return 0 when a ('["quietness"] ':|: Int) field isn't present.
+-- the DocRec, along with its documentation.
 docRecBasedCLIOverriding
-  :: (RecordUsableWithCLI rs, HasQuietness rs)
+  :: (RecordUsableWithCLI rs)
   => DocRec rs -> CLIOverriding (DocRec rs) (Rec SourcedDocField rs)
 docRecBasedCLIOverriding defCfg = CLIOverriding{..}
   where
@@ -55,7 +89,7 @@ docRecBasedCLIOverriding defCfg = CLIOverriding{..}
     nullOverrides :: Rec SourcedDocField rs -> Bool
     nullOverrides RNil = True
     nullOverrides _    = False
-    overrideCfgFromYamlFile aesonCfg cliOverrides = ([], getQuietness cliOverrides, result)
+    overrideCfgFromYamlFile aesonCfg cliOverrides = ([], result)
       where
         result = do
           yamlCfg <- tagWithYamlSource <$> parseJSONEither aesonCfg
@@ -71,21 +105,15 @@ docRecBasedCLIOverriding defCfg = CLIOverriding{..}
 -- display any extra documentation.
 genericAesonBasedCLIOverriding
   :: (A.FromJSON cfg)
-  => String -> [(String, Char, String)] -> CLIOverriding cfg (Int, [String])
+  => String -> [(String, Char, String)] -> CLIOverriding cfg [String]
 genericAesonBasedCLIOverriding configFile shortcuts =
-  CLIOverriding genParser (null . snd)
-    (\origCfg (quietness, overrides) ->
+  CLIOverriding genParser null
+    (\origCfg overrides ->
        let (warnings, result) =
-             overrideConfigFromKeyValues origCfg $ ("quietness=" ++ show quietness) : overrides
-       in (warnings, quietness, join $ parseJSONEither <$> result))
+             overrideConfigFromKeyValues origCfg overrides
+       in (warnings, join $ parseJSONEither <$> result))
   where
-    genParser = (,)
-      <$> (length <$>
-            (many (flag' ()
-               (  long "quiet"
-              <> short 'q'
-              <> help "Don't print configuration (-q) and warnings (-qq)"))))
-      <*> foldr1 (liftA2 (++)) overrideArgs
+    genParser = foldr1 (liftA2 (++)) overrideArgs
     mkOption (l,s,h,f) = f <$>
       many (strOption
              ( long l <> short s <> metavar "yaml.path=YAML_VALUE" <> help h ))

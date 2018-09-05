@@ -66,7 +66,8 @@ withCliParser
   :: (Monoid r)
   => String
   -> (Maybe FilePath -> IO (Parser (Maybe (a, PipelineCommand r), IO ())))
-  -> ((a, PipelineCommand r) -> IO r) -> IO r
+  -> ((a, PipelineCommand r) -> IO r)
+  -> IO r
 withCliParser progName cliParser f = do
   mbArgs <- tryGetConfigFileOnCLI $ \yamlFile ->
     cliParser yamlFile >>= execCliParser progName "Run a task pipeline"
@@ -125,14 +126,14 @@ pureCliParser
   -> cmd                      -- ^ Default command
   -> Parser (Maybe (cfg, cmd), IO ()) -- ^ (Config and command, actions to run to
                                       -- override the yaml file)
-pureCliParser progName mcfg configFile defCfg inputParsing cmds defCmd =
+pureCliParser progName mcfg configFile defCfg cfgCLIParsing cmds defCmd =
   subparser
   ( command "write-config-template"
     (info
       (pure (Nothing, writeConfigFile configFile defCfg))
       (progDesc $ "Write a default configuration file in " <> configFile)))
   <|>
-  handleOptions progName configFile mcfg defCfg inputParsing <$>
+  handleOptions progName configFile mcfg defCfg cliOverriding <$>
    (subparser
     (command "save"
           (info (pure Nothing)
@@ -147,7 +148,8 @@ pureCliParser progName mcfg configFile defCfg inputParsing cmds defCmd =
    (switch ( long "save"
            <> short 's'
            <> help ("Save overrides in the " <> configFile <> " before running.") )) <*>
-   overridesParser inputParsing
+   overridesParser cliOverriding
+  where cliOverriding = addScribeParamsParsing cfgCLIParsing
 
 writeConfigFile :: ToJSON f => String -> f -> IO ()
 writeConfigFile configFile cfg = do
@@ -161,10 +163,10 @@ handleOptions
   -> FilePath -- ^ Config file
   -> Maybe Y.Value -- ^ Config body. This is the JSON content of the config file
   -> cfg           -- ^ The default configuration
-  -> CLIOverriding cfg overrides
+  -> CLIOverriding (LoggerScribeParams, cfg) (LoggerScribeParams, overrides)
   -> Maybe (cmd, String) -- ^ Command to run (and a name/description for it)
   -> Bool -- ^ Whether to save the overrides
-  -> overrides -- ^ overrides
+  -> (LoggerScribeParams, overrides) -- ^ overrides
   -> (Maybe (cfg, cmd), IO ())  -- ^ (Config and command, actions to run to
                                 -- override the yaml file)
 handleOptions progName _ Nothing _ _ Nothing _ _ = error $
@@ -175,15 +177,15 @@ handleOptions progName configFile mbCfg defCfg cliOverriding mbCmd saveOverrides
         Just c -> mergeWithDefault [] defaultCfg c
         Nothing -> ([configFile ++ " is not found. Treated as empty."]
                    ,defaultCfg)
-      (overrideWarnings, quietness, mbCfg') =
+      (overrideWarnings, mbScribeParamsAndCfgOverriden) =
         overrideCfgFromYamlFile cliOverriding cfg overrides
-      warningActions =
-        when (quietness <= 1) $ do
-          forM_ (cfgWarnings ++ overrideWarnings) $
-            putStrLn . ("WARNING: "++)
-  in case mbCfg' of
-    Right cfgOverriden ->
-        case mbCmd of
+  in case mbScribeParamsAndCfgOverriden of
+    Right (LoggerScribeParams{loggerSeverityThreshold=quietness}, cfgOverriden) ->
+      let warningActions =
+            when (quietness <= 1) $ do
+            forM_ (cfgWarnings ++ overrideWarnings) $
+              putStrLn . ("WARNING: "++)
+      in case mbCmd of
           Nothing -> (Nothing, do warningActions
                                   writeConfigFile configFile cfgOverriden)
           Just (cmd, cmdShown) ->

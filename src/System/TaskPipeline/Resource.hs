@@ -247,27 +247,16 @@ applyMappingsToResourceTree' tree mappings =
       Right m      -> m
       Left rootLoc -> mappingRootOnly rootLoc
 
--- | Temporary datatype parsed from command-line by 'rscTreeBasedCLIOverriding'
-data RscTreeBasedCLIOverrides =
-  Ovs { _ovsQuietness :: Int
-      , _ovsTree      :: LocationTree (PipelineResource_ SourcedDocField WithDefaultUsage) }
-
 -- | Works on a tree of PipelineResources and permits to override the whole of
 -- the tree (options and file mappings) through the Yaml configuration file and
 -- the CLI arguments
 rscTreeBasedCLIOverriding
   :: ResourceTreeAndMappings
-  -> CLIOverriding ResourceTreeAndMappings RscTreeBasedCLIOverrides
+  -> CLIOverriding ResourceTreeAndMappings (LocationTree (PipelineResource_ SourcedDocField WithDefaultUsage))
 rscTreeBasedCLIOverriding (ResourceTreeAndMappings defTree _) = CLIOverriding{..}
   where
-    overridesParser = Ovs
-      <$> (length <$>
-           (many
-            (flag' ()
-             (  long "quiet"
-             <> short 'q'
-             <> help "Don't print configuration (-q) and warnings (-qq)"))))
-      <*> traverseOf (traversed.pRscOptions) parseOptions defTree
+    overridesParser =
+      traverseOf (traversed.pRscOptions) parseOptions defTree
 
     parseOptions :: RecOfOptions DocField -> Parser (RecOfOptions SourcedDocField)
     parseOptions (RecOfOptions r) = RecOfOptions <$>
@@ -275,17 +264,17 @@ rscTreeBasedCLIOverriding (ResourceTreeAndMappings defTree _) = CLIOverriding{..
       -- updated by the user on the CLI
       parseRecFromCLI (tagWithDefaultSource r)
 
-    nullOverrides = allOf (traversed.pRscOptions) nullRec . _ovsTree
+    nullOverrides = allOf (traversed.pRscOptions) nullRec
 
     nullRec (RecOfOptions RNil) = True
     nullRec _                   = False
 
     overrideCfgFromYamlFile
       :: A.Value
-      -> RscTreeBasedCLIOverrides
-      -> ([String], Int, Either String ResourceTreeAndMappings)
-    overrideCfgFromYamlFile aesonCfg (Ovs quietness optsTree) =
-      ([], quietness, do
+      -> LocationTree (PipelineResource_ SourcedDocField WithDefaultUsage)
+      -> ([String], Either String ResourceTreeAndMappings)
+    overrideCfgFromYamlFile aesonCfg optsTree =
+      ([], do
           ResourceTreeAndMappings
             <$> traverseOf allSubLocTrees integrateAesonCfg optsTree
             <*> (Right <$> getMappings))

@@ -21,22 +21,19 @@ module Data.DocRecord.OptParse
   ,rmTags,tagWithDefaultSource,tagWithYamlSource
 
   ,parseRecFromCLI
-  ,HasQuietness
-  ,getQuietness
   )
 where
 
 import           Control.Lens
-import           Data.Bifunctor       (first)
+import           Data.Bifunctor      (first)
 import           Data.DocRecord
-import qualified Data.HashMap.Strict  as HM
-import qualified Data.Text            as T
-import           Data.Text.Encoding   (decodeUtf8, encodeUtf8)
-import qualified Data.Vinyl.Functor   as F
-import           Data.Vinyl.TypeLevel hiding (Fst, Snd)
-import           Data.Yaml            (FromJSON, ToJSON)
-import qualified Data.Yaml            as Y
-import           GHC.TypeLits         (Symbol)
+import qualified Data.HashMap.Strict as HM
+import qualified Data.Text           as T
+import           Data.Text.Encoding  (decodeUtf8, encodeUtf8)
+import qualified Data.Vinyl.Functor  as F
+import           Data.Yaml           (FromJSON, ToJSON)
+import qualified Data.Yaml           as Y
+import           GHC.TypeLits        (Symbol)
 import           Options.Applicative
 
 
@@ -157,23 +154,3 @@ parseRecFromCLI defaultRec = parseRecFromCLI_ disambMap defaultRec
         map (\p -> (nameOn n p, [p])) paths
     disambOn n [uniq] = [(uniq, T.unpack $ T.intercalate (T.pack "-") $ nameOn n uniq)]
     disambOn n ps     = concatMap (disambOn (n+1)) $ ambiguousOn (n+1) ps
-
-type QuietnessField = '["quietness"] ':|: Int
-
-class (e ~ RIndex QuietnessField rs) => HasQuietness_ e rs where
-  -- | Every record has a quietness. If the field "quietness" isn't explicitely
-  -- present, 'getQuietness' will just return 0
-  getQuietness :: (NamedField f) => Rec f rs -> Int
-
--- | Every record has a quietness. If no field "quietness" is found, then that
--- means quietness is just zero.
-instance (RIndex QuietnessField rs ~ Z) => HasQuietness_ Z rs where
-  getQuietness _ = 0
-
-instance (rs `HasField` QuietnessField, RIndex QuietnessField rs ~ S x)
-      => HasQuietness_ (S x) rs where
-  getQuietness rs = rs^^?!fquietness
-    where fquietness = fieldNoDef @"quietness" @Int mempty
-
--- | See 'getQuietness'
-type HasQuietness rs = HasQuietness_ (RIndex QuietnessField rs) rs
