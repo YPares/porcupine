@@ -33,6 +33,7 @@ haskell_library(
             "//hackage:filepath",
             "//hackage:formatting",
             "//hackage:hashable",
+            "//hackage:katip",
             "//hackage:lens",
             "//hackage:monad-control",
             "//hackage:mtl",

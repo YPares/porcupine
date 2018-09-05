@@ -13,7 +13,10 @@ import           Control.Monad.Catch
 import           Control.Monad.IO.Class
 import           Data.Locations
 import           Data.Maybe
+import           Katip                     (KatipContext, KatipContextT)
 import           System.Exit
+import           System.Logger             (defaultLoggerScribeParams,
+                                            runLogger)
 import           System.TaskPipeline.CLI
 import           System.TaskPipeline.Tasks
 
@@ -22,7 +25,7 @@ import           System.TaskPipeline.Tasks
 -- is an Arrow, which means you obtain it by composing subtasks either
 -- sequentially with '(>>>)' (or '(.)'), or in parallel with '(***)'.
 type PipelineTask i o =
-     forall m. (LocationMonad m, MonadIO m)
+     forall m. (KatipContext m, LocationMonad m, MonadIO m)
   => ATask m PipelineResource i o
   -- MonadIO constraint is meant to be temporary (that's needed for the
   -- pipelines who do time tracking for instance, but that shouldn't be done
@@ -71,7 +74,7 @@ pipelineConfigMethodChangeResult cliUsage = case cliUsage of
   FullConfig s r -> FullConfig s r
 
 getTaskTree
-  :: ATask LocalM PipelineResource i o
+  :: ATask (KatipContextT LocalM) PipelineResource i o
   -> UnboundResourceTree
 getTaskTree (ATask t _) = t
 
@@ -100,13 +103,15 @@ bindResourceTreeAndRun
   :: String   -- ^ Program name (often model name)
   -> PipelineConfigMethod r -- ^ How to get CLI args from ModelOpts
   -> UnboundResourceTree -- ^ The tree to look for DocRecOfoptions in
-  -> (forall m. (LocationMonad m, MonadIO m)
+  -> (forall m. (KatipContext m, LocationMonad m, MonadIO m)
       => PipelineCommand r -> BoundResourceTree -> m r)
              -- ^ What to do with the model
   -> IO r
 bindResourceTreeAndRun _ (NoConfig root) tree f =
-  selectRun root True $ f RunPipeline $
-    applyMappingsToResourceTree' tree (Left root)
+  selectRun root True $
+    runLogger defaultLoggerScribeParams $
+      f RunPipeline $
+        applyMappingsToResourceTree' tree (Left root)
 bindResourceTreeAndRun progName (FullConfig defConfigFile defRoot) tree f =
   withCliParser progName getParser run
   where
@@ -116,7 +121,8 @@ bindResourceTreeAndRun progName (FullConfig defConfigFile defRoot) tree f =
         (ResourceTreeAndMappings tree $ Left defRoot)
     run (tam@(ResourceTreeAndMappings _ mappings'), cmd) =
       selectRun refLoc True $
-        f cmd $ applyMappingsToResourceTree tam
+        runLogger defaultLoggerScribeParams $
+          f cmd $ applyMappingsToResourceTree tam
       where
         refLoc = case mappings' of
           Left rootLoc -> rootLoc

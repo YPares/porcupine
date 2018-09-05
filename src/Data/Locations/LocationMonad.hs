@@ -27,6 +27,7 @@ import qualified Data.Text.Encoding               as TE
 import           Formatting
 import           Formatting.Clock
 import           GHC.Generics                     (Generic)
+import           Katip.Monadic
 import           Network.AWS                      hiding (Error)
 import qualified Network.AWS                      as AWS
 import           Network.AWS.S3
@@ -102,6 +103,21 @@ instance (LocationMonad m) => LocationMonad (ReaderT r m) where
     lift $ withLocalBuffer (flip runReaderT st . f) loc
   logMsg = lift . logMsg
   clockAccess (ReaderT act) = ReaderT (clockAccess . act)
+
+-- | Same than the previous instance, we just lift through the @KatipContextT@
+-- constructor
+instance (LocationMonad m) => LocationMonad (KatipContextT m) where
+  writeBSS loc bs = KatipContextT $ do
+    st <- ask
+    lift $ writeBSS loc $ hoist (flip (runReaderT . unKatipContextT) st) bs
+  readBSS loc f = KatipContextT $ do
+    st <- ask
+    lift $ readBSS loc $ flip (runReaderT . unKatipContextT) st . f . hoist lift
+  withLocalBuffer f loc = KatipContextT $ do
+    st <- ask
+    lift $ withLocalBuffer (flip (runReaderT . unKatipContextT) st . f) loc
+  logMsg = lift . logMsg
+  clockAccess (KatipContextT (ReaderT act)) = KatipContextT $ ReaderT (clockAccess . act)
 
 -- | Run a computation or a sequence of computations that will access some
 -- locations. Selects whether to run in IO or AWS based on some Loc used as

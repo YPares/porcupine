@@ -32,6 +32,7 @@ import qualified Data.Yaml                          as Y
 import           Options.Applicative
 import           System.Directory
 import           System.Environment                 (getArgs, withArgs)
+import           System.Logger                      (LoggerScribeParams (..))
 import           System.TaskPipeline.CLI.Overriding
 
 

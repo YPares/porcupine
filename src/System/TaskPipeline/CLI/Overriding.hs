@@ -7,7 +7,6 @@
 
 module System.TaskPipeline.CLI.Overriding
   ( CLIOverriding(..)
-  , LoggerScribeParams(..)
   , docRecBasedCLIOverriding
   , genericAesonBasedCLIOverriding
   , parseJSONEither
@@ -24,7 +23,7 @@ import qualified Data.Text               as T
 import qualified Data.Text.Encoding      as T
 import qualified Data.Yaml               as Y
 import           Options.Applicative
-
+import           System.Logger           (LoggerScribeParams (..))
 
 -- | How to override a YAML file config from the command-line
 data CLIOverriding cfg overrides = CLIOverriding
@@ -36,12 +35,6 @@ data CLIOverriding cfg overrides = CLIOverriding
       :: A.Value -> overrides -> ([String], Either String cfg)
   -- ^ How to override the config read from YAML file. Returns: (Warnings,
   -- Overriden config or an error).
-  }
-
--- NOTE: Fields shouldn't be Int, they should be the relevant Katip's types
-data LoggerScribeParams = LoggerScribeParams
-  { loggerSeverityThreshold :: Int
-  , loggerVerbosity         :: Int
   }
 
 -- | Parses the CLI options that will be given to Katip's logger scribe
