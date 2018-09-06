@@ -21,14 +21,33 @@ module System.TaskPipeline.Tasks.LayeredAccess
 import           Prelude                      hiding (id, (.))
 
 import           Control.Lens
+import           Data.Aeson
 import           Data.Hashable
 import qualified Data.HashMap.Strict          as HM
-import           Data.HumanSerializable
 import           Data.Locations
 import           Data.Locations.LocationTree  (LocationTreePathItem)
+import           Data.SerializationMethod
 import           System.TaskPipeline.ATask
 import           System.TaskPipeline.Resource
 
+
+readDataTask
+  :: (LocationMonad m, Monoid o)
+  => [LocationTreePathItem]   -- ^ Folder path
+  -> LTPIAndSubtree SerialMethod  -- ^ File in folder
+  -> String  -- ^ A name for the task (for the error message if wanted
+             -- SerialMethod isn't supported)
+
+  -> (SerialMethod -> Maybe (i -> Loc -> m o))
+      -- ^ If the 'SerialMethod' is accepted, this function should return @Just
+      -- f@, where @f@ is a function taking the input @i@ of the task, the 'Loc'
+      -- where it should read/write, and that should perform the access and
+      -- return a result @o@. This function will be called once per layer, and
+      -- the results of each called will be combined since @o@ must be a
+      -- 'Monoid'.
+  -> ATask m PipelineResource i o
+readDataTask path fname taskName f =
+  layeredAccessTask' path (PRscSerialMethod <$> fname) taskName f
 
 -- | Accesses each layer mapped to the required file and combines the result of
 -- each access.
@@ -93,7 +112,7 @@ layeredAccessTask' path fname taskName f =
 -- extract a type 'b' which we will accumulate throughout the layers. See
 -- 'liftToATask' for more information
 loadLayeredInput
-  :: (LocationMonad m, OfHuman a)
+  :: (LocationMonad m, FromJSON a)
   => [LocationTreePathItem]       -- ^ The path of the file's folder in the
                                   -- 'LocationTree'
   -> LTPIAndSubtree SerialMethod  -- ^ The file in the 'LocationTree'
@@ -117,15 +136,14 @@ loadLayeredInput path fname taskName mergeLayersFn =
         foldLayers = case mbAccInit of
           Nothing -> foldl1 mergeLayersFn
           Just x  -> foldl mergeLayersFn x
-        loadLayer (loc, serMeth) = fromLayer <$> loadFromLoc
-                                   (addExtToLocIfMissing loc serMeth)
-          -- TODO: Give serMeth to loadFromLoc
+        loadLayer (loc, serMeth) =
+          fromLayer <$> loadFromLoc JSONSerial (addExtToLocIfMissing loc serMeth)
 
 -- | A version of 'layeredAccessTask' only for reading files. The data read in
 -- each file must be convertible to a HashMap. 'loadLayeredHashMaps' uses the
 -- 'HM.union' function to override each layer with the next layer.
 loadLayeredHashMaps
-  :: (Hashable k, Eq k, OfHuman a, LocationMonad m)
+  :: (Hashable k, Eq k, LocationMonad m, FromJSON a)
   => [LocationTreePathItem]      -- ^ The path of the file's folder in the
                                  -- 'LocationTree'
   -> LTPIAndSubtree SerialMethod -- ^ The file in the location tree to which the
