@@ -31,23 +31,16 @@ import           System.TaskPipeline.ATask
 import           System.TaskPipeline.Resource
 
 
-readDataTask
-  :: (LocationMonad m, Monoid o)
-  => [LocationTreePathItem]   -- ^ Folder path
-  -> LTPIAndSubtree SerialMethod  -- ^ File in folder
-  -> String  -- ^ A name for the task (for the error message if wanted
-             -- SerialMethod isn't supported)
-
-  -> (SerialMethod -> Maybe (i -> Loc -> m o))
-      -- ^ If the 'SerialMethod' is accepted, this function should return @Just
-      -- f@, where @f@ is a function taking the input @i@ of the task, the 'Loc'
-      -- where it should read/write, and that should perform the access and
-      -- return a result @o@. This function will be called once per layer, and
-      -- the results of each called will be combined since @o@ must be a
-      -- 'Monoid'.
-  -> ATask m PipelineResource i o
-readDataTask path fname taskName f =
-  layeredAccessTask' path (PRscSerialMethod <$> fname) taskName f
+-- -- | Handles the deserialization of the data
+-- loadDataTask
+--   :: (LocationMonad m, Monoid a)
+--   => [LocationTreePathItem]   -- ^ Folder path
+--   -> LTPIAndSubtree (SerialsFor a)  -- ^ File in folder
+--   -> String  -- ^ A name for the task (for the error message if wanted
+--              -- SerialMethod isn't supported)
+--   -> ATask m PipelineResource () a
+-- loadDataTask path fname taskName =
+--   layeredAccessTask' path (PRscSerialMethod <$> fname) taskName f
 
 -- | Accesses each layer mapped to the required file and combines the result of
 -- each access.

@@ -61,15 +61,17 @@ instance Show RetrievingError where
     "Error while decoding file " <> show loc <> ": " <> T.unpack msg
 
 
-class (Default serMeth) => CanSerializeAtLoc serMeth where
+class (Default serMeth) => SerializationMethod serMeth where
   canSerializeAtLoc :: serMeth -> Loc -> Bool
+  equivalentSimpleSerMeth :: serMeth -> SerialMethod  -- only temporary, to ease
+                                                      -- transition
 
 -- | Tells whether some type @a@ can be serialized in some location with some
 -- serialization method @serMeth@.
-class (CanSerializeAtLoc serMeth) => SerializesWith serMeth a where
+class (SerializationMethod serMeth) => SerializesWith serMeth a where
   persistAtLoc :: (LocationMonad m) => serMeth -> a -> Loc -> m ()
 
-class (CanSerializeAtLoc serMeth) => DeserializesWith serMeth a where
+class (SerializationMethod serMeth) => DeserializesWith serMeth a where
   loadFromLoc  :: (LocationMonad m) => serMeth -> Loc -> m a
 
 -- | Has 'SerializesWith' & 'DeserializesWith' instances that permits to
@@ -79,8 +81,9 @@ data JSONSerial = JSONSerial
 instance Default JSONSerial where
   def = JSONSerial
 
-instance CanSerializeAtLoc JSONSerial where
+instance SerializationMethod JSONSerial where
   canSerializeAtLoc _ _ = True
+  equivalentSimpleSerMeth _ = JSON
 
 instance (ToJSON a) => SerializesWith JSONSerial a where
   persistAtLoc _ x loc = do
@@ -97,35 +100,29 @@ instance (FromJSON a) => DeserializesWith JSONSerial a where
       Right y  -> return y
       Left msg -> throwM $ DecodingError loc $ T.pack msg
 
+-- * Grouping 'SerializationMethod's together, to indicate all the possible
+-- serials for a type of data
+
 data SomeSerialFor a
   = forall s. (SerializesWith s a) => SomeSerial s
-
 data SomeDeserialFor a
   = forall s. (DeserializesWith s a) => SomeDeserial s
 
-newtype SerialsFor a = SerialsFor [SomeSerialFor a]
-
-newtype DeserialsFor a = DeserialsFor [SomeDeserialFor a]
+data SerialsFor a = SerialsFor [SomeSerialFor a] [SomeDeserialFor a]
 
 instance Semigroup (SerialsFor a) where
-  (SerialsFor x) <> (SerialsFor y) = SerialsFor (x++y)
+  (SerialsFor x y) <> (SerialsFor x' y') = SerialsFor (x++x') (y++y')
 instance Monoid (SerialsFor a) where
-  mempty = SerialsFor []
+  mempty = SerialsFor [] []
 
-instance Semigroup (DeserialsFor a) where
-  (DeserialsFor x) <> (DeserialsFor y) = DeserialsFor (x++y)
-instance Monoid (DeserialsFor a) where
-  mempty = DeserialsFor []
+somePureSerial :: (SerializesWith s a) => s -> SerialsFor a
+somePureSerial s = SerialsFor [SomeSerial s] []
 
-someSerial :: (SerializesWith s a) => s -> SerialsFor a
-someSerial s = SerialsFor [SomeSerial s]
+somePureDeserial :: (DeserializesWith s a) => s -> SerialsFor a
+somePureDeserial s = SerialsFor [] [SomeDeserial s]
 
-someDeserial :: (DeserializesWith s a) => s -> DeserialsFor a
-someDeserial s = DeserialsFor [SomeDeserial s]
-
+someSerial :: (SerializesWith s a, DeserializesWith s a) => s -> SerialsFor a
+someSerial s = SerialsFor [SomeSerial s] [SomeDeserial s]
 
 class HasSerializationMethods a where
   allSerialsFor :: a -> SerialsFor a
-
-class HasDeserializationMethods a where
-  allDeserialsFor :: a -> DeserialsFor a
