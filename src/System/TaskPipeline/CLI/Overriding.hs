@@ -1,9 +1,10 @@
 {-# LANGUAGE FlexibleContexts  #-}
 {-# LANGUAGE GADTs             #-}
+{-# LANGUAGE LambdaCase        #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RecordWildCards   #-}
 {-# LANGUAGE TupleSections     #-}
-{-# OPTIONS_GHC -Wall #-}
+{-# OPTIONS_GHC -Wall          #-}
 
 module System.TaskPipeline.CLI.Overriding
   ( CLIOverriding(..)
@@ -23,7 +24,7 @@ import qualified Data.Text               as T
 import qualified Data.Text.Encoding      as T
 import qualified Data.Yaml               as Y
 import           Options.Applicative
-import           System.Logger           (LoggerScribeParams (..))
+import           System.Logger (LoggerScribeParams(..), Severity(..), Verbosity(..))
 
 -- | How to override a YAML file config from the command-line
 data CLIOverriding cfg overrides = CLIOverriding
@@ -40,18 +41,37 @@ data CLIOverriding cfg overrides = CLIOverriding
 -- | Parses the CLI options that will be given to Katip's logger scribe
 parseScribeParams :: Parser LoggerScribeParams
 parseScribeParams = LoggerScribeParams
-  <$> (length <$>
+  <$> ((option (eitherReader severityParser)
+          (long "severity"
+      ))
+      <|>
+      (numToSeverity . length <$>
         (many
           (flag' ()
-            (  long "severity"
-            <> short 'q'
-            <> help "Don't print configuration (-q) and warnings (-qq)"))))
-  <*> (length <$>
+            (  short 'q'
+            <> help "Don't print configuration (-q) and warnings (-qq)")))))
+  <*> (numToVerbosity . length <$>
         (many
           (flag' ()
             (  long "verbose"
             <> short 'v'
             <> help "Controls the amount of information to display for each logged message"))))
+  where
+    numToSeverity 0 = InfoS
+    numToSeverity 1 = ErrorS
+    numToSeverity _ = EmergencyS -- by convention for no output
+    severityParser = \case
+        "debug" -> Right DebugS
+        "info" -> Right InfoS
+        "warning" -> Right WarningS
+        "error" -> Right ErrorS
+        "critical" -> Right CriticalS
+        "none" -> Right EmergencyS -- by convention for no output
+        s -> Left $ s ++ " isn't a valid severity level"
+    numToVerbosity 0 = V0
+    numToVerbosity 1 = V0
+    numToVerbosity 2 = V2
+    numToVerbosity _ = V3
 
 -- | Modifies a CLI parsing so it features verbosity and severity flags
 addScribeParamsParsing :: CLIOverriding cfg ovs -> CLIOverriding (LoggerScribeParams, cfg) (LoggerScribeParams, ovs)

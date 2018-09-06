@@ -32,7 +32,7 @@ import qualified Data.Yaml                          as Y
 import           Options.Applicative
 import           System.Directory
 import           System.Environment                 (getArgs, withArgs)
-import           System.Logger                      (LoggerScribeParams (..))
+import           System.Logger                      (LoggerScribeParams (..), Severity (..))
 import           System.TaskPipeline.CLI.Overriding
 
 
@@ -66,8 +66,8 @@ pipelineConfigMethodDefRoot f (NoConfig r    ) = NoConfig <$> f r
 withCliParser
   :: (Monoid r)
   => String
-  -> (Maybe FilePath -> IO (Parser (Maybe (a, PipelineCommand r), IO ())))
-  -> ((a, PipelineCommand r) -> IO r)
+  -> (Maybe FilePath -> IO (Parser (Maybe (a, PipelineCommand r, LoggerScribeParams), IO ())))
+  -> ((a, PipelineCommand r, LoggerScribeParams) -> IO r)
   -> IO r
 withCliParser progName cliParser f = do
   mbArgs <- tryGetConfigFileOnCLI $ \yamlFile ->
@@ -88,7 +88,7 @@ cliYamlParser
   -> CLIOverriding cfg overrides
   -> [(Parser cmd, String, String)]  -- ^ [(Parser cmd, Command repr, Command help string)]
   -> cmd                      -- ^ Default command
-  -> IO (Parser (Maybe (cfg, cmd), IO ()))
+  -> IO (Parser (Maybe (cfg, cmd, LoggerScribeParams), IO ()))
 cliYamlParser progName configFile defCfg inputParsing cmds defCmd = do
   yamlFound <- doesFileExist configFile
   mcfg <- if yamlFound
@@ -125,7 +125,7 @@ pureCliParser
   -> CLIOverriding cfg overrides
   -> [(Parser cmd, String, String)]  -- ^ [(Parser cmd, Command repr, Command help string)]
   -> cmd                      -- ^ Default command
-  -> Parser (Maybe (cfg, cmd), IO ()) -- ^ (Config and command, actions to run to
+  -> Parser (Maybe (cfg, cmd, LoggerScribeParams), IO ()) -- ^ (Config and command, actions to run to
                                       -- override the yaml file)
 pureCliParser progName mcfg configFile defCfg cfgCLIParsing cmds defCmd =
   subparser
@@ -168,7 +168,7 @@ handleOptions
   -> Maybe (cmd, String) -- ^ Command to run (and a name/description for it)
   -> Bool -- ^ Whether to save the overrides
   -> (LoggerScribeParams, overrides) -- ^ overrides
-  -> (Maybe (cfg, cmd), IO ())  -- ^ (Config and command, actions to run to
+  -> (Maybe (cfg, cmd, LoggerScribeParams), IO ())  -- ^ (Config and command, actions to run to
                                 -- override the yaml file)
 handleOptions progName _ Nothing _ _ Nothing _ _ = error $
   "No config found and nothing to save. Please run `" ++ progName ++ " write-config-template' first."
@@ -181,9 +181,10 @@ handleOptions progName configFile mbCfg defCfg cliOverriding mbCmd saveOverrides
       (overrideWarnings, mbScribeParamsAndCfgOverriden) =
         overrideCfgFromYamlFile cliOverriding cfg overrides
   in case mbScribeParamsAndCfgOverriden of
-    Right (LoggerScribeParams{loggerSeverityThreshold=quietness}, cfgOverriden) ->
-      let warningActions =
-            when (quietness <= 1) $ do
+    Right (lsp, cfgOverriden) ->
+      let quietness = loggerSeverityThreshold lsp
+          warningActions =
+            when (quietness <= WarningS) $ do
             forM_ (cfgWarnings ++ overrideWarnings) $
               putStrLn . ("WARNING: "++)
       in case mbCmd of
@@ -194,11 +195,11 @@ handleOptions progName configFile mbCfg defCfg cliOverriding mbCmd saveOverrides
                   warningActions
                   when saveOverridesAlong $
                     writeConfigFile configFile cfgOverriden
-                  when (quietness == 0) $ do
+                  when (quietness <= InfoS) $ do
                     T.putStrLn $ "### Running `" <> T.pack progName
                       <> " " <> T.pack cmdShown <> "' with the following config: ###\n"
                       <> T.decodeUtf8 (Y.encode cfgOverriden)
-            in (Just (cfgOverriden, cmd), actions)
+            in (Just (cfgOverriden, cmd, lsp), actions)
     Left err -> dispErr err
   where
     dispErr err = error $
@@ -257,7 +258,7 @@ pipelineCliParser
   -> String
   -> FilePath
   -> cfg
-  -> IO (Parser (Maybe (cfg, PipelineCommand r), IO ()))
+  -> IO (Parser (Maybe (cfg, PipelineCommand r, LoggerScribeParams), IO ()))
 pipelineCliParser getCliOverriding progName configFile defCfg =
   cliYamlParser progName configFile defCfg (getCliOverriding defCfg)
   [(pure RunPipeline, "run", "Run the pipeline")

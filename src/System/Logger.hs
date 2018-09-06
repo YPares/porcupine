@@ -3,26 +3,31 @@
 
 module System.Logger
   ( LoggerScribeParams(..)
+  , Severity(..)
+  , Verbosity(..)
   , defaultLoggerScribeParams
   , log
   , runLogger
   ) where
 
-import           Control.Monad.Catch    (MonadMask, bracket)
-import           Control.Monad.IO.Class (MonadIO, liftIO)
+import           Control.Monad.Catch     (MonadMask, bracket)
+import           Control.Monad.IO.Class  (MonadIO, liftIO)
+import           Language.Haskell.TH.Lib (ExpQ)
 import           Katip
-import           Prelude                hiding (log)
-import           System.IO              (stdout)
+import           Prelude                 hiding (log)
+import           System.IO               (stdout)
 
--- NOTE: Fields shouldn't be Int, they should be the relevant Katip's types
+-- | Scribe parameters for Logger. Define a severity threshold and a verbosity level.
 data LoggerScribeParams = LoggerScribeParams
-  { loggerSeverityThreshold :: Int
-  , loggerVerbosity         :: Int
+  { loggerSeverityThreshold :: Severity
+  , loggerVerbosity         :: Verbosity
   }
 
+-- | Default LoggerScribeParams shows log message from Info level, with maximum verbosity.
 defaultLoggerScribeParams :: LoggerScribeParams
-defaultLoggerScribeParams = LoggerScribeParams 0 0
+defaultLoggerScribeParams = LoggerScribeParams InfoS V3
 
+-- | Starts a logger.
 runLogger
   :: (MonadMask m, MonadIO m)
   => LoggerScribeParams
@@ -36,5 +41,8 @@ runLogger _ x = do
     bracket mkLogEnv (liftIO . closeScribes) $ \le ->
         runKatipContextT le () "main" $ x
 
-log :: KatipContext m => LogStr -> m ()
-log txt = $(logTM) InfoS txt
+-- | 'Loc'-tagged logging when using template-haskell.
+--
+-- @$(log) InfoS "Hello world"@
+log :: ExpQ
+log = logTM

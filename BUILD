@@ -42,6 +42,7 @@ haskell_library(
             "//hackage:streaming",
             "//hackage:streaming-bytestring",
             "//hackage:streaming-conduit",
+            "//hackage:template-haskell",
             "//hackage:temporary",
             "//hackage:text",
             "//hackage:unliftio-core",

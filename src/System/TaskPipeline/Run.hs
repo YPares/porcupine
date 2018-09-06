@@ -119,9 +119,9 @@ bindResourceTreeAndRun progName (FullConfig defConfigFile defRoot) tree f =
       pipelineCliParser rscTreeBasedCLIOverriding progName
         (fromMaybe defConfigFile mbConfigFile)
         (ResourceTreeAndMappings tree $ Left defRoot)
-    run (tam@(ResourceTreeAndMappings _ mappings'), cmd) =
+    run (tam@(ResourceTreeAndMappings _ mappings'), cmd, lsp) =
       selectRun refLoc True $
-        runLogger defaultLoggerScribeParams $
+        runLogger lsp $
           f cmd $ applyMappingsToResourceTree tam
       where
         refLoc = case mappings' of
