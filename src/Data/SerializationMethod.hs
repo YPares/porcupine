@@ -16,6 +16,7 @@ import           Data.Binary
 import           Data.Default
 import           Data.Locations.Loc           as Loc
 import           Data.Locations.LocationMonad as Loc
+import qualified Data.Map                     as Map
 import           Data.Representable
 import qualified Data.Text                    as T
 import           GHC.Generics
@@ -24,6 +25,10 @@ import           GHC.Generics
 -- | Some locs will allow several serialization methods to be used, but often we
 -- will just LocDefault (JSON for local files and S3 objects). They have some
 -- priority order.
+--
+-- Currently, this type is used mostly for defining file extensions, and should
+-- be removed in the future. See the newest 'SerializationMethod' class that
+-- handles the serialization/deserialization code per se.
 data SerialMethod =
   LocDefault | JSON | CSV | Markdown | PDF | BinaryObj | SQLTableData
   deriving (Eq, Ord, Show, Read, Generic, ToJSON, Binary)
@@ -61,18 +66,18 @@ instance Show RetrievingError where
     "Error while decoding file " <> show loc <> ": " <> T.unpack msg
 
 
-class (Default serMeth) => SerializationMethod serMeth where
-  canSerializeAtLoc :: serMeth -> Loc -> Bool
-  equivalentSimpleSerMeth :: serMeth -> SerialMethod  -- only temporary, to ease
+class (Default serial) => SerializationMethod serial where
+  canSerializeAtLoc :: serial -> Loc -> Bool
+  associatedFileType :: serial -> SerialMethod  -- only temporary, to ease
                                                       -- transition
 
 -- | Tells whether some type @a@ can be serialized in some location with some
--- serialization method @serMeth@.
-class (SerializationMethod serMeth) => SerializesWith serMeth a where
-  persistAtLoc :: (LocationMonad m) => serMeth -> a -> Loc -> m ()
+-- serialization method @serial@.
+class (SerializationMethod serial) => SerializesWith serial a where
+  persistAtLoc :: (LocationMonad m) => serial -> a -> Loc -> m ()
 
-class (SerializationMethod serMeth) => DeserializesWith serMeth a where
-  loadFromLoc  :: (LocationMonad m) => serMeth -> Loc -> m a
+class (SerializationMethod serial) => DeserializesWith serial a where
+  loadFromLoc  :: (LocationMonad m) => serial -> Loc -> m a
 
 -- | Has 'SerializesWith' & 'DeserializesWith' instances that permits to
 -- store/load JSON files through a 'LocationMonad'
@@ -83,7 +88,7 @@ instance Default JSONSerial where
 
 instance SerializationMethod JSONSerial where
   canSerializeAtLoc _ _ = True
-  equivalentSimpleSerMeth _ = JSON
+  associatedFileType _ = JSON
 
 instance (ToJSON a) => SerializesWith JSONSerial a where
   persistAtLoc _ x loc = do
@@ -123,6 +128,14 @@ somePureDeserial s = SerialsFor [] [SomeDeserial s]
 
 someSerial :: (SerializesWith s a, DeserializesWith s a) => s -> SerialsFor a
 someSerial s = SerialsFor [SomeSerial s] [SomeDeserial s]
+
+indexSerialsByFileType :: SerialsFor a -> Map.Map SerialMethod (SomeSerialFor a)
+indexSerialsByFileType (SerialsFor l _) = Map.fromList $
+  map (\s@(SomeSerial s') -> (associatedFileType s', s)) l
+
+indexDeserialsByFileType :: SerialsFor a -> Map.Map SerialMethod (SomeDeserialFor a)
+indexDeserialsByFileType (SerialsFor _ l) = Map.fromList $
+  map (\s@(SomeDeserial s') -> (associatedFileType s', s)) l
 
 class HasSerializationMethods a where
   allSerialsFor :: a -> SerialsFor a
