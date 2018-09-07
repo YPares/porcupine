@@ -12,8 +12,8 @@ module System.Logger
 
 import           Control.Monad.Catch     (MonadMask, bracket)
 import           Control.Monad.IO.Class  (MonadIO, liftIO)
-import           Language.Haskell.TH.Lib (ExpQ)
 import           Katip
+import           Language.Haskell.TH.Lib (ExpQ)
 import           Prelude                 hiding (log)
 import           System.IO               (stdout)
 

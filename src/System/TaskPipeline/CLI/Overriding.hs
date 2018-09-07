@@ -24,7 +24,8 @@ import qualified Data.Text               as T
 import qualified Data.Text.Encoding      as T
 import qualified Data.Yaml               as Y
 import           Options.Applicative
-import           System.Logger (LoggerScribeParams(..), Severity(..), Verbosity(..))
+import           System.Logger           (LoggerScribeParams (..),
+                                          Severity (..), Verbosity (..))
 
 -- | How to override a YAML file config from the command-line
 data CLIOverriding cfg overrides = CLIOverriding
