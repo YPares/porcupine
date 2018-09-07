@@ -68,7 +68,7 @@ loadDataTask path fname taskName =
 
 writeDataTask
   :: forall m a.
-     (LocationMonad m, Monoid a)
+     (LocationMonad m)
   => [LocationTreePathItem]   -- ^ Folder path
   -> LTPIAndSubtree (SerialsFor a)  -- ^ File in folder, with the supported
                                     -- 'SerializationMethod's of the data that
