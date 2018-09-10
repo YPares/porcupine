@@ -4,6 +4,7 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE PartialTypeSignatures      #-}
 {-# LANGUAGE RankNTypes                 #-}
+{-# LANGUAGE ScopedTypeVariables        #-}
 {-# LANGUAGE TupleSections              #-}
 {-# LANGUAGE TypeApplications           #-}
 {-# LANGUAGE TypeOperators              #-}
@@ -14,6 +15,9 @@
 module System.TaskPipeline.Tasks.LayeredAccess
   ( layeredAccessTask
   , layeredAccessTask'
+  , loadDataTask
+  , writeDataTask
+  -- * Deprecated functions. Their use should be replaced by loadDataTask:
   , loadLayeredHashMaps
   , loadLayeredInput
   ) where
@@ -21,14 +25,70 @@ module System.TaskPipeline.Tasks.LayeredAccess
 import           Prelude                      hiding (id, (.))
 
 import           Control.Lens
+import           Data.Aeson
 import           Data.Hashable
 import qualified Data.HashMap.Strict          as HM
-import           Data.HumanSerializable
 import           Data.Locations
 import           Data.Locations.LocationTree  (LocationTreePathItem)
+import qualified Data.Map                     as Map
+import           Data.SerializationMethod
 import           System.TaskPipeline.ATask
 import           System.TaskPipeline.Resource
 
+
+-- | Handles the deserialization of the data provided @a@ has some
+-- 'DeserializationMethod's available.
+--
+-- Limitation: the list of possible 'DeserializationMethod' should be known
+-- statically, and allow for checking the validity of the deserialization method
+-- found in the config before every task is ran.
+loadDataTask
+  :: forall m a.
+     (LocationMonad m, Monoid a)
+  => [LocationTreePathItem]   -- ^ Folder path
+  -> LTPIAndSubtree (SerialsFor a)  -- ^ File in folder, with the supported
+                                    -- 'SerializationMethod's of the data that
+                                    -- should be loaded from it. Default serial
+                                    -- method will be the first.
+  -> String  -- ^ A name for the task (for the error message if the wanted
+             -- 'SerializationMethod' isn't supported)
+  -> ATask m PipelineResource () a
+loadDataTask path fname taskName =
+  layeredAccessTask path (defFileType <$ fname) taskName run
+  where
+    (deserials, defFileType) = case fname of
+      _ :/ LocationTree{_locTreeNodeTag=ss@(SerialsFor _ d)} ->
+        (indexDeserialsByFileType ss, case d of
+          [] -> error "loadDataTask: No deserialization method found. At least one is needed here."
+          SomeDeserial x:_ -> associatedFileType x)
+    run ft = do
+      deserial <- Map.lookup ft deserials
+      return $ \() loc -> case deserial of
+        SomeDeserial s -> loadFromLoc s loc :: m a
+
+writeDataTask
+  :: forall m a.
+     (LocationMonad m)
+  => [LocationTreePathItem]   -- ^ Folder path
+  -> LTPIAndSubtree (SerialsFor a)  -- ^ File in folder, with the supported
+                                    -- 'SerializationMethod's of the data that
+                                    -- should be loaded from it. Default serial
+                                    -- method will be the first.
+  -> String  -- ^ A name for the task (for the error message if the wanted
+             -- 'SerializationMethod' isn't supported)
+  -> ATask m PipelineResource a ()
+writeDataTask path fname taskName =
+  layeredAccessTask path (defFileType <$ fname) taskName run
+  where
+    (serials, defFileType) = case fname of
+      _ :/ LocationTree{_locTreeNodeTag=ss@(SerialsFor s _)} ->
+        (indexSerialsByFileType ss, case s of
+          [] -> error "writeDataTask: No serialization method found. At least one is needed here."
+          SomeSerial x:_ -> associatedFileType x)
+    run ft = do
+      serial <- Map.lookup ft serials
+      return $ \input loc -> case serial of
+        SomeSerial s -> persistAtLoc s (input :: a) loc
 
 -- | Accesses each layer mapped to the required file and combines the result of
 -- each access.
@@ -93,7 +153,7 @@ layeredAccessTask' path fname taskName f =
 -- extract a type 'b' which we will accumulate throughout the layers. See
 -- 'liftToATask' for more information
 loadLayeredInput
-  :: (LocationMonad m, OfHuman a)
+  :: (LocationMonad m, FromJSON a)
   => [LocationTreePathItem]       -- ^ The path of the file's folder in the
                                   -- 'LocationTree'
   -> LTPIAndSubtree SerialMethod  -- ^ The file in the 'LocationTree'
@@ -117,15 +177,14 @@ loadLayeredInput path fname taskName mergeLayersFn =
         foldLayers = case mbAccInit of
           Nothing -> foldl1 mergeLayersFn
           Just x  -> foldl mergeLayersFn x
-        loadLayer (loc, serMeth) = fromLayer <$> loadFromLoc
-                                   (addExtToLocIfMissing loc serMeth)
-          -- TODO: Give serMeth to loadFromLoc
+        loadLayer (loc, serMeth) =
+          fromLayer <$> loadFromLoc JSONSerial (addExtToLocIfMissing loc serMeth)
 
 -- | A version of 'layeredAccessTask' only for reading files. The data read in
 -- each file must be convertible to a HashMap. 'loadLayeredHashMaps' uses the
 -- 'HM.union' function to override each layer with the next layer.
 loadLayeredHashMaps
-  :: (Hashable k, Eq k, OfHuman a, LocationMonad m)
+  :: (Hashable k, Eq k, LocationMonad m, FromJSON a)
   => [LocationTreePathItem]      -- ^ The path of the file's folder in the
                                  -- 'LocationTree'
   -> LTPIAndSubtree SerialMethod -- ^ The file in the location tree to which the

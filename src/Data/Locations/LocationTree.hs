@@ -46,20 +46,20 @@ module Data.Locations.LocationTree
 where
 
 import           Control.Applicative
-import           Control.Lens        hiding ((<.>))
+import           Control.Lens             hiding ((<.>))
 import           Data.Aeson
 import           Data.Binary
-import           Data.Default
 import           Data.Hashable
-import qualified Data.HashMap.Strict as HM
+import qualified Data.HashMap.Strict      as HM
 import           Data.List
 import           Data.Locations.Loc
 import           Data.Maybe
 import           Data.Representable
+import           Data.SerializationMethod
 import           Data.String
-import qualified Data.Text           as T
-import qualified Data.Tree           as DT
-import           GHC.Generics        (Generic)
+import qualified Data.Text                as T
+import qualified Data.Tree                as DT
+import           GHC.Generics             (Generic)
 -- import Data.Tree.Pretty
 -- import Diagrams.TwoD.Layout.Tree
 
@@ -93,25 +93,6 @@ data LocationTree a = LocationTree
 -- waiting for them to be configured by the user.
 type BareLocationTree = LocationTree SerialMethod
 
--- | Some locs will allow several serialization methods to be used, but often we
--- will just LocDefault (JSON for local files and S3 objects). They have some
--- priority order.
-data SerialMethod =
-  LocDefault | JSON | CSV | Markdown | PDF | BinaryObj | SQLTableData
-  deriving (Eq, Ord, Show, Read, Generic, ToJSON, Binary)
-
-instance Representable SerialMethod where
-  toTextRepr LocDefault = ""
-  toTextRepr Markdown   = "md"
-  toTextRepr s          = T.toLower . T.pack . show $ s
-  fromTextRepr x = case T.toLower x of
-    ""     -> pure LocDefault
-    "json" -> pure JSON
-    "csv"  -> pure CSV
-    "md"   -> pure Markdown
-    "pdf"  -> pure PDF
-    _      -> empty
-
 parseSerMethList :: (Monad m) => Value -> m [Maybe SerialMethod]
 parseSerMethList Null         = pure [fromTextRepr ""]
 parseSerMethList (String fmt) = case fromTextRepr fmt of
@@ -124,14 +105,6 @@ parseSerMethList (Array fmts) = concat <$>
   mapM parseSerMethList (toListOf traversed fmts)
 parseSerMethList _            = fail
   "Format must be a string, a null or an array of strings"
-
-instance Default SerialMethod where
-  def = LocDefault
-
-instance Semigroup SerialMethod where
-  a <> b = min a b
-instance Monoid SerialMethod where
-  mempty = LocDefault
 
 instance (Monoid a) => Monoid (LocationTree a) where
   mempty = LocationTree mempty mempty
