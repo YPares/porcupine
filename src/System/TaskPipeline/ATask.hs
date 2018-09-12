@@ -51,7 +51,7 @@ instance (Semigroup a) => Semigroup (RscAccess a) where
 
 instance (Monoid a) => Monoid (RscAccess a) where
   mempty = RscAccess 0 mempty  -- So that mappend x mempty is still equal to x
-  
+
 -- | What a task needs to run, namely files to be accessed and options to be
 -- overriden. The options are put in a LocationTree too (it will be needed for
 -- composed models). The trees are kept separated to simplify code creating
