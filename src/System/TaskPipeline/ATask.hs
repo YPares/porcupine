@@ -43,23 +43,15 @@ import           Data.Locations
 import           System.Clock
 
 
--- | **Subtractive** Monoid to track ressource accesses that have been done, so
--- that we can know when a conflict has arisen (ie. several accesses to the same
--- ressource have been made separately)
-data RscAccess a = AccessConflict Int | AccessDone | AccessPending a
+-- | Monoid that tracks the number of times a resource has been accessed.
+data RscAccess a = RscAccess Int a
+
+instance (Semigroup a) => Semigroup (RscAccess a) where
+  RscAccess x a <> RscAccess y b = RscAccess (x+y) (a<>b)
 
 instance (Monoid a) => Monoid (RscAccess a) where
-  mempty = AccessPending mempty  -- So that mappend x mempty is still equal to x
-
-instance Semigroup a => Semigroup (RscAccess a) where
-  (<>) AccessDone (AccessPending _) = AccessDone
-  (<>) (AccessPending _) AccessDone = AccessDone
-  (<>) (AccessPending a) (AccessPending b) = AccessPending (a <> b)
-  (<>) a b = AccessConflict (numConflict a + numConflict b)
-    where numConflict (AccessConflict nc) = nc
-          numConflict AccessDone          = 1
-          numConflict (AccessPending _)   = 0
-
+  mempty = RscAccess 0 mempty  -- So that mappend x mempty is still equal to x
+  
 -- | What a task needs to run, namely files to be accessed and options to be
 -- overriden. The options are put in a LocationTree too (it will be needed for
 -- composed models). The trees are kept separated to simplify code creating
@@ -192,12 +184,11 @@ liftToATask path filesToAccess taskName writeFn = ATask tree runAccess
         case subtree ^? atSubfolder filePathItem . locTreeNodeTag of
           Nothing -> throwM $ TaskRunError $
             taskName ++ ": path '" ++ show filePathItem ++ "' not found in the LocationTree"
-          Just (AccessPending tag) -> return tag
-          Just _ -> throwM $ TaskRunError $
-            taskName ++ ": path '" ++ show filePathItem ++ "' was already accessed before"
+          Just (RscAccess _ tag) -> return tag
       output <- writeFn input nodeTags
-      let subtree' = foldr (\(filePathItem :/ _) t ->
-                              t & atSubfolder filePathItem . locTreeNodeTag .~ AccessDone)
+      let incrAccess (RscAccess n x) = RscAccess (n+1) x
+          subtree' = foldr (\(filePathItem :/ _) t ->
+                              t & atSubfolder filePathItem . locTreeNodeTag %~ incrAccess)
                            subtree filesToAccess
           rscTree' = rscTree & atSubfolderRec path .~ subtree'
       return (output, rscTree')
