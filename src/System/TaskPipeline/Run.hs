@@ -15,7 +15,7 @@ import           Data.Locations
 import           Data.Maybe
 import           Katip                     (KatipContext, KatipContextT)
 import           System.Exit
-import           System.Logger             (defaultLoggerScribeParams,
+import           System.TaskPipeline.Logger             (defaultLoggerScribeParams,
                                             runLogger)
 import           System.TaskPipeline.CLI
 import           System.TaskPipeline.Tasks

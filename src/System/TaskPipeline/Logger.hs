@@ -1,21 +1,23 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE TemplateHaskell   #-}
 
-module System.Logger
+module System.TaskPipeline.Logger
   ( LoggerScribeParams(..)
   , Severity(..)
   , Verbosity(..)
   , defaultLoggerScribeParams
   , log
   , runLogger
+  , addContextToTask
+  , addNamespaceToTask
   ) where
 
 import           Control.Monad.Catch     (MonadMask, bracket)
 import           Control.Monad.IO.Class  (MonadIO, liftIO)
 import           Katip
-import           Language.Haskell.TH.Lib (ExpQ)
-import           Prelude                 hiding (log)
 import           System.IO               (stdout)
+import           System.TaskPipeline.ATask (ATask(..))
+
 
 -- | Scribe parameters for Logger. Define a severity threshold and a verbosity level.
 data LoggerScribeParams = LoggerScribeParams
@@ -41,8 +43,26 @@ runLogger _ x = do
     bracket mkLogEnv (liftIO . closeScribes) $ \le ->
         runKatipContextT le () "main" $ x
 
--- | 'Loc'-tagged logging when using template-haskell.
---
--- @$(log) InfoS "Hello world"@
-log :: ExpQ
-log = logTM
+-- -- | 'Loc'-tagged logging when using template-haskell.
+-- --
+-- -- @$(log) InfoS "Hello world"@
+-- log :: ExpQ
+-- log = logTM
+
+-- | Adds some context that will be used at logging time. See 'katipAddContext'
+addContextToTask
+  :: (KatipContext m, LogItem i)
+  => i              -- ^ The context
+  -> ATask m n a b  -- ^ The task to wrap
+  -> ATask m n a b
+addContextToTask item (ATask tree fn) =
+  ATask tree $ katipAddContext item . fn
+
+-- | Adds a namespace to the task. See 'katipAddNamespace'
+addNamespaceToTask 
+  :: (KatipContext m)
+  => Namespace     -- ^ The namespace. (Is IsString instance)
+  -> ATask m n a b -- ^ The task to wrap
+  -> ATask m n a b
+addNamespaceToTask ns (ATask tree fn) =
+  ATask tree $ katipAddNamespace ns . fn
