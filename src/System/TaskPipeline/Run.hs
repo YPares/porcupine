@@ -13,11 +13,11 @@ import           Control.Monad.Catch
 import           Control.Monad.IO.Class
 import           Data.Locations
 import           Data.Maybe
-import           Katip                     (KatipContext, KatipContextT)
+import           Katip                      (KatipContext, KatipContextT)
 import           System.Exit
-import           System.TaskPipeline.Logger             (defaultLoggerScribeParams,
-                                            runLogger)
 import           System.TaskPipeline.CLI
+import           System.TaskPipeline.Logger (defaultLoggerScribeParams,
+                                             runLogger)
 import           System.TaskPipeline.Tasks
 
 

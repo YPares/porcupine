@@ -32,9 +32,9 @@ import qualified Data.Yaml                          as Y
 import           Options.Applicative
 import           System.Directory
 import           System.Environment                 (getArgs, withArgs)
-import           System.TaskPipeline.Logger                      (LoggerScribeParams (..),
-                                                     Severity (..))
 import           System.TaskPipeline.CLI.Overriding
+import           System.TaskPipeline.Logger         (LoggerScribeParams (..),
+                                                     Severity (..))
 
 
 -- | How to print a 'LocationTree' or its mappings on stdout

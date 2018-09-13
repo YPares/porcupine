@@ -12,11 +12,11 @@ module System.TaskPipeline.Logger
   , addNamespaceToTask
   ) where
 
-import           Control.Monad.Catch     (MonadMask, bracket)
-import           Control.Monad.IO.Class  (MonadIO, liftIO)
+import           Control.Monad.Catch       (MonadMask, bracket)
+import           Control.Monad.IO.Class    (MonadIO, liftIO)
 import           Katip
-import           System.IO               (stdout)
-import           System.TaskPipeline.ATask (ATask(..))
+import           System.IO                 (stdout)
+import           System.TaskPipeline.ATask (ATask (..))
 
 
 -- | Scribe parameters for Logger. Define a severity threshold and a verbosity level.
@@ -59,7 +59,7 @@ addContextToTask item (ATask tree fn) =
   ATask tree $ katipAddContext item . fn
 
 -- | Adds a namespace to the task. See 'katipAddNamespace'
-addNamespaceToTask 
+addNamespaceToTask
   :: (KatipContext m)
   => Namespace     -- ^ The namespace. (Is IsString instance)
   -> ATask m n a b -- ^ The task to wrap

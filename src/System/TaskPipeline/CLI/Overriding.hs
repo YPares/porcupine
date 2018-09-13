@@ -16,16 +16,16 @@ module System.TaskPipeline.CLI.Overriding
 
 import           Control.Applicative
 import           Control.Monad
-import qualified Data.Aeson              as A
+import qualified Data.Aeson                 as A
 import           Data.DocRecord
 import           Data.DocRecord.OptParse
-import qualified Data.HashMap.Lazy       as HashMap
-import qualified Data.Text               as T
-import qualified Data.Text.Encoding      as T
-import qualified Data.Yaml               as Y
+import qualified Data.HashMap.Lazy          as HashMap
+import qualified Data.Text                  as T
+import qualified Data.Text.Encoding         as T
+import qualified Data.Yaml                  as Y
 import           Options.Applicative
-import           System.TaskPipeline.Logger           (LoggerScribeParams (..),
-                                          Severity (..), Verbosity (..))
+import           System.TaskPipeline.Logger (LoggerScribeParams (..),
+                                             Severity (..), Verbosity (..))
 
 -- | How to override a YAML file config from the command-line
 data CLIOverriding cfg overrides = CLIOverriding
