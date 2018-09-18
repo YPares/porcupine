@@ -20,6 +20,7 @@ import qualified Data.Map                     as Map
 import           Data.Representable
 import qualified Data.Text                    as T
 import           GHC.Generics
+import qualified Katip as K
 
 
 -- | Some locs will allow several serialization methods to be used, but often we
@@ -79,6 +80,13 @@ class (SerializationMethod serial) => SerializesWith serial a where
 class (SerializationMethod serial) => DeserializesWith serial a where
   loadFromLoc  :: (LocationMonad m) => serial -> Loc -> m a
 
+-- | Writes a file and logs the information about the write
+persistAndLog :: (SerializesWith serial a, LocationMonad m, K.KatipContext m)
+              => serial -> a -> Loc -> m ()
+persistAndLog s a l = do
+  persistAtLoc s a l
+  K.logFM K.NoticeS $ K.logStr $ "Wrote file '" ++ show l ++ "'"
+
 -- | Has 'SerializesWith' & 'DeserializesWith' instances that permits to
 -- store/load JSON files through a 'LocationMonad'
 data JSONSerial = JSONSerial
@@ -93,7 +101,6 @@ instance SerializationMethod JSONSerial where
 instance (ToJSON a) => SerializesWith JSONSerial a where
   persistAtLoc _ x loc = do
     Loc.writeLazyByte loc $ A.encode x
-    Loc.logMsg $ "The file " <> show loc <> " has been saved"
 
 instance (FromJSON a) => DeserializesWith JSONSerial a where
   loadFromLoc _ loc =
