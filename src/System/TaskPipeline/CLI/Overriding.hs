@@ -43,14 +43,14 @@ data CLIOverriding cfg overrides = CLIOverriding
 parseScribeParams :: Parser LoggerScribeParams
 parseScribeParams = LoggerScribeParams
   <$> ((option (eitherReader severityParser)
-          (long "severity"
-      ))
+          (  long "severity"
+          <> help "Control exactly which minimal severity level will be logged (used instead of -q)"))
       <|>
       (numToSeverity . length <$>
         (many
           (flag' ()
             (  short 'q'
-            <> help "Don't print configuration (-q) and warnings (-qq)")))))
+            <> help "Print only warnings (-q) or errors (-qq)")))))
   <*> (numToVerbosity . length <$>
         (many
           (flag' ()
@@ -59,7 +59,8 @@ parseScribeParams = LoggerScribeParams
             <> help "Controls the amount of information to display for each logged message"))))
   where
     numToSeverity 0 = InfoS
-    numToSeverity 1 = ErrorS
+    numToSeverity 1 = WarningS
+    numToSeverity 2 = ErrorS
     numToSeverity _ = EmergencyS -- by convention for no output
     severityParser = \case
         "debug" -> Right DebugS
