@@ -65,10 +65,12 @@ parseScribeParams = LoggerScribeParams
     severityParser = \case
         "debug" -> Right DebugS
         "info" -> Right InfoS
+        "notice" -> Right NoticeS
         "warning" -> Right WarningS
         "error" -> Right ErrorS
         "critical" -> Right CriticalS
-        "none" -> Right EmergencyS -- by convention for no output
+        "alert" -> Right AlertS
+        "emergency" -> Right EmergencyS -- by convention for no output
         s -> Left $ s ++ " isn't a valid severity level"
     numToVerbosity 0 = V0
     numToVerbosity 1 = V0
