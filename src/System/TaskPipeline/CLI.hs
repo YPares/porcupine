@@ -204,7 +204,7 @@ handleOptions progName configFile mbCfg defCfg cliOverriding mbCmd saveOverrides
                   (if saveOverridesAlong
                      then [PostParsingWrite configFile cfgOverriden]
                      else []) ++
-                  [PostParsingLog InfoS $ logStr $ "Running `" <> T.pack progName
+                  [PostParsingLog DebugS $ logStr $ "Running `" <> T.pack progName
                       <> " " <> T.pack cmdShown <> "' with the following config:\n"
                       <> T.decodeUtf8 (Y.encode cfgOverriden)]
             in (Just (cfgOverriden, cmd), lsp, actions)
