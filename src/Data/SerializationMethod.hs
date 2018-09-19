@@ -14,6 +14,7 @@ import           Control.Monad.Catch
 import           Data.Aeson                   as A
 import           Data.Binary
 import           Data.Default
+import           Data.Functor.Contravariant
 import           Data.Locations.Loc           as Loc
 import           Data.Locations.LocationMonad as Loc
 import qualified Data.Map                     as Map
@@ -116,33 +117,55 @@ instance (FromJSON a) => DeserializesWith JSONSerial a where
 -- serials for a type of data
 
 data SomeSerialFor a
-  = forall s. (SerializesWith s a) => SomeSerial s
-data SomeDeserialFor a
-  = forall s. (DeserializesWith s a) => SomeDeserial s
+  = forall s b. (SerializesWith s b) => SomeSerial s (a -> b)
 
-data SerialsFor a = SerialsFor [SomeSerialFor a] [SomeDeserialFor a]
+instance Contravariant SomeSerialFor where
+  contramap f' (SomeSerial s f) = SomeSerial s (f . f')
+
+data SomeDeserialFor a
+  = forall s b. (DeserializesWith s b) => SomeDeserial s (b -> a)
+
+instance Functor SomeDeserialFor where
+  fmap f' (SomeDeserial s f) = SomeDeserial s (f' . f)
+
+-- | Groups together ways to serialize and deserialize some type @a@, either
+-- directly or by embedding transformations through calls to 'contramap'.
+newtype SerialsFor a = SerialsFor [SomeSerialFor a]
+
+instance Contravariant SerialsFor where
+  contramap f (SerialsFor sers) = SerialsFor (map (contramap f) sers)
 
 instance Semigroup (SerialsFor a) where
-  (SerialsFor x y) <> (SerialsFor x' y') = SerialsFor (x++x') (y++y')
+  (SerialsFor x) <> (SerialsFor x') = SerialsFor (x++x')
 instance Monoid (SerialsFor a) where
-  mempty = SerialsFor [] []
+  mempty = SerialsFor []
 
-somePureSerial :: (SerializesWith s a) => s -> SerialsFor a
-somePureSerial s = SerialsFor [SomeSerial s] []
+-- | Groups together ways to deserialize some type @a@, either directly or by
+-- embedding transformations through calls to 'fmap'.
+newtype DeserialsFor a = DeserialsFor [SomeDeserialFor a]
 
-somePureDeserial :: (DeserializesWith s a) => s -> SerialsFor a
-somePureDeserial s = SerialsFor [] [SomeDeserial s]
+instance Functor DeserialsFor where
+  fmap f (DeserialsFor desers) = DeserialsFor (map (fmap f) desers)
 
-someSerial :: (SerializesWith s a, DeserializesWith s a) => s -> SerialsFor a
-someSerial s = SerialsFor [SomeSerial s] [SomeDeserial s]
+instance Semigroup (DeserialsFor a) where
+  (DeserialsFor x) <> (DeserialsFor x') = DeserialsFor (x++x')
+instance Monoid (DeserialsFor a) where
+  mempty = DeserialsFor []
+
+someSerial :: (SerializesWith s a) => s -> SerialsFor a
+someSerial s = SerialsFor [SomeSerial s id]
+
+someDeserial :: (DeserializesWith s a) => s -> DeserialsFor a
+someDeserial s = DeserialsFor [SomeDeserial s id]
 
 indexSerialsByFileType :: SerialsFor a -> Map.Map SerialMethod (SomeSerialFor a)
-indexSerialsByFileType (SerialsFor l _) = Map.fromList $
-  map (\s@(SomeSerial s') -> (associatedFileType s', s)) l
+indexSerialsByFileType (SerialsFor l) = Map.fromList $
+  map (\s@(SomeSerial s' _) -> (associatedFileType s', s)) l
 
-indexDeserialsByFileType :: SerialsFor a -> Map.Map SerialMethod (SomeDeserialFor a)
-indexDeserialsByFileType (SerialsFor _ l) = Map.fromList $
-  map (\s@(SomeDeserial s') -> (associatedFileType s', s)) l
+indexDeserialsByFileType :: DeserialsFor a -> Map.Map SerialMethod (SomeDeserialFor a)
+indexDeserialsByFileType (DeserialsFor l) = Map.fromList $
+  map (\s@(SomeDeserial s' _) -> (associatedFileType s', s)) l
 
 class HasSerializationMethods a where
   allSerialsFor :: a -> SerialsFor a
+  allDeserialsFor :: a -> DeserialsFor a

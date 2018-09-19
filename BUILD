@@ -25,6 +25,7 @@ haskell_library(
             "//hackage:conduit",
             "//hackage:conduit-extra",
             "//hackage:containers",
+	    "//hackage:contravariant",
             "//hackage:data-default",
             "//hackage:deepseq",
             "//hackage:directory",
