@@ -55,10 +55,8 @@ loadDataTask path fname taskName =
   layeredAccessTask path (defFileType <$ fname) taskName run
   where
     (deserials, defFileType) = case fname of
-      _ :/ LocationTree{_locTreeNodeTag=ss@(DeserialsFor d)} ->
-        (indexDeserialsByFileType ss, case d of
-          [] -> error "loadDataTask: No deserialization method found. At least one is needed here."
-          SomeDeserial x _:_ -> associatedFileType x)
+      _ :/ LocationTree{_locTreeNodeTag=ss} ->
+        (indexDeserialsByFileType ss, firstDeserialsFileType ss)
     run ft = do
       deserial <- Map.lookup ft deserials
       return $ \f' loc -> case deserial of
@@ -78,10 +76,8 @@ writeDataTask path fname taskName =
   layeredAccessTask path (defFileType <$ fname) taskName run
   where
     (serials, defFileType) = case fname of
-      _ :/ LocationTree{_locTreeNodeTag=ss@(SerialsFor s)} ->
-        (indexSerialsByFileType ss, case s of
-          [] -> error "writeDataTask: No serialization method found. At least one is needed here."
-          SomeSerial x _:_ -> associatedFileType x)
+      _ :/ LocationTree{_locTreeNodeTag=ss} ->
+        (indexSerialsByFileType ss, firstSerialsFileType ss)
     run ft = do
       serial <- Map.lookup ft serials
       return $ \input loc -> case serial of

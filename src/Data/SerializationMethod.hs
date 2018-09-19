@@ -128,35 +128,33 @@ data SomeDeserialFor a
 instance Functor SomeDeserialFor where
   fmap f' (SomeDeserial s f) = SomeDeserial s (f' . f)
 
--- | Groups together ways to serialize and deserialize some type @a@, either
--- directly or by embedding transformations through calls to 'contramap'.
-newtype SerialsFor a = SerialsFor [SomeSerialFor a]
+-- | Groups together ways to serialize some type @a@, either directly or by
+-- embedding transformations through calls to 'contramap'.
+data SerialsFor a = SerialsFor (SomeSerialFor a) [SomeSerialFor a]
 
 instance Contravariant SerialsFor where
-  contramap f (SerialsFor sers) = SerialsFor (map (contramap f) sers)
+  contramap f (SerialsFor s1 sers) =
+    SerialsFor (contramap f s1) (map (contramap f) sers)
 
 instance Semigroup (SerialsFor a) where
-  (SerialsFor x) <> (SerialsFor x') = SerialsFor (x++x')
-instance Monoid (SerialsFor a) where
-  mempty = SerialsFor []
+  (SerialsFor s1 ss1) <> (SerialsFor s2 ss2) = SerialsFor s1 (ss1 ++ [s2] ++ ss2)
 
 -- | Groups together ways to deserialize some type @a@, either directly or by
 -- embedding transformations through calls to 'fmap'.
-newtype DeserialsFor a = DeserialsFor [SomeDeserialFor a]
+data DeserialsFor a = DeserialsFor (SomeDeserialFor a) [SomeDeserialFor a]
 
 instance Functor DeserialsFor where
-  fmap f (DeserialsFor desers) = DeserialsFor (map (fmap f) desers)
+  fmap f (DeserialsFor d1 desers) =
+    DeserialsFor (fmap f d1) (map (fmap f) desers)
 
 instance Semigroup (DeserialsFor a) where
-  (DeserialsFor x) <> (DeserialsFor x') = DeserialsFor (x++x')
-instance Monoid (DeserialsFor a) where
-  mempty = DeserialsFor []
+  (DeserialsFor s1 ss1) <> (DeserialsFor s2 ss2) = DeserialsFor s1 (ss1 ++ [s2] ++ ss2)
 
 someSerial :: (SerializesWith s a) => s -> SerialsFor a
-someSerial s = SerialsFor [SomeSerial s id]
+someSerial s = SerialsFor (SomeSerial s id) []
 
 someDeserial :: (DeserializesWith s a) => s -> DeserialsFor a
-someDeserial s = DeserialsFor [SomeDeserial s id]
+someDeserial s = DeserialsFor (SomeDeserial s id) []
 
 class HasSerializationMethods a where
   allSerialsFor :: a -> SerialsFor a
@@ -166,17 +164,15 @@ class HasSerializationMethods a where
 -- * Functions for compatiblity with part of the API still using 'SerialMethod'.
 
 indexSerialsByFileType :: SerialsFor a -> Map.Map SerialMethod (SomeSerialFor a)
-indexSerialsByFileType (SerialsFor l) = Map.fromList $
-  map (\s@(SomeSerial s' _) -> (associatedFileType s', s)) l
+indexSerialsByFileType (SerialsFor l1 ll) = Map.fromList $
+  map (\s@(SomeSerial s' _) -> (associatedFileType s', s)) (l1:ll)
 
 indexDeserialsByFileType :: DeserialsFor a -> Map.Map SerialMethod (SomeDeserialFor a)
-indexDeserialsByFileType (DeserialsFor l) = Map.fromList $
-  map (\s@(SomeDeserial s' _) -> (associatedFileType s', s)) l
+indexDeserialsByFileType (DeserialsFor l1 ll) = Map.fromList $
+  map (\s@(SomeDeserial s' _) -> (associatedFileType s', s)) (l1:ll)
 
 firstSerialsFileType :: SerialsFor a -> SerialMethod
-firstSerialsFileType (SerialsFor []) = error "NO SERIAL METHOD"
-firstSerialsFileType (SerialsFor (SomeSerial s _:_)) = associatedFileType s
+firstSerialsFileType (SerialsFor (SomeSerial s _) _) = associatedFileType s
 
 firstDeserialsFileType :: DeserialsFor a -> SerialMethod
-firstDeserialsFileType (DeserialsFor []) = error "NO SERIAL METHOD"
-firstDeserialsFileType (DeserialsFor (SomeDeserial s _:_)) = associatedFileType s
+firstDeserialsFileType (DeserialsFor (SomeDeserial s _) _) = associatedFileType s
