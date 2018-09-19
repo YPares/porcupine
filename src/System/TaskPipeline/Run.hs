@@ -1,4 +1,6 @@
-{-# LANGUAGE RankNTypes #-}
+{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE RankNTypes        #-}
+{-# LANGUAGE TemplateHaskell   #-}
 
 module System.TaskPipeline.Run
   ( PipelineConfigMethod(..)
@@ -9,11 +11,13 @@ module System.TaskPipeline.Run
   , runPipelineCommandOnATask
   ) where
 
+import           Control.Monad
 import           Control.Monad.Catch
 import           Control.Monad.IO.Class
 import           Data.Locations
 import           Data.Maybe
-import           Katip                      (KatipContext, KatipContextT)
+import           Katip                      (KatipContext, KatipContextT,
+                                             katipAddNamespace, logStr, logTM)
 import           System.Exit
 import           System.TaskPipeline.CLI
 import           System.TaskPipeline.Logger (defaultLoggerScribeParams,
@@ -80,7 +84,7 @@ getTaskTree (ATask t _) = t
 
 -- | Runs the required 'PipelineCommand' on an 'ATask'
 runPipelineCommandOnATask
-  :: (LocationMonad m)
+  :: (LocationMonad m, KatipContext m)
   => ATask m PipelineResource i o
   -> i
   -> PipelineCommand (o, RscAccessTree BoundPipelineResource)
@@ -113,15 +117,18 @@ bindResourceTreeAndRun _ (NoConfig root) tree f =
       f RunPipeline $
         applyMappingsToResourceTree' tree (Left root)
 bindResourceTreeAndRun progName (FullConfig defConfigFile defRoot) tree f =
-  withCliParser progName getParser run
+  withCliParser progName "Run a task pipeline" getParser run
   where
     getParser mbConfigFile =
       pipelineCliParser rscTreeBasedCLIOverriding progName
         (fromMaybe defConfigFile mbConfigFile)
         (ResourceTreeAndMappings tree $ Left defRoot)
-    run (tam@(ResourceTreeAndMappings _ mappings'), cmd, lsp) =
+    run tam@(ResourceTreeAndMappings _ mappings') cmd lsp logItems =
       selectRun refLoc True $
-        runLogger lsp $
+        runLogger lsp $ do
+          katipAddNamespace "pipelineConfig" $
+            forM_ logItems $ \(lvl, msg) ->
+              $(logTM) lvl msg
           f cmd $ applyMappingsToResourceTree tam
       where
         refLoc = case mappings' of

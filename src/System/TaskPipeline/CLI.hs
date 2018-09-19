@@ -1,7 +1,8 @@
-{-# LANGUAGE GADTs             #-}
-{-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE RankNTypes        #-}
-{-# LANGUAGE TupleSections     #-}
+{-# LANGUAGE ExistentialQuantification #-}
+{-# LANGUAGE GADTs                     #-}
+{-# LANGUAGE OverloadedStrings         #-}
+{-# LANGUAGE RankNTypes                #-}
+{-# LANGUAGE TupleSections             #-}
 {-# OPTIONS_GHC -Wall          #-}
 
 module System.TaskPipeline.CLI
@@ -9,6 +10,7 @@ module System.TaskPipeline.CLI
   , PipelineCommand(..)
   , PipelineConfigMethod(..)
   , LocTreeLayout(..)
+  , PostParsingAction(..)
   , cliYamlParser
   , execCliParser
   , withCliParser
@@ -19,7 +21,6 @@ module System.TaskPipeline.CLI
   ) where
 
 import           Control.Lens
-import           Control.Monad
 import           Control.Monad.IO.Class
 import           Data.Aeson
 import           Data.Char                          (toLower)
@@ -27,14 +28,13 @@ import qualified Data.HashMap.Lazy                  as HashMap
 import           Data.Locations
 import qualified Data.Text                          as T
 import qualified Data.Text.Encoding                 as T
-import qualified Data.Text.IO                       as T
 import qualified Data.Yaml                          as Y
+import           Katip
 import           Options.Applicative
 import           System.Directory
 import           System.Environment                 (getArgs, withArgs)
 import           System.TaskPipeline.CLI.Overriding
-import           System.TaskPipeline.Logger         (LoggerScribeParams (..),
-                                                     Severity (..))
+import           System.TaskPipeline.Logger
 
 
 -- | How to print a 'LocationTree' or its mappings on stdout
@@ -67,15 +67,23 @@ pipelineConfigMethodDefRoot f (NoConfig r    ) = NoConfig <$> f r
 withCliParser
   :: (Monoid r)
   => String
-  -> (Maybe FilePath -> IO (Parser (Maybe (a, PipelineCommand r, LoggerScribeParams), IO ())))
-  -> ((a, PipelineCommand r, LoggerScribeParams) -> IO r)
+  -> String
+  -> (Maybe FilePath
+      -> IO (Parser (Maybe (a, cmd), LoggerScribeParams, [PostParsingAction])))
+  -> (a -> cmd -> LoggerScribeParams -> [(Severity, LogStr)] -> IO r)
   -> IO r
-withCliParser progName cliParser f = do
-  mbArgs <- tryGetConfigFileOnCLI $ \yamlFile ->
-    cliParser yamlFile >>= execCliParser progName "Run a task pipeline"
+withCliParser progName progDesc_ cliParser f = do
+  (mbArgs, lsp, actions) <- tryGetConfigFileOnCLI $ \yamlFile ->
+    cliParser yamlFile >>= execCliParser progName progDesc_
+  logItems <- mapM processAction actions
   case mbArgs of
-    Just a  -> f a
-    Nothing -> return mempty
+    Just (cfg, cmd) -> f cfg cmd lsp logItems
+    Nothing         -> return mempty
+ where
+   processAction (PostParsingLog s l) = return (s, l)
+   processAction (PostParsingWrite yamlFile cfg) = do
+     Y.encodeFile yamlFile cfg
+     return (NoticeS, logStr $ "Wrote file '" ++ yamlFile ++ "'")
 
 -- | Creates a command line parser that will return an action returning the
 -- configuration and the chosen subcommand or Nothing if the user simply asked
@@ -89,7 +97,7 @@ cliYamlParser
   -> CLIOverriding cfg overrides
   -> [(Parser cmd, String, String)]  -- ^ [(Parser cmd, Command repr, Command help string)]
   -> cmd                      -- ^ Default command
-  -> IO (Parser (Maybe (cfg, cmd, LoggerScribeParams), IO ()))
+  -> IO (Parser (Maybe (cfg, cmd), LoggerScribeParams, [PostParsingAction]))
 cliYamlParser progName configFile defCfg inputParsing cmds defCmd = do
   yamlFound <- doesFileExist configFile
   mcfg <- if yamlFound
@@ -106,16 +114,14 @@ cliYamlParser progName configFile defCfg inputParsing cmds defCmd = do
 execCliParser
   :: String
   -> String
-  -> Parser (a, IO ())
+  -> Parser a
   -> IO a
 execCliParser header_ progDesc_ parser_ = do
   let opts = info (helper <*> parser_)
         ( fullDesc
           <> header header_
           <> progDesc progDesc_ )
-  (res, actions) <- execParser opts
-  actions
-  return res
+  execParser opts
 
 pureCliParser
   :: (ToJSON cfg)
@@ -126,13 +132,14 @@ pureCliParser
   -> CLIOverriding cfg overrides
   -> [(Parser cmd, String, String)]  -- ^ [(Parser cmd, Command repr, Command help string)]
   -> cmd                      -- ^ Default command
-  -> Parser (Maybe (cfg, cmd, LoggerScribeParams), IO ()) -- ^ (Config and command, actions to run to
-                                      -- override the yaml file)
+  -> Parser (Maybe (cfg, cmd), LoggerScribeParams, [PostParsingAction])
+                              -- ^ (Config and command, actions to run to
+                              -- override the yaml file)
 pureCliParser progName mcfg configFile defCfg cfgCLIParsing cmds defCmd =
   subparser
   ( command "write-config-template"
     (info
-      (pure (Nothing, writeConfigFile configFile defCfg))
+      (pure (Nothing, defaultLoggerScribeParams, [PostParsingWrite configFile defCfg]))
       (progDesc $ "Write a default configuration file in " <> configFile)))
   <|>
   handleOptions progName configFile mcfg defCfg cliOverriding <$>
@@ -153,10 +160,12 @@ pureCliParser progName mcfg configFile defCfg cfgCLIParsing cmds defCmd =
    overridesParser cliOverriding
   where cliOverriding = addScribeParamsParsing cfgCLIParsing
 
-writeConfigFile :: ToJSON f => String -> f -> IO ()
-writeConfigFile configFile cfg = do
-  Y.encodeFile configFile cfg
-  putStrLn $ "Wrote " <> configFile
+-- | Some action to be carried out after the parser is done. Writing the config
+-- file is done here, as is the logging of config.
+data PostParsingAction
+  = PostParsingLog Severity LogStr  -- ^ Log a message
+  | forall a. (ToJSON a) => PostParsingWrite String a  -- ^ Write to a file and
+                                                       -- log a message about it
 
 handleOptions
   :: forall cfg cmd overrides.
@@ -169,38 +178,36 @@ handleOptions
   -> Maybe (cmd, String) -- ^ Command to run (and a name/description for it)
   -> Bool -- ^ Whether to save the overrides
   -> (LoggerScribeParams, overrides) -- ^ overrides
-  -> (Maybe (cfg, cmd, LoggerScribeParams), IO ())  -- ^ (Config and command, actions to run to
-                                -- override the yaml file)
+  -> (Maybe (cfg, cmd), LoggerScribeParams, [PostParsingAction])
+                          -- ^ (Config and command, actions to run to override
+                          -- the yaml file)
 handleOptions progName _ Nothing _ _ Nothing _ _ = error $
   "No config found and nothing to save. Please run `" ++ progName ++ " write-config-template' first."
 handleOptions progName configFile mbCfg defCfg cliOverriding mbCmd saveOverridesAlong overrides =
   let defaultCfg = toJSON defCfg
       (cfgWarnings, cfg) = case mbCfg of
         Just c -> mergeWithDefault [] defaultCfg c
-        Nothing -> ([configFile ++ " is not found. Treated as empty."]
+        Nothing -> ([PostParsingLog NoticeS $ logStr $
+                      configFile ++ " is not found. Treated as empty."]
                    ,defaultCfg)
       (overrideWarnings, mbScribeParamsAndCfgOverriden) =
         overrideCfgFromYamlFile cliOverriding cfg overrides
+      allWarnings = cfgWarnings ++ map (PostParsingLog WarningS . logStr) overrideWarnings
   in case mbScribeParamsAndCfgOverriden of
     Right (lsp, cfgOverriden) ->
-      let quietness = loggerSeverityThreshold lsp
-          warningActions =
-            when (quietness <= WarningS) $ do
-            forM_ (cfgWarnings ++ overrideWarnings) $
-              putStrLn . ("WARNING: "++)
-      in case mbCmd of
-          Nothing -> (Nothing, do warningActions
-                                  writeConfigFile configFile cfgOverriden)
-          Just (cmd, cmdShown) ->
-            let actions = do
-                  warningActions
-                  when saveOverridesAlong $
-                    writeConfigFile configFile cfgOverriden
-                  when (quietness <= InfoS) $ do
-                    T.putStrLn $ "### Running `" <> T.pack progName
-                      <> " " <> T.pack cmdShown <> "' with the following config: ###\n"
-                      <> T.decodeUtf8 (Y.encode cfgOverriden)
-            in (Just (cfgOverriden, cmd, lsp), actions)
+      case mbCmd of
+        Nothing -> (Nothing, lsp, allWarnings ++
+                                  [PostParsingWrite configFile cfgOverriden])
+        Just (cmd, cmdShown) ->
+            let actions =
+                  allWarnings ++
+                  (if saveOverridesAlong
+                     then [PostParsingWrite configFile cfgOverriden]
+                     else []) ++
+                  [PostParsingLog DebugS $ logStr $ "Running `" <> T.pack progName
+                      <> " " <> T.pack cmdShown <> "' with the following config:\n"
+                      <> T.decodeUtf8 (Y.encode cfgOverriden)]
+            in (Just (cfgOverriden, cmd), lsp, actions)
     Left err -> dispErr err
   where
     dispErr err = error $
@@ -208,10 +215,10 @@ handleOptions progName configFile mbCfg defCfg cliOverriding mbCmd saveOverrides
        then "C"
        else "Overriden c") ++ "onfig from " <> configFile <> " is not valid:\n  " ++ err
 
-mergeWithDefault :: [T.Text] -> Y.Value -> Y.Value -> ([String], Y.Value)
+mergeWithDefault :: [T.Text] -> Y.Value -> Y.Value -> ([PostParsingAction], Y.Value)
 mergeWithDefault path (Object o1) (Object o2) =
   let newKeys = fmap fst . HashMap.toList $ HashMap.difference o2 o1
-      warnings = fmap (\key -> T.unpack $
+      warnings = fmap (\key -> PostParsingLog WarningS $ logStr $
                     "The key " <> T.intercalate "." (key:path) <>
                     "is present in the config but not in the schema." <>
                     "This is probably an error")
@@ -259,7 +266,7 @@ pipelineCliParser
   -> String
   -> FilePath
   -> cfg
-  -> IO (Parser (Maybe (cfg, PipelineCommand r, LoggerScribeParams), IO ()))
+  -> IO (Parser (Maybe (cfg, PipelineCommand r), LoggerScribeParams, [PostParsingAction]))
 pipelineCliParser getCliOverriding progName configFile defCfg =
   cliYamlParser progName configFile defCfg (getCliOverriding defCfg)
   [(pure RunPipeline, "run", "Run the pipeline")
