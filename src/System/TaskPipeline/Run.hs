@@ -16,8 +16,7 @@ import           Control.Monad.Catch
 import           Control.Monad.IO.Class
 import           Data.Locations
 import           Data.Maybe
-import           Katip                      (KatipContext, KatipContextT,
-                                             katipAddNamespace, logStr, logTM)
+import           Katip                      hiding (logMsg)
 import           System.Exit
 import           System.TaskPipeline.CLI
 import           System.TaskPipeline.Logger (defaultLoggerScribeParams,
@@ -84,7 +83,7 @@ getTaskTree (ATask t _) = t
 
 -- | Runs the required 'PipelineCommand' on an 'ATask'
 runPipelineCommandOnATask
-  :: (LocationMonad m, KatipContext m)
+  :: (LocationMonad m)
   => ATask m PipelineResource i o
   -> i
   -> PipelineCommand (o, RscAccessTree BoundPipelineResource)

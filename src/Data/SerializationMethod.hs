@@ -20,7 +20,7 @@ import qualified Data.Map                     as Map
 import           Data.Representable
 import qualified Data.Text                    as T
 import           GHC.Generics
-import qualified Katip as K
+import qualified Katip                        as K
 
 
 -- | Some locs will allow several serialization methods to be used, but often we
