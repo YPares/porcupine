@@ -68,7 +68,7 @@ instance Show RetrievingError where
     "Error while decoding file " <> show loc <> ": " <> T.unpack msg
 
 
-class (Default serial) => SerializationMethod serial where
+class (Default serial, Representable serial) => SerializationMethod serial where
   canSerializeAtLoc :: serial -> Loc -> Bool
   associatedFileType :: serial -> SerialMethod  -- only temporary, to ease
                                                       -- transition
@@ -94,6 +94,11 @@ data JSONSerial = JSONSerial
 
 instance Default JSONSerial where
   def = JSONSerial
+
+instance Representable JSONSerial where
+  toTextRepr JSONSerial = "json"
+  fromTextRepr "json" = pure JSONSerial
+  fromTextRepr _ = empty
 
 instance SerializationMethod JSONSerial where
   canSerializeAtLoc _ _ = True
@@ -140,6 +145,13 @@ instance Semigroup (SerialsFor a) where
 instance Monoid (SerialsFor a) where
   mempty = SerialsFor []
 
+instance Representable (SerialsFor a) where
+  toTextRepr (SerialsFor (SomeSerial s1 _:_)) = toTextRepr s1
+  toTextRepr (SerialsFor []) = error "SerialsFor can't be empty"
+  fromTextRepr _ = error "NOT IMPLEMENTED"
+    -- Representable should be reworked anyway in the context of extensible
+    -- SerializationMethods.
+
 -- | Groups together ways to deserialize some type @a@, either directly or by
 -- embedding transformations through calls to 'fmap'.
 newtype DeserialsFor a = DeserialsFor [SomeDeserialFor a]
@@ -151,6 +163,14 @@ instance Semigroup (DeserialsFor a) where
   (DeserialsFor x) <> (DeserialsFor x') = DeserialsFor (x++x')
 instance Monoid (DeserialsFor a) where
   mempty = DeserialsFor []
+
+instance Representable (DeserialsFor a) where
+  toTextRepr (DeserialsFor (SomeDeserial s1 _:_)) = toTextRepr s1
+  toTextRepr (DeserialsFor []) = error "DeserialsFor can't be empty"
+  fromTextRepr _ = error "NOT IMPLEMENTED"
+    -- Representable should be reworked anyway in the context of extensible
+    -- SerializationMethods.
+
 
 someSerial :: (SerializesWith s a) => s -> SerialsFor a
 someSerial s = SerialsFor [SomeSerial s id]
