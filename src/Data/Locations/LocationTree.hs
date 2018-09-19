@@ -247,7 +247,7 @@ instance IsString (LTPIAndSubtree ()) where
 
 -- | Get the filename with extension that we are supposed to find at some path
 -- under the 'LocationTree'
-locItemWithExt :: (Representable a) => LTPIAndSubtree a -> String
+locItemWithExt :: LTPIAndSubtree SerialMethod -> String
 locItemWithExt (ltpi :/ n) =
   T.unpack $ _ltpiName ltpi <> "." <> toTextRepr (_locTreeNodeTag n)
 
