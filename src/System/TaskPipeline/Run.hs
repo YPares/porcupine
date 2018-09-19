@@ -90,7 +90,7 @@ runPipelineCommandOnATask (ATask origTree taskFn) input cmd boundTree =
   -- origTree is the bare tree straight from the pipeline
   -- boundTree is origTree after configuration, with options and mappings updated
   case cmd of
-    RunPipeline -> taskFn (input, fmap AccessPending boundTree)
+    RunPipeline -> taskFn (input, fmap (RscAccess 0) boundTree)
     ShowLocTree mode -> do
       logMsg $ case mode of
         NoMappings   -> prettyLocTree origTree
