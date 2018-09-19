@@ -158,6 +158,13 @@ someSerial s = SerialsFor [SomeSerial s id]
 someDeserial :: (DeserializesWith s a) => s -> DeserialsFor a
 someDeserial s = DeserialsFor [SomeDeserial s id]
 
+class HasSerializationMethods a where
+  allSerialsFor :: a -> SerialsFor a
+  allDeserialsFor :: a -> DeserialsFor a
+
+
+-- * Functions for compatiblity with part of the API still using 'SerialMethod'.
+
 indexSerialsByFileType :: SerialsFor a -> Map.Map SerialMethod (SomeSerialFor a)
 indexSerialsByFileType (SerialsFor l) = Map.fromList $
   map (\s@(SomeSerial s' _) -> (associatedFileType s', s)) l
@@ -166,6 +173,10 @@ indexDeserialsByFileType :: DeserialsFor a -> Map.Map SerialMethod (SomeDeserial
 indexDeserialsByFileType (DeserialsFor l) = Map.fromList $
   map (\s@(SomeDeserial s' _) -> (associatedFileType s', s)) l
 
-class HasSerializationMethods a where
-  allSerialsFor :: a -> SerialsFor a
-  allDeserialsFor :: a -> DeserialsFor a
+firstSerialsFileType :: SerialsFor a -> SerialMethod
+firstSerialsFileType (SerialsFor []) = error "NO SERIAL METHOD"
+firstSerialsFileType (SerialsFor (SomeSerial s _:_)) = associatedFileType s
+
+firstDeserialsFileType :: DeserialsFor a -> SerialMethod
+firstDeserialsFileType (DeserialsFor []) = error "NO SERIAL METHOD"
+firstDeserialsFileType (DeserialsFor (SomeDeserial s _:_)) = associatedFileType s
