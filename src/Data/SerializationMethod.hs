@@ -7,9 +7,9 @@
 {-# LANGUAGE GADTs                     #-}
 {-# LANGUAGE MultiParamTypeClasses     #-}
 {-# LANGUAGE OverloadedStrings         #-}
-{-# LANGUAGE TypeOperators             #-}
-{-# LANGUAGE TypeFamilies              #-}
 {-# LANGUAGE RankNTypes                #-}
+{-# LANGUAGE TypeFamilies              #-}
+{-# LANGUAGE TypeOperators             #-}
 {-# OPTIONS_GHC -Wall #-}
 
 module Data.SerializationMethod where
