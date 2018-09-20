@@ -5,6 +5,9 @@
 {-# LANGUAGE FlexibleInstances         #-}
 {-# LANGUAGE MultiParamTypeClasses     #-}
 {-# LANGUAGE OverloadedStrings         #-}
+{-# LANGUAGE DataKinds                 #-}
+{-# LANGUAGE GADTs                     #-}
+{-# LANGUAGE TypeOperators             #-}
 {-# OPTIONS_GHC -Wall #-}
 
 module Data.SerializationMethod where
@@ -20,8 +23,10 @@ import           Data.Locations.LocationMonad as Loc
 import qualified Data.Map                     as Map
 import           Data.Representable
 import qualified Data.Text                    as T
+import qualified Data.List.NonEmpty as NE
 import           GHC.Generics
 import qualified Katip                        as K
+import Data.Type.Bool
 
 
 -- | Some locs will allow several serialization methods to be used, but often we
@@ -128,9 +133,23 @@ data SomeDeserialFor a
 instance Functor SomeDeserialFor where
   fmap f' (SomeDeserial s f) = SomeDeserial s (f' . f)
 
--- | Groups together ways to serialize some type @a@, either directly or by
+-- | A list-like type that contains at type level whether it's empty or not
+data TList b a where
+  TList :: NE.NonEmpty a -> TList 'True a
+  TNull :: TList 'False a
+
+tlistConcat :: TList a t -> TList b t -> TList (a || b) t
+tlistConcat TNull TNull = TNull
+tlistConcat (TList ne) TNull = TList ne
+tlistConcat TNull (TList ne) = TList ne
+tlistConcat (TList (a1 NE.:| aa)) (TList (b1 NE.:| bb)) =
+  TList $ a1 NE.:| (aa ++ [b1] ++ bb)
+
+-- | Groups together ways to serialize/deserialize some type @a@, either directly or by
 -- embedding transformations through calls to 'contramap'.
-data SerialsFor a = SerialsFor (SomeSerialFor a) [SomeSerialFor a]
+data SerialsFor a =
+  SerialsFor (SomeSerialFor a) [SomeSerialFor a]
+  -- (TList w (SomeSerialFor a)) (TList r (SomeDeserialFor a))
 
 instance Contravariant SerialsFor where
   contramap f (SerialsFor s1 sers) =
