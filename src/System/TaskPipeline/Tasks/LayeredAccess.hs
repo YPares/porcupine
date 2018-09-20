@@ -1,5 +1,4 @@
 {-# LANGUAGE Arrows                     #-}
-{-# LANGUAGE DataKinds                  #-}
 {-# LANGUAGE ExistentialQuantification  #-}
 {-# LANGUAGE FlexibleContexts           #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
@@ -18,13 +17,19 @@ module System.TaskPipeline.Tasks.LayeredAccess
   , layeredAccessTask'
   , loadDataTask
   , writeDataTask
+
+  -- Re-exports:
+  , SerializationMethod(..), JSONSerial(..), someSerials, somePureSerial, somePureDeserial
+  , addSerials
+  , WritableAndReadable, WritableOnly, ReadableOnly, Writable, Readable
+  , VirtualPath(..)
   ) where
 
 import           Prelude                      hiding (id, (.))
 
 import           Control.Lens
 import           Data.Locations
-import           Data.Locations.LocationTree  (LocationTreePathItem)
+import           Data.Locations.LocationTree  (LocationTreePathItem, VirtualPath(..))
 import qualified Data.Map                     as Map
 import           Data.SerializationMethod
 import qualified Katip                        as K
@@ -40,7 +45,7 @@ import           System.TaskPipeline.Resource
 -- found in the config before every task is ran.
 loadDataTask
   :: (LocationMonad m, K.KatipContext m, Monoid b)
-  => VirtualPath w 'True a  -- ^ File in folder, with the supported
+  => VirtualPath (Readable t) a  -- ^ File in folder, with the supported
                             -- 'SerializationMethod's of the data that should be
                             -- loaded from it. Default serial method will be the
                             -- first.
@@ -68,7 +73,7 @@ loadDataTask vp taskName =
 
 writeDataTask
   :: (LocationMonad m, K.KatipContext m)
-  => VirtualPath 'True r a  -- ^ File in folder, with the supported
+  => VirtualPath (Writable t) a  -- ^ File in folder, with the supported
                             -- 'SerializationMethod's of the data that should be
                             -- loaded from it. Default serial method will be the
                             -- first.

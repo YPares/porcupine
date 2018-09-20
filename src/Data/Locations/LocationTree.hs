@@ -322,21 +322,23 @@ prettyLocTree t = DT.drawTree t'
 
 
 -- | A virtual path in the location tree associated to
--- serialization/deserialization methods
-data VirtualPath w r a = VirtualPath
+-- serialization/deserialization methods. @rw@ says whether we have the
+-- sufficient serialization/deserialization methods to read and/or write from
+-- that location.
+data VirtualPath rw a = VirtualPath
   { virtualPathLocation :: [LocationTreePathItem]
-  , virtualPathSerials  :: SerialsFor w r a }
+  , virtualPathSerials  :: SerialsFor rw a }
 
 
 -- temporary
-vpDeserialToLTPIs :: VirtualPath w 'True a -> ([LocationTreePathItem], LTPIAndSubtree SerialMethod)
+vpDeserialToLTPIs :: VirtualPath (Readable t) a -> ([LocationTreePathItem], LTPIAndSubtree SerialMethod)
 vpDeserialToLTPIs (VirtualPath [] _) = error "vpDeserialToLTPIs: EMPTY PATH"
 vpDeserialToLTPIs (VirtualPath p s) = (init p, f)
   where
     f = file (last p) (firstPureDeserialFileType s)
 
 -- temporary
-vpSerialToLTPIs :: VirtualPath 'True r a -> ([LocationTreePathItem], LTPIAndSubtree SerialMethod)
+vpSerialToLTPIs :: VirtualPath (Writable t) a -> ([LocationTreePathItem], LTPIAndSubtree SerialMethod)
 vpSerialToLTPIs (VirtualPath [] _) = error "vpSerialToLTPIs: EMPTY PATH"
 vpSerialToLTPIs (VirtualPath p s) = (init p, f)
   where

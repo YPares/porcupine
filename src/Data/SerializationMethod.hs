@@ -8,6 +8,8 @@
 {-# LANGUAGE MultiParamTypeClasses     #-}
 {-# LANGUAGE OverloadedStrings         #-}
 {-# LANGUAGE TypeOperators             #-}
+{-# LANGUAGE TypeFamilies              #-}
+{-# LANGUAGE RankNTypes                #-}
 {-# OPTIONS_GHC -Wall #-}
 
 module Data.SerializationMethod where
@@ -145,49 +147,63 @@ tlistConcat TNull (TList ne) = TList ne
 tlistConcat (TList (a1 :| aa)) (TList (b1 :| bb)) =
   TList $ a1 :| (aa ++ [b1] ++ bb)
 
--- | Groups together ways to serialize/deserialize some type @a@, either directly or by
--- embedding transformations through calls to 'contramap'.
-data SerialsFor w r a =
-  SerialsFor (TList w (SomeSerialFor a)) (TList r (SomeDeserialFor a))
+type family Fst (tup :: (Bool,Bool)) where
+  Fst '(a, b) = a
+type family Snd (tup :: (Bool,Bool)) where
+  Snd '(a, b) = b
 
-instance Contravariant (SerialsFor 'True 'False) where
+type WritableAndReadable = '( 'True, 'True )
+type Writable (r::Bool) = '( 'True, r )
+type Readable (w::Bool) = '( w, 'True )
+type WritableOnly = Writable 'False
+type ReadableOnly = Readable 'False
+
+-- | Groups together ways to serialize/deserialize some type @a@, either
+-- directly or by embedding transformations through calls to 'contramap'. @rw@
+-- is a Bool tuple, but for readability it is supposed to be one of 'Writable t'
+-- (@t@ being left unspecified), 'Readable t', 'WritableAndReadable',
+-- 'WritableOnly' or 'ReadableOnly'.
+data SerialsFor rw a =
+  SerialsFor (TList (Fst rw) (SomeSerialFor a)) (TList (Snd rw) (SomeDeserialFor a))
+
+instance Contravariant (SerialsFor WritableOnly) where
   contramap f (SerialsFor (TList sers) TNull) =
     SerialsFor (TList $ fmap (contramap f) sers) TNull
 
-instance Functor (SerialsFor 'False 'True) where
+instance Functor (SerialsFor ReadableOnly) where
   fmap f (SerialsFor TNull (TList desers)) =
     SerialsFor TNull (TList $ fmap (fmap f) desers)
 
 -- | Combine two lists of serialization/deserialization methods for @a@.
-addSerials :: SerialsFor w r a -> SerialsFor w' r' a -> SerialsFor (w||w') (r||r') a
+addSerials :: SerialsFor '(w1,r1) a -> SerialsFor '(w2,r2) a -> SerialsFor '(w1||w2, r1||r2) a
 addSerials (SerialsFor s d) (SerialsFor s' d') =
   SerialsFor (tlistConcat s s') (tlistConcat d d')
 
-someSerials :: (SerializesWith s a, DeserializesWith s a) => s -> SerialsFor 'True 'True a
+someSerials :: (SerializesWith s a, DeserializesWith s a) => s -> SerialsFor WritableAndReadable a
 someSerials s = somePureSerial s `addSerials` somePureDeserial s
 
-somePureSerial :: (SerializesWith s a) => s -> SerialsFor 'True 'False a
+somePureSerial :: (SerializesWith s a) => s -> SerialsFor WritableOnly a
 somePureSerial s = SerialsFor (TList $ SomeSerial s id :| []) TNull
 
-somePureDeserial :: (DeserializesWith s a) => s -> SerialsFor 'False 'True a
+somePureDeserial :: (DeserializesWith s a) => s -> SerialsFor ReadableOnly a
 somePureDeserial s = SerialsFor TNull (TList $ SomeDeserial s id :| [])
 
-class HasSerializationMethods r w a where
-  allSerialsFor :: a -> SerialsFor r w a
+class HasSerializationMethods rw a where
+  allSerialsFor :: a -> SerialsFor rw a
 
 
 -- * Functions for compatiblity with part of the API still using 'SerialMethod'.
 
-indexPureSerialsByFileType :: SerialsFor 'True r a -> Map.Map SerialMethod (SomeSerialFor a)
+indexPureSerialsByFileType :: SerialsFor (Writable t) a -> Map.Map SerialMethod (SomeSerialFor a)
 indexPureSerialsByFileType (SerialsFor (TList sers) _) = Map.fromList . toList $
   fmap (\s@(SomeSerial s' _) -> (associatedFileType s', s)) sers
 
-indexPureDeserialsByFileType :: SerialsFor w 'True a -> Map.Map SerialMethod (SomeDeserialFor a)
+indexPureDeserialsByFileType :: SerialsFor (Readable t) a -> Map.Map SerialMethod (SomeDeserialFor a)
 indexPureDeserialsByFileType (SerialsFor _ (TList desers)) = Map.fromList . toList $
   fmap (\s@(SomeDeserial s' _) -> (associatedFileType s', s)) desers
 
-firstPureSerialFileType :: SerialsFor 'True r a -> SerialMethod
+firstPureSerialFileType :: SerialsFor (Writable t) a -> SerialMethod
 firstPureSerialFileType (SerialsFor (TList (SomeSerial s _ :| _)) _) = associatedFileType s
 
-firstPureDeserialFileType :: SerialsFor w 'True a -> SerialMethod
+firstPureDeserialFileType :: SerialsFor (Readable t) a -> SerialMethod
 firstPureDeserialFileType (SerialsFor _ (TList (SomeDeserial s _ :| _))) = associatedFileType s
