@@ -38,11 +38,10 @@ import           System.TaskPipeline.Resource
 -- found in the config before every task is ran.
 loadDataTask
   :: (LocationMonad m, Monoid b)
-  => [LocationTreePathItem]   -- ^ Folder path
-  -> LTPIAndSubtree (SerialsFor w 'True a)  -- ^ File in folder, with the supported
-                                    -- 'SerializationMethod's of the data that
-                                    -- should be loaded from it. Default serial
-                                    -- method will be the first.
+  => VirtualPath w 'True a  -- ^ File in folder, with the supported
+                            -- 'SerializationMethod's of the data that should be
+                            -- loaded from it. Default serial method will be the
+                            -- first.
   -> String  -- ^ A name for the task (for the error message if the wanted
              -- 'SerializationMethod' isn't supported)
   -> ATask m PipelineResource (a -> b) b  -- ^ The resulting task takes in input
@@ -52,12 +51,11 @@ loadDataTask
                                           -- to use runtime data to transform
                                           -- the data that is read into a
                                           -- Monoid.
-loadDataTask path fname taskName =
-  layeredAccessTask path (defFileType <$ fname) taskName run
+loadDataTask vp taskName =
+  layeredAccessTask path fname taskName run
   where
-    (deserials, defFileType) = case fname of
-      _ :/ LocationTree{_locTreeNodeTag=ss} ->
-        (indexDeserialsByFileType ss, firstDeserialsFileType ss)
+    (path, fname) = vpDeserialToLTPIs vp
+    deserials = indexPureDeserialsByFileType $ virtualPathSerials vp
     run ft = do
       deserial <- Map.lookup ft deserials
       return $ \f' loc -> case deserial of
@@ -65,20 +63,18 @@ loadDataTask path fname taskName =
 
 writeDataTask
   :: (LocationMonad m)
-  => [LocationTreePathItem]   -- ^ Folder path
-  -> LTPIAndSubtree (SerialsFor 'True r a)  -- ^ File in folder, with the supported
-                                    -- 'SerializationMethod's of the data that
-                                    -- should be loaded from it. Default serial
-                                    -- method will be the first.
+  => VirtualPath 'True r a  -- ^ File in folder, with the supported
+                            -- 'SerializationMethod's of the data that should be
+                            -- loaded from it. Default serial method will be the
+                            -- first.
   -> String  -- ^ A name for the task (for the error message if the wanted
              -- 'SerializationMethod' isn't supported)
   -> ATask m PipelineResource a ()
-writeDataTask path fname taskName =
-  layeredAccessTask path (defFileType <$ fname) taskName run
+writeDataTask vp taskName =
+  layeredAccessTask path fname taskName run
   where
-    (serials, defFileType) = case fname of
-      _ :/ LocationTree{_locTreeNodeTag=ss} ->
-        (indexSerialsByFileType ss, firstSerialsFileType ss)
+    (path, fname) = vpSerialToLTPIs vp
+    serials = indexPureSerialsByFileType $ virtualPathSerials vp
     run ft = do
       serial <- Map.lookup ft serials
       return $ \input loc -> case serial of

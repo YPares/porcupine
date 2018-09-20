@@ -13,6 +13,7 @@
 {-# LANGUAGE TypeSynonymInstances #-}
 {-# LANGUAGE ViewPatterns         #-}
 {-# OPTIONS_GHC -Wall #-}
+{-# LANGUAGE DataKinds                 #-}
 {-# OPTIONS_GHC -fno-warn-type-defaults #-}
 
 -- | Abstraction layer around the filesystem, so that inputs and outputs may be
@@ -23,6 +24,7 @@ module Data.Locations.LocationTree
     LocationTree(..), BareLocationTree
   , LocationTreePathItem(..), LocationTreePath(..)
   , SerialMethod(..), LTPIAndSubtree(..)
+  , VirtualPath(..)
   , (:||)(..), _Unprioritized, _Prioritized
   -- * Functions
   , locTreeNodeTag, locTreeSubfolders
@@ -42,6 +44,7 @@ module Data.Locations.LocationTree
   , locTreeToDataTree
   , prettyLocTree
   , apLocationTree
+  , vpSerialToLTPIs, vpDeserialToLTPIs
   )
 where
 
@@ -316,3 +319,26 @@ prettyLocTree t = DT.drawTree t'
   where
     str (p,n) = T.unpack (_ltpiName p) ++ ": " ++ show n
     t' = fmap str $ locTreeToDataTree t
+
+
+-- | A virtual path in the location tree associated to
+-- serialization/deserialization methods
+data VirtualPath w r a = VirtualPath
+  { virtualPathLocation :: [LocationTreePathItem]
+  , virtualPathSerials :: SerialsFor w r a }
+
+
+-- temporary
+vpDeserialToLTPIs :: VirtualPath w 'True a -> ([LocationTreePathItem], LTPIAndSubtree SerialMethod)
+vpDeserialToLTPIs (VirtualPath [] _) = error "vpDeserialToLTPIs: EMPTY PATH"
+vpDeserialToLTPIs (VirtualPath p s) = (init p, f)
+  where
+    f = file (last p) (firstPureDeserialFileType s)
+
+-- temporary
+vpSerialToLTPIs :: VirtualPath 'True r a -> ([LocationTreePathItem], LTPIAndSubtree SerialMethod)
+vpSerialToLTPIs (VirtualPath [] _) = error "vpSerialToLTPIs: EMPTY PATH"
+vpSerialToLTPIs (VirtualPath p s) = (init p, f)
+  where
+    f = file (last p) (firstPureSerialFileType s)
+

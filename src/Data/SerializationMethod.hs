@@ -178,16 +178,16 @@ class HasSerializationMethods r w a where
 
 -- * Functions for compatiblity with part of the API still using 'SerialMethod'.
 
-indexSerialsByFileType :: SerialsFor 'True r a -> Map.Map SerialMethod (SomeSerialFor a)
-indexSerialsByFileType (SerialsFor (TList sers) _) = Map.fromList . toList $
+indexPureSerialsByFileType :: SerialsFor 'True r a -> Map.Map SerialMethod (SomeSerialFor a)
+indexPureSerialsByFileType (SerialsFor (TList sers) _) = Map.fromList . toList $
   fmap (\s@(SomeSerial s' _) -> (associatedFileType s', s)) sers
 
-indexDeserialsByFileType :: SerialsFor w 'True a -> Map.Map SerialMethod (SomeDeserialFor a)
-indexDeserialsByFileType (SerialsFor _ (TList desers)) = Map.fromList . toList $
+indexPureDeserialsByFileType :: SerialsFor w 'True a -> Map.Map SerialMethod (SomeDeserialFor a)
+indexPureDeserialsByFileType (SerialsFor _ (TList desers)) = Map.fromList . toList $
   fmap (\s@(SomeDeserial s' _) -> (associatedFileType s', s)) desers
 
-firstSerialsFileType :: SerialsFor 'True r a -> SerialMethod
-firstSerialsFileType (SerialsFor (TList (SomeSerial s _ :| _)) _) = associatedFileType s
+firstPureSerialFileType :: SerialsFor 'True r a -> SerialMethod
+firstPureSerialFileType (SerialsFor (TList (SomeSerial s _ :| _)) _) = associatedFileType s
 
-firstDeserialsFileType :: SerialsFor w 'True a -> SerialMethod
-firstDeserialsFileType (SerialsFor _ (TList (SomeDeserial s _ :| _))) = associatedFileType s
+firstPureDeserialFileType :: SerialsFor w 'True a -> SerialMethod
+firstPureDeserialFileType (SerialsFor _ (TList (SomeDeserial s _ :| _))) = associatedFileType s
