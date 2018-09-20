@@ -13,4 +13,3 @@ import           System.TaskPipeline.Logger
 import           System.TaskPipeline.Resource
 import           System.TaskPipeline.Tasks.LayeredAccess
 import           System.TaskPipeline.Tasks.Options
-
