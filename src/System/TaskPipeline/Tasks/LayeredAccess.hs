@@ -23,7 +23,7 @@ module System.TaskPipeline.Tasks.LayeredAccess
   , customPureSerial, customPureDeserial
   , addSerials
   , WritableAndReadable, WritableOnly, ReadableOnly, Writable, Readable
-  , VirtualPath(..)
+  , VirtualFile(..), virtualFile
   , Contravariant(..)
   ) where
 
@@ -33,7 +33,7 @@ import           Control.Lens
 import           Data.Functor.Contravariant   (Contravariant (..))
 import           Data.Locations
 import           Data.Locations.LocationTree  (LocationTreePathItem,
-                                               VirtualPath (..))
+                                               VirtualFile (..))
 import qualified Data.Map                     as Map
 import           Data.SerializationMethod
 import qualified Katip                        as K
@@ -50,7 +50,7 @@ import           System.TaskPipeline.Resource
 -- method found in the config before every task is ran.
 loadDataTask
   :: (LocationMonad m, K.KatipContext m, Monoid b)
-  => VirtualPath (Readable t) a  -- ^ File in folder, with the supported
+  => VirtualFile (Readable t) a  -- ^ File path, with the supported
                             -- 'SerializationMethod's of the data that should be
                             -- loaded from it. Default serial method will be the
                             -- first.
@@ -67,7 +67,7 @@ loadDataTask vp taskName =
   layeredAccessTask path fname taskName run
   where
     (path, fname) = vpDeserialToLTPIs vp
-    deserials = indexPureDeserialsByFileType $ virtualPathSerials vp
+    deserials = indexPureDeserialsByFileType $ vfileSerials vp
     run ft = do
       deserial <- Map.lookup ft deserials
       return $ \f' loc -> do
@@ -79,7 +79,7 @@ loadDataTask vp taskName =
 -- | Writes some data to all the locations bound to a 'VirtualPath'
 writeDataTask
   :: (LocationMonad m, K.KatipContext m)
-  => VirtualPath (Writable t) a  -- ^ File in folder, with the supported
+  => VirtualFile (Writable t) a  -- ^ File path, with the supported
                             -- 'SerializationMethod's of the data that should be
                             -- loaded from it. Default serial method will be the
                             -- first.
@@ -90,7 +90,7 @@ writeDataTask vp taskName =
   layeredAccessTask path fname taskName run
   where
     (path, fname) = vpSerialToLTPIs vp
-    serials = indexPureSerialsByFileType $ virtualPathSerials vp
+    serials = indexPureSerialsByFileType $ vfileSerials vp
     run ft = do
       serial <- Map.lookup ft serials
       return $ \input loc -> do
