@@ -1,4 +1,5 @@
 {-# LANGUAGE Arrows                     #-}
+{-# LANGUAGE DataKinds                  #-}
 {-# LANGUAGE ExistentialQuantification  #-}
 {-# LANGUAGE FlexibleContexts           #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
@@ -38,7 +39,7 @@ import           System.TaskPipeline.Resource
 loadDataTask
   :: (LocationMonad m, Monoid b)
   => [LocationTreePathItem]   -- ^ Folder path
-  -> LTPIAndSubtree (DeserialsFor a)  -- ^ File in folder, with the supported
+  -> LTPIAndSubtree (SerialsFor w 'True a)  -- ^ File in folder, with the supported
                                     -- 'SerializationMethod's of the data that
                                     -- should be loaded from it. Default serial
                                     -- method will be the first.
@@ -65,7 +66,7 @@ loadDataTask path fname taskName =
 writeDataTask
   :: (LocationMonad m)
   => [LocationTreePathItem]   -- ^ Folder path
-  -> LTPIAndSubtree (SerialsFor a)  -- ^ File in folder, with the supported
+  -> LTPIAndSubtree (SerialsFor 'True r a)  -- ^ File in folder, with the supported
                                     -- 'SerializationMethod's of the data that
                                     -- should be loaded from it. Default serial
                                     -- method will be the first.

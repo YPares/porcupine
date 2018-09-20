@@ -1,12 +1,12 @@
+{-# LANGUAGE DataKinds                 #-}
 {-# LANGUAGE DefaultSignatures         #-}
 {-# LANGUAGE DeriveAnyClass            #-}
 {-# LANGUAGE DeriveGeneric             #-}
 {-# LANGUAGE ExistentialQuantification #-}
 {-# LANGUAGE FlexibleInstances         #-}
+{-# LANGUAGE GADTs                     #-}
 {-# LANGUAGE MultiParamTypeClasses     #-}
 {-# LANGUAGE OverloadedStrings         #-}
-{-# LANGUAGE DataKinds                 #-}
-{-# LANGUAGE GADTs                     #-}
 {-# LANGUAGE TypeOperators             #-}
 {-# OPTIONS_GHC -Wall #-}
 
@@ -18,15 +18,15 @@ import           Data.Aeson                   as A
 import           Data.Binary
 import           Data.Default
 import           Data.Functor.Contravariant
+import           Data.List.NonEmpty           (NonEmpty (..), toList)
 import           Data.Locations.Loc           as Loc
 import           Data.Locations.LocationMonad as Loc
 import qualified Data.Map                     as Map
 import           Data.Representable
 import qualified Data.Text                    as T
-import qualified Data.List.NonEmpty as NE
+import           Data.Type.Bool
 import           GHC.Generics
 import qualified Katip                        as K
-import Data.Type.Bool
 
 
 -- | Some locs will allow several serialization methods to be used, but often we
@@ -135,63 +135,59 @@ instance Functor SomeDeserialFor where
 
 -- | A list-like type that contains at type level whether it's empty or not
 data TList b a where
-  TList :: NE.NonEmpty a -> TList 'True a
+  TList :: NonEmpty a -> TList 'True a
   TNull :: TList 'False a
 
 tlistConcat :: TList a t -> TList b t -> TList (a || b) t
 tlistConcat TNull TNull = TNull
 tlistConcat (TList ne) TNull = TList ne
 tlistConcat TNull (TList ne) = TList ne
-tlistConcat (TList (a1 NE.:| aa)) (TList (b1 NE.:| bb)) =
-  TList $ a1 NE.:| (aa ++ [b1] ++ bb)
+tlistConcat (TList (a1 :| aa)) (TList (b1 :| bb)) =
+  TList $ a1 :| (aa ++ [b1] ++ bb)
 
 -- | Groups together ways to serialize/deserialize some type @a@, either directly or by
 -- embedding transformations through calls to 'contramap'.
-data SerialsFor a =
-  SerialsFor (SomeSerialFor a) [SomeSerialFor a]
-  -- (TList w (SomeSerialFor a)) (TList r (SomeDeserialFor a))
+data SerialsFor w r a =
+  SerialsFor (TList w (SomeSerialFor a)) (TList r (SomeDeserialFor a))
 
-instance Contravariant SerialsFor where
-  contramap f (SerialsFor s1 sers) =
-    SerialsFor (contramap f s1) (map (contramap f) sers)
+instance Contravariant (SerialsFor 'True 'False) where
+  contramap f (SerialsFor (TList sers) TNull) =
+    SerialsFor (TList $ fmap (contramap f) sers) TNull
 
-instance Semigroup (SerialsFor a) where
-  (SerialsFor s1 ss1) <> (SerialsFor s2 ss2) = SerialsFor s1 (ss1 ++ [s2] ++ ss2)
+instance Functor (SerialsFor 'False 'True) where
+  fmap f (SerialsFor TNull (TList desers)) =
+    SerialsFor TNull (TList $ fmap (fmap f) desers)
 
--- | Groups together ways to deserialize some type @a@, either directly or by
--- embedding transformations through calls to 'fmap'.
-data DeserialsFor a = DeserialsFor (SomeDeserialFor a) [SomeDeserialFor a]
+-- | Combine two lists of serialization/deserialization methods for @a@.
+addSerials :: SerialsFor w r a -> SerialsFor w' r' a -> SerialsFor (w||w') (r||r') a
+addSerials (SerialsFor s d) (SerialsFor s' d') =
+  SerialsFor (tlistConcat s s') (tlistConcat d d')
 
-instance Functor DeserialsFor where
-  fmap f (DeserialsFor d1 desers) =
-    DeserialsFor (fmap f d1) (map (fmap f) desers)
+someSerials :: (SerializesWith s a, DeserializesWith s a) => s -> SerialsFor 'True 'True a
+someSerials s = somePureSerial s `addSerials` somePureDeserial s
 
-instance Semigroup (DeserialsFor a) where
-  (DeserialsFor s1 ss1) <> (DeserialsFor s2 ss2) = DeserialsFor s1 (ss1 ++ [s2] ++ ss2)
+somePureSerial :: (SerializesWith s a) => s -> SerialsFor 'True 'False a
+somePureSerial s = SerialsFor (TList $ SomeSerial s id :| []) TNull
 
-someSerial :: (SerializesWith s a) => s -> SerialsFor a
-someSerial s = SerialsFor (SomeSerial s id) []
+somePureDeserial :: (DeserializesWith s a) => s -> SerialsFor 'False 'True a
+somePureDeserial s = SerialsFor TNull (TList $ SomeDeserial s id :| [])
 
-someDeserial :: (DeserializesWith s a) => s -> DeserialsFor a
-someDeserial s = DeserialsFor (SomeDeserial s id) []
-
-class HasSerializationMethods a where
-  allSerialsFor :: a -> SerialsFor a
-  allDeserialsFor :: a -> DeserialsFor a
+class HasSerializationMethods r w a where
+  allSerialsFor :: a -> SerialsFor r w a
 
 
 -- * Functions for compatiblity with part of the API still using 'SerialMethod'.
 
-indexSerialsByFileType :: SerialsFor a -> Map.Map SerialMethod (SomeSerialFor a)
-indexSerialsByFileType (SerialsFor l1 ll) = Map.fromList $
-  map (\s@(SomeSerial s' _) -> (associatedFileType s', s)) (l1:ll)
+indexSerialsByFileType :: SerialsFor 'True r a -> Map.Map SerialMethod (SomeSerialFor a)
+indexSerialsByFileType (SerialsFor (TList sers) _) = Map.fromList . toList $
+  fmap (\s@(SomeSerial s' _) -> (associatedFileType s', s)) sers
 
-indexDeserialsByFileType :: DeserialsFor a -> Map.Map SerialMethod (SomeDeserialFor a)
-indexDeserialsByFileType (DeserialsFor l1 ll) = Map.fromList $
-  map (\s@(SomeDeserial s' _) -> (associatedFileType s', s)) (l1:ll)
+indexDeserialsByFileType :: SerialsFor w 'True a -> Map.Map SerialMethod (SomeDeserialFor a)
+indexDeserialsByFileType (SerialsFor _ (TList desers)) = Map.fromList . toList $
+  fmap (\s@(SomeDeserial s' _) -> (associatedFileType s', s)) desers
 
-firstSerialsFileType :: SerialsFor a -> SerialMethod
-firstSerialsFileType (SerialsFor (SomeSerial s _) _) = associatedFileType s
+firstSerialsFileType :: SerialsFor 'True r a -> SerialMethod
+firstSerialsFileType (SerialsFor (TList (SomeSerial s _ :| _)) _) = associatedFileType s
 
-firstDeserialsFileType :: DeserialsFor a -> SerialMethod
-firstDeserialsFileType (DeserialsFor (SomeDeserial s _) _) = associatedFileType s
+firstDeserialsFileType :: SerialsFor w 'True a -> SerialMethod
+firstDeserialsFileType (SerialsFor _ (TList (SomeDeserial s _ :| _))) = associatedFileType s
