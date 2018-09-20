@@ -83,10 +83,10 @@ class SerializationMethod serial where
 -- | Tells whether some type @a@ can be serialized in some location with some
 -- serialization method @serial@.
 class (SerializationMethod serial) => SerializesWith serial a where
-  persistAtLoc :: (LocationMonad m) => serial -> a -> Loc -> m ()
+  persistAtLoc :: (LocationMonad m, MonadThrow m) => serial -> a -> Loc -> m ()
 
 class (SerializationMethod serial) => DeserializesWith serial a where
-  loadFromLoc  :: (LocationMonad m) => serial -> Loc -> m a
+  loadFromLoc  :: (LocationMonad m, MonadThrow m) => serial -> Loc -> m a
 
 -- | Writes a file and logs the information about the write
 persistAndLog :: (SerializesWith serial a, LocationMonad m, K.KatipContext m)
@@ -116,6 +116,26 @@ instance (FromJSON a) => DeserializesWith JSONSerial a where
     decodeWithLoc x = case A.eitherDecode x of
       Right y  -> return y
       Left msg -> throwM $ DecodingError loc $ T.pack msg
+
+-- | The crudest SerializationMethod there is. Works only for 'T.Text'. Should
+-- be used only for small files.
+newtype PlainTextSerial = PlainTextSerial { textSerialExt :: T.Text }
+
+instance SerializationMethod PlainTextSerial where
+  canSerializeAtLoc _ _ = True
+  associatedFileType (PlainTextSerial ext) = case fromTextRepr ext of
+    Just ft -> ft
+    Nothing -> error $ "Custom extension " ++ T.unpack ext ++ " isn't supported for now."
+
+instance SerializesWith PlainTextSerial T.Text where
+  persistAtLoc _ x loc = writeText loc x
+
+instance DeserializesWith PlainTextSerial T.Text where
+  loadFromLoc _ loc = do
+    res <- readText loc
+    case res of
+      Left err -> throwM err
+      Right r -> return r
 
 -- | A SerializationMethod that's meant to be used just locally, for one datatype and one
 -- file
