@@ -63,11 +63,12 @@ loadDataTask
                                           -- to use runtime data to transform
                                           -- the data that is read into a
                                           -- Monoid.
-loadDataTask vp taskName =
-  layeredAccessTask path fname taskName run
+loadDataTask vfile taskName =
+  layeredAccessTask' path fname' taskName run
   where
-    (path, fname) = vpDeserialToLTPIs vp
-    deserials = indexPureDeserialsByFileType $ vfileSerials vp
+    (path, fname) = vpDeserialToLTPIs vfile
+    fname' = fmap (PRscVirtualFile . WithDefaultUsage (vfileUsedByDefault vfile)) fname
+    deserials = indexPureDeserialsByFileType $ vfileSerials vfile
     run ft = do
       deserial <- Map.lookup ft deserials
       return $ \f' loc -> do
@@ -86,11 +87,12 @@ writeDataTask
   -> String  -- ^ A name for the task (for the error message if the wanted
              -- 'SerializationMethod' isn't supported)
   -> ATask m PipelineResource a ()
-writeDataTask vp taskName =
-  layeredAccessTask path fname taskName run
+writeDataTask vfile taskName =
+  layeredAccessTask' path fname' taskName run
   where
-    (path, fname) = vpSerialToLTPIs vp
-    serials = indexPureSerialsByFileType $ vfileSerials vp
+    (path, fname) = vpSerialToLTPIs vfile
+    fname' = fmap (PRscVirtualFile . WithDefaultUsage (vfileUsedByDefault vfile)) fname
+    serials = indexPureSerialsByFileType $ vfileSerials vfile
     run ft = do
       serial <- Map.lookup ft serials
       return $ \input loc -> do
