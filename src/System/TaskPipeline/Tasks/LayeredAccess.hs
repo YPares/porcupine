@@ -23,6 +23,7 @@ module System.TaskPipeline.Tasks.LayeredAccess
   , addSerials
   , WritableAndReadable, WritableOnly, ReadableOnly, Writable, Readable
   , VirtualPath(..)
+  , Contravariant(..)
   ) where
 
 import           Prelude                      hiding (id, (.))
@@ -32,18 +33,20 @@ import           Data.Locations
 import           Data.Locations.LocationTree  (LocationTreePathItem,
                                                VirtualPath (..))
 import qualified Data.Map                     as Map
+import           Data.Functor.Contravariant   (Contravariant(..))
 import           Data.SerializationMethod
 import qualified Katip                        as K
 import           System.TaskPipeline.ATask
 import           System.TaskPipeline.Resource
 
 
--- | Handles the deserialization of the data provided @a@ has some
--- 'DeserializationMethod's available.
+-- | Reads some data from all the locations bound to a 'VirtualPath', and merges
+-- them thanks to a Monoid instance. Handles the deserialization of the data
+-- provided @a@ has some 'DeserializationMethod's available.
 --
--- Limitation: the list of possible 'DeserializationMethod' should be known
--- statically, and allow for checking the validity of the deserialization method
--- found in the config before every task is ran.
+-- TODO: the list of possible 'DeserializationMethod' should be known
+-- statically. We should allow for checking the validity of the deserialization
+-- method found in the config before every task is ran.
 loadDataTask
   :: (LocationMonad m, K.KatipContext m, Monoid b)
   => VirtualPath (Readable t) a  -- ^ File in folder, with the supported
@@ -72,6 +75,7 @@ loadDataTask vp taskName =
         K.logFM K.InfoS $ K.logStr $ "Successfully loaded file '" ++ show loc ++ "'"
         return r
 
+-- | Writes some data to all the locations bound to a 'VirtualPath'
 writeDataTask
   :: (LocationMonad m, K.KatipContext m)
   => VirtualPath (Writable t) a  -- ^ File in folder, with the supported
