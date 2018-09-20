@@ -13,7 +13,7 @@
 {-# LANGUAGE TypeSynonymInstances #-}
 {-# LANGUAGE ViewPatterns         #-}
 {-# OPTIONS_GHC -Wall #-}
-{-# LANGUAGE DataKinds                 #-}
+{-# LANGUAGE DataKinds            #-}
 {-# OPTIONS_GHC -fno-warn-type-defaults #-}
 
 -- | Abstraction layer around the filesystem, so that inputs and outputs may be
@@ -325,7 +325,7 @@ prettyLocTree t = DT.drawTree t'
 -- serialization/deserialization methods
 data VirtualPath w r a = VirtualPath
   { virtualPathLocation :: [LocationTreePathItem]
-  , virtualPathSerials :: SerialsFor w r a }
+  , virtualPathSerials  :: SerialsFor w r a }
 
 
 -- temporary
