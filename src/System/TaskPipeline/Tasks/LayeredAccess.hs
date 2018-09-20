@@ -30,11 +30,11 @@ module System.TaskPipeline.Tasks.LayeredAccess
 import           Prelude                      hiding (id, (.))
 
 import           Control.Lens
+import           Data.Functor.Contravariant   (Contravariant (..))
 import           Data.Locations
 import           Data.Locations.LocationTree  (LocationTreePathItem,
                                                VirtualPath (..))
 import qualified Data.Map                     as Map
-import           Data.Functor.Contravariant   (Contravariant(..))
 import           Data.SerializationMethod
 import qualified Katip                        as K
 import           System.TaskPipeline.ATask
