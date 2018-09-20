@@ -3,6 +3,7 @@
 {-# LANGUAGE ExistentialQuantification  #-}
 {-# LANGUAGE FlexibleContexts           #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE OverloadedStrings          #-}
 {-# LANGUAGE PartialTypeSignatures      #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
 {-# LANGUAGE TupleSections              #-}
@@ -26,6 +27,7 @@ import           Data.Locations
 import           Data.Locations.LocationTree  (LocationTreePathItem)
 import qualified Data.Map                     as Map
 import           Data.SerializationMethod
+import qualified Katip                        as K
 import           System.TaskPipeline.ATask
 import           System.TaskPipeline.Resource
 
@@ -37,7 +39,7 @@ import           System.TaskPipeline.Resource
 -- statically, and allow for checking the validity of the deserialization method
 -- found in the config before every task is ran.
 loadDataTask
-  :: (LocationMonad m, Monoid b)
+  :: (LocationMonad m, K.KatipContext m, Monoid b)
   => VirtualPath w 'True a  -- ^ File in folder, with the supported
                             -- 'SerializationMethod's of the data that should be
                             -- loaded from it. Default serial method will be the
@@ -58,11 +60,14 @@ loadDataTask vp taskName =
     deserials = indexPureDeserialsByFileType $ virtualPathSerials vp
     run ft = do
       deserial <- Map.lookup ft deserials
-      return $ \f' loc -> case deserial of
-        SomeDeserial s f -> f' . f <$> loadFromLoc s loc
+      return $ \f' loc -> do
+        r <- case deserial of
+          SomeDeserial s f -> f' . f <$> loadFromLoc s loc
+        K.logFM K.InfoS $ K.logStr $ "Successfully loaded file '" ++ show loc ++ "'"
+        return r
 
 writeDataTask
-  :: (LocationMonad m)
+  :: (LocationMonad m, K.KatipContext m)
   => VirtualPath 'True r a  -- ^ File in folder, with the supported
                             -- 'SerializationMethod's of the data that should be
                             -- loaded from it. Default serial method will be the
@@ -77,8 +82,10 @@ writeDataTask vp taskName =
     serials = indexPureSerialsByFileType $ virtualPathSerials vp
     run ft = do
       serial <- Map.lookup ft serials
-      return $ \input loc -> case serial of
-        SomeSerial s f -> persistAtLoc s (f input) loc
+      return $ \input loc -> do
+        case serial of
+          SomeSerial s f -> persistAtLoc s (f input) loc
+        K.logFM K.InfoS $ K.logStr $ "Successfully wrote file '" ++ show loc ++ "'"
 
 -- | Accesses each layer mapped to the required file and combines the result of
 -- each access.
