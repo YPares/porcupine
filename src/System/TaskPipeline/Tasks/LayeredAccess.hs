@@ -20,6 +20,7 @@ module System.TaskPipeline.Tasks.LayeredAccess
 
   -- Re-exports:
   , SerializationMethod(..), JSONSerial(..), someSerials, somePureSerial, somePureDeserial
+  , customPureSerial, customPureDeserial
   , addSerials
   , WritableAndReadable, WritableOnly, ReadableOnly, Writable, Readable
   , VirtualPath(..)

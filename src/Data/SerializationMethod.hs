@@ -75,7 +75,7 @@ instance Show RetrievingError where
     "Error while decoding file " <> show loc <> ": " <> T.unpack msg
 
 
-class (Default serial) => SerializationMethod serial where
+class SerializationMethod serial where
   canSerializeAtLoc :: serial -> Loc -> Bool
   associatedFileType :: serial -> SerialMethod  -- only temporary, to ease
                                                       -- transition
@@ -99,9 +99,6 @@ persistAndLog s a l = do
 -- store/load JSON files through a 'LocationMonad'
 data JSONSerial = JSONSerial
 
-instance Default JSONSerial where
-  def = JSONSerial
-
 instance SerializationMethod JSONSerial where
   canSerializeAtLoc _ _ = True
   associatedFileType _ = JSON
@@ -119,6 +116,28 @@ instance (FromJSON a) => DeserializesWith JSONSerial a where
     decodeWithLoc x = case A.eitherDecode x of
       Right y  -> return y
       Left msg -> throwM $ DecodingError loc $ T.pack msg
+
+-- | A SerializationMethod that's meant to be used just locally, for one datatype and one
+-- file
+data CustomPureSerial a =
+  CustomPureSerial SerialMethod (forall m. (LocationMonad m) => a -> Loc -> m ())
+
+instance SerializationMethod (CustomPureSerial a) where
+  canSerializeAtLoc _ _ = True
+  associatedFileType (CustomPureSerial ft _) = ft
+instance SerializesWith (CustomPureSerial a) a where
+  persistAtLoc (CustomPureSerial _ f) = f
+
+-- | A DeserializationMethod that's meant to be used just locally, for one datatype and one
+-- file
+data CustomPureDeserial a =
+  CustomPureDeserial SerialMethod (forall m. (LocationMonad m) => Loc -> m a)
+
+instance SerializationMethod (CustomPureDeserial a) where
+  canSerializeAtLoc _ _ = True
+  associatedFileType (CustomPureDeserial ft _) = ft
+instance DeserializesWith (CustomPureDeserial a) a where
+  loadFromLoc (CustomPureDeserial _ f) = f
 
 -- * Grouping 'SerializationMethod's together, to indicate all the possible
 -- serials for a type of data
@@ -179,14 +198,44 @@ addSerials :: SerialsFor '(w1,r1) a -> SerialsFor '(w2,r2) a -> SerialsFor '(w1|
 addSerials (SerialsFor s d) (SerialsFor s' d') =
   SerialsFor (tlistConcat s s') (tlistConcat d d')
 
+-- | Packs together ways to serialize and deserialize some data @a@
 someSerials :: (SerializesWith s a, DeserializesWith s a) => s -> SerialsFor WritableAndReadable a
 someSerials s = somePureSerial s `addSerials` somePureDeserial s
 
+-- | Packs together ways to serialize some data @a@
 somePureSerial :: (SerializesWith s a) => s -> SerialsFor WritableOnly a
 somePureSerial s = SerialsFor (TList $ SomeSerial s id :| []) TNull
 
+-- | Packs together ways to deserialize and deserialize some data @a@
 somePureDeserial :: (DeserializesWith s a) => s -> SerialsFor ReadableOnly a
 somePureDeserial s = SerialsFor TNull (TList $ SomeDeserial s id :| [])
+
+-- | Builds a custom SerializationMethod (ie. which cannot be used for
+-- deserialization) which is just meant to be used for one datatype.
+customPureSerial
+  :: T.Text   -- ^ The file extension associated to this SerializationMethod
+  -> (forall m. (LocationMonad m) => a -> Loc -> m ())
+  -> SerialsFor WritableOnly a
+customPureSerial ext f =
+  case fromTextRepr ext of
+    Nothing ->
+      error $ "customPureSerial: " ++ T.unpack ext ++ " isn't associated with any SerialMethod"
+    Just ft ->
+      somePureSerial $ CustomPureSerial ft f
+
+-- | Builds a custom SerializationMethod (ie. which cannot be used for
+-- deserialization) which is just meant to be used for one datatype.
+customPureDeserial
+  :: T.Text   -- ^ The file extension associated to this SerializationMethod
+  -> (forall m. (LocationMonad m) => Loc -> m a)
+  -> SerialsFor ReadableOnly a
+customPureDeserial ext f =
+  case fromTextRepr ext of
+    Nothing ->
+      error $ "customPureDeserial: " ++ T.unpack ext ++ " isn't associated with any SerialMethod"
+    Just ft ->
+      somePureDeserial $ CustomPureDeserial ft f
+
 
 class HasSerializationMethods rw a where
   allSerialsFor :: a -> SerialsFor rw a
