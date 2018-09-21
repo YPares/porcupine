@@ -11,7 +11,7 @@
 {-# LANGUAGE Rank2Types                #-}
 {-# OPTIONS_GHC -Wall #-}
 
-module Data.SerializationMethod where
+module Data.Locations.SerializationMethod where
 
 import           Control.Applicative
 import           Control.Monad.Catch

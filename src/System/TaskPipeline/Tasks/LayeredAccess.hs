@@ -17,28 +17,15 @@ module System.TaskPipeline.Tasks.LayeredAccess
   , layeredAccessTask'
   , loadDataTask
   , writeDataTask
-
-  -- Re-exports:
-  , SerializationMethod(..)
-  , PureSerials, PureDeserials
-  , JSONSerial(..), PlainTextSerial(..)
-  , someBidirSerial, somePureSerial, somePureDeserial
-  , customPureSerial, customPureDeserial, makeBidir
-  , VirtualFile(..), DataSource, DataSink
-  , dataSource, dataSink
-  , Profunctor(..)
   ) where
 
-import           Prelude                      hiding (id, (.))
+import           Prelude                            hiding (id, (.))
 
 import           Control.Lens
 import           Data.Locations
-import           Data.Locations.LocationTree  (LocationTreePathItem,
-                                               VirtualFile (..))
-import qualified Data.Map                     as Map
-import           Data.Profunctor              (Profunctor (..))
-import           Data.SerializationMethod
-import qualified Katip                        as K
+import           Data.Locations.SerializationMethod
+import qualified Data.Map                           as Map
+import qualified Katip                              as K
 import           System.TaskPipeline.ATask
 import           System.TaskPipeline.Resource
 

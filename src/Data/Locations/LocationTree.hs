@@ -24,7 +24,6 @@ module Data.Locations.LocationTree
     LocationTree(..), BareLocationTree
   , LocationTreePathItem(..), LocationTreePath(..)
   , SerialMethod(..), LTPIAndSubtree(..)
-  , VirtualFile(..), DataSource, DataSink
   , (:||)(..), _Unprioritized, _Prioritized
   -- * Functions
   , locTreeNodeTag, locTreeSubfolders
@@ -44,27 +43,24 @@ module Data.Locations.LocationTree
   , locTreeToDataTree
   , prettyLocTree
   , apLocationTree
-  , dataSource, dataSink
-  , vpSerialToLTPIs, vpDeserialToLTPIs
   )
 where
 
 import           Control.Applicative
-import           Control.Lens             hiding ((<.>))
+import           Control.Lens                       hiding ((<.>))
 import           Data.Aeson
 import           Data.Binary
 import           Data.Hashable
-import qualified Data.HashMap.Strict      as HM
+import qualified Data.HashMap.Strict                as HM
 import           Data.List
 import           Data.Locations.Loc
+import           Data.Locations.SerializationMethod
 import           Data.Maybe
 import           Data.Representable
-import           Data.SerializationMethod
 import           Data.String
-import qualified Data.Text                as T
-import qualified Data.Tree                as DT
-import           Data.Void
-import           GHC.Generics             (Generic)
+import qualified Data.Text                          as T
+import qualified Data.Tree                          as DT
+import           GHC.Generics                       (Generic)
 -- import Data.Tree.Pretty
 -- import Diagrams.TwoD.Layout.Tree
 
@@ -321,43 +317,3 @@ prettyLocTree t = DT.drawTree t'
   where
     str (p,n) = T.unpack (_ltpiName p) ++ ": " ++ show n
     t' = fmap str $ locTreeToDataTree t
-
-
--- | A virtual path in the location tree to which we can write @a@ and from
--- which we can read @b@.
-data VirtualFile a b = VirtualFile
-  { vfileLocation      :: [LocationTreePathItem]
-  , vfileUsedByDefault :: Bool
-  , vfileSerials       :: SerialsFor a b }
-
--- | A virtual file that's only readable
-type DataSource a = VirtualFile Void a
-
--- | A virtual file that's only writable
-type DataSink a = VirtualFile a ()
-
--- | Creates a virtual file from its virtual location and ways to
--- serialize/deserialize the data.
-dataSource :: [LocationTreePathItem] -> SerialsFor a b -> DataSource b
-dataSource path = virtualFile path . eraseSerials
-
-dataSink :: [LocationTreePathItem] -> SerialsFor a b -> DataSink a
-dataSink path = virtualFile path . eraseDeserials
-
-virtualFile :: [LocationTreePathItem] -> SerialsFor a b -> VirtualFile a b
-virtualFile path sers = VirtualFile path True sers
-
--- temporary
-vpDeserialToLTPIs :: VirtualFile a b -> ([LocationTreePathItem], LTPIAndSubtree SerialMethod)
-vpDeserialToLTPIs (VirtualFile [] _ _) = error "vpDeserialToLTPIs: EMPTY PATH"
-vpDeserialToLTPIs (VirtualFile p _ s) = (init p, f)
-  where
-    f = file (last p) (firstPureDeserialFileType s)
-
--- temporary
-vpSerialToLTPIs :: VirtualFile a b -> ([LocationTreePathItem], LTPIAndSubtree SerialMethod)
-vpSerialToLTPIs (VirtualFile [] _ _) = error "vpSerialToLTPIs: EMPTY PATH"
-vpSerialToLTPIs (VirtualFile p _ s) = (init p, f)
-  where
-    f = file (last p) (firstPureSerialFileType s)
-
