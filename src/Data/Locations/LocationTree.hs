@@ -328,25 +328,25 @@ prettyLocTree t = DT.drawTree t'
 -- that location.
 data VirtualFile rw a = VirtualFile
   { vfileLocation      :: [LocationTreePathItem]
-  , vfileSerials       :: SerialsFor rw a
-  , vfileUsedByDefault :: Bool }
+  , vfileUsedByDefault :: Bool
+  , vfileSerials       :: SerialsFor rw a }
 
 -- | Creates a virtual file from its virtual location and ways to
 -- serialize/deserialize the data.
 virtualFile :: [LocationTreePathItem] -> SerialsFor rw a -> VirtualFile rw a
-virtualFile path sers = VirtualFile path sers True
+virtualFile path sers = VirtualFile path True sers
 
 -- temporary
 vpDeserialToLTPIs :: VirtualFile (Readable t) a -> ([LocationTreePathItem], LTPIAndSubtree SerialMethod)
 vpDeserialToLTPIs (VirtualFile [] _ _) = error "vpDeserialToLTPIs: EMPTY PATH"
-vpDeserialToLTPIs (VirtualFile p s _) = (init p, f)
+vpDeserialToLTPIs (VirtualFile p _ s) = (init p, f)
   where
     f = file (last p) (firstPureDeserialFileType s)
 
 -- temporary
 vpSerialToLTPIs :: VirtualFile (Writable t) a -> ([LocationTreePathItem], LTPIAndSubtree SerialMethod)
 vpSerialToLTPIs (VirtualFile [] _ _) = error "vpSerialToLTPIs: EMPTY PATH"
-vpSerialToLTPIs (VirtualFile p s _) = (init p, f)
+vpSerialToLTPIs (VirtualFile p _ s) = (init p, f)
   where
     f = file (last p) (firstPureSerialFileType s)
 

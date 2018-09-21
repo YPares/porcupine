@@ -19,7 +19,9 @@ module System.TaskPipeline.Tasks.LayeredAccess
   , writeDataTask
 
   -- Re-exports:
-  , SerializationMethod(..), JSONSerial(..), someSerials, somePureSerial, somePureDeserial
+  , SerializationMethod(..)
+  , JSONSerial(..), PlainTextSerial(..)
+  , someSerials, somePureSerial, somePureDeserial
   , customPureSerial, customPureDeserial
   , addSerials
   , WritableAndReadable, WritableOnly, ReadableOnly, Writable, Readable
