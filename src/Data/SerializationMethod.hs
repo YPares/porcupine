@@ -4,12 +4,11 @@
 {-# LANGUAGE DeriveGeneric             #-}
 {-# LANGUAGE ExistentialQuantification #-}
 {-# LANGUAGE FlexibleInstances         #-}
+{-# LANGUAGE FunctionalDependencies    #-}
 {-# LANGUAGE GADTs                     #-}
 {-# LANGUAGE MultiParamTypeClasses     #-}
 {-# LANGUAGE OverloadedStrings         #-}
-{-# LANGUAGE RankNTypes                #-}
-{-# LANGUAGE TypeFamilies              #-}
-{-# LANGUAGE TypeOperators             #-}
+{-# LANGUAGE Rank2Types                #-}
 {-# OPTIONS_GHC -Wall #-}
 
 module Data.SerializationMethod where
@@ -19,14 +18,14 @@ import           Control.Monad.Catch
 import           Data.Aeson                   as A
 import           Data.Binary
 import           Data.Default
-import           Data.Functor.Contravariant
 import           Data.List.NonEmpty           (NonEmpty (..), toList)
 import           Data.Locations.Loc           as Loc
 import           Data.Locations.LocationMonad as Loc
 import qualified Data.Map                     as Map
+import           Data.Profunctor
 import           Data.Representable
 import qualified Data.Text                    as T
-import           Data.Type.Bool
+import           Data.Void
 import           GHC.Generics
 import qualified Katip                        as K
 
@@ -82,11 +81,11 @@ class SerializationMethod serial where
 
 -- | Tells whether some type @a@ can be serialized in some location with some
 -- serialization method @serial@.
-class (SerializationMethod serial) => SerializesWith serial a where
-  persistAtLoc :: (LocationMonad m, MonadThrow m) => serial -> a -> Loc -> m ()
+class (SerializationMethod serial) => SerializesWith serial a | serial -> a where
+  persistAtLoc :: (LocationMonad m) => serial -> a -> Loc -> m ()
 
-class (SerializationMethod serial) => DeserializesWith serial a where
-  loadFromLoc  :: (LocationMonad m, MonadThrow m) => serial -> Loc -> m a
+class (SerializationMethod serial) => DeserializesWith serial a | serial -> a where
+  loadFromLoc  :: (LocationMonad m) => serial -> Loc -> m a
 
 -- | Writes a file and logs the information about the write
 persistAndLog :: (SerializesWith serial a, LocationMonad m, K.KatipContext m)
@@ -95,19 +94,31 @@ persistAndLog s a l = do
   persistAtLoc s a l
   K.logFM K.NoticeS $ K.logStr $ "Wrote file '" ++ show l ++ "'"
 
+data VoidSerial = VoidSerial
+
+instance SerializationMethod VoidSerial where
+  canSerializeAtLoc _ _ = True
+  associatedFileType _  = LocDefault
+
+instance SerializesWith VoidSerial Void where
+  persistAtLoc _ _ _ = return ()
+
+instance DeserializesWith VoidSerial () where
+  loadFromLoc _ _ = return ()
+
 -- | Has 'SerializesWith' & 'DeserializesWith' instances that permits to
 -- store/load JSON files through a 'LocationMonad'
-data JSONSerial = JSONSerial
+data JSONSerial a = JSONSerial
 
-instance SerializationMethod JSONSerial where
+instance SerializationMethod (JSONSerial a) where
   canSerializeAtLoc _ _ = True
   associatedFileType _ = JSON
 
-instance (ToJSON a) => SerializesWith JSONSerial a where
+instance (ToJSON a) => SerializesWith (JSONSerial a) a where
   persistAtLoc _ x loc = do
     Loc.writeLazyByte loc $ A.encode x
 
-instance (FromJSON a) => DeserializesWith JSONSerial a where
+instance (FromJSON a) => DeserializesWith (JSONSerial a) a where
   loadFromLoc _ loc =
     Loc.readLazyByte loc >>= withReadError >>= decodeWithLoc
    where
@@ -135,7 +146,7 @@ instance DeserializesWith PlainTextSerial T.Text where
     res <- readText loc
     case res of
       Left err -> throwM err
-      Right r -> return r
+      Right r  -> return r
 
 -- | A SerializationMethod that's meant to be used just locally, for one datatype and one
 -- file
@@ -165,8 +176,9 @@ instance DeserializesWith (CustomPureDeserial a) a where
 data SomeSerialFor a
   = forall s b. (SerializesWith s b) => SomeSerial s (a -> b)
 
-instance Contravariant SomeSerialFor where
-  contramap f' (SomeSerial s f) = SomeSerial s (f . f')
+contramapSomeSerial :: (a1 -> a2)
+                    -> SomeSerialFor a2 -> SomeSerialFor a1
+contramapSomeSerial f' (SomeSerial s f) = SomeSerial s (f . f')
 
 data SomeDeserialFor a
   = forall s b. (DeserializesWith s b) => SomeDeserial s (b -> a)
@@ -174,67 +186,52 @@ data SomeDeserialFor a
 instance Functor SomeDeserialFor where
   fmap f' (SomeDeserial s f) = SomeDeserial s (f' . f)
 
--- | A list-like type that contains at type level whether it's empty or not
-data TList b a where
-  TList :: NonEmpty a -> TList 'True a
-  TNull :: TList 'False a
+-- | Can serialize @a@ and deserialize @b@.
+data SerialsFor a b = SerialsFor (NonEmpty (SomeSerialFor a)) (NonEmpty (SomeDeserialFor b))
 
-tlistConcat :: TList a t -> TList b t -> TList (a || b) t
-tlistConcat TNull TNull = TNull
-tlistConcat (TList ne) TNull = TList ne
-tlistConcat TNull (TList ne) = TList ne
-tlistConcat (TList (a1 :| aa)) (TList (b1 :| bb)) =
-  TList $ a1 :| (aa ++ [b1] ++ bb)
+-- | Can serialize and deserialize @a@. Use 'dimap' to transform it
+type BidirSerials a = SerialsFor a a
 
-type family Fst (tup :: (Bool,Bool)) where
-  Fst '(a, b) = a
-type family Snd (tup :: (Bool,Bool)) where
-  Snd '(a, b) = b
+-- | Can only serialize @a@. Use 'lmap' to transform it.
+type PureSerials a = SerialsFor a ()
 
-type WritableAndReadable = '( 'True, 'True )
-type Writable (r::Bool) = '( 'True, r )
-type Readable (w::Bool) = '( w, 'True )
-type WritableOnly = Writable 'False
-type ReadableOnly = Readable 'False
+-- | Can only deserialize @a@. Use 'rmap' to transform it.
+type PureDeserials a = SerialsFor Void a
 
--- | Groups together ways to serialize/deserialize some type @a@, either
--- directly or by embedding transformations through calls to 'contramap'. @rw@
--- is a Bool tuple, but for readability it is supposed to be one of 'Writable t'
--- (@t@ being left unspecified), 'Readable t', 'WritableAndReadable',
--- 'WritableOnly' or 'ReadableOnly'.
-data SerialsFor rw a =
-  SerialsFor (TList (Fst rw) (SomeSerialFor a)) (TList (Snd rw) (SomeDeserialFor a))
+instance Profunctor SerialsFor where
+  dimap f g (SerialsFor sers desers) =
+    SerialsFor (fmap (contramapSomeSerial f) sers) (fmap (fmap g) desers)
 
-instance Contravariant (SerialsFor WritableOnly) where
-  contramap f (SerialsFor (TList sers) TNull) =
-    SerialsFor (TList $ fmap (contramap f) sers) TNull
+instance Semigroup (SerialsFor a b) where
+  SerialsFor (s:|ss) (d:|dd) <> SerialsFor (s':|ss') (d':|dd') =
+    SerialsFor (s :| ss++[s']++ss') (d :| dd ++[d']++dd')
 
-instance Functor (SerialsFor ReadableOnly) where
-  fmap f (SerialsFor TNull (TList desers)) =
-    SerialsFor TNull (TList $ fmap (fmap f) desers)
+voidSerial :: NonEmpty (SomeSerialFor Void)
+voidSerial = SomeSerial VoidSerial id :| []
 
--- | Combine two lists of serialization/deserialization methods for @a@.
-addSerials :: SerialsFor '(w1,r1) a -> SerialsFor '(w2,r2) a -> SerialsFor '(w1||w2, r1||r2) a
-addSerials (SerialsFor s d) (SerialsFor s' d') =
-  SerialsFor (tlistConcat s s') (tlistConcat d d')
+voidDeserial :: NonEmpty (SomeDeserialFor ())
+voidDeserial = SomeDeserial VoidSerial id :| []
 
 -- | Packs together ways to serialize and deserialize some data @a@
-someSerials :: (SerializesWith s a, DeserializesWith s a) => s -> SerialsFor WritableAndReadable a
-someSerials s = somePureSerial s `addSerials` somePureDeserial s
+someBidirSerial :: (SerializesWith s a, DeserializesWith s a) => s -> BidirSerials a
+someBidirSerial s = SerialsFor (SomeSerial s id :| []) (SomeDeserial s id :| [])
+
+makeBidir :: PureSerials a -> PureDeserials a -> BidirSerials a
+makeBidir (SerialsFor sers _) (SerialsFor _ desers) = SerialsFor sers desers
 
 -- | Packs together ways to serialize some data @a@
-somePureSerial :: (SerializesWith s a) => s -> SerialsFor WritableOnly a
-somePureSerial s = SerialsFor (TList $ SomeSerial s id :| []) TNull
+somePureSerial :: (SerializesWith s a) => s -> PureSerials a
+somePureSerial s = SerialsFor (SomeSerial s id :| []) voidDeserial
 
 -- | Packs together ways to deserialize and deserialize some data @a@
-somePureDeserial :: (DeserializesWith s a) => s -> SerialsFor ReadableOnly a
-somePureDeserial s = SerialsFor TNull (TList $ SomeDeserial s id :| [])
+somePureDeserial :: (DeserializesWith s a) => s -> PureDeserials a
+somePureDeserial s = SerialsFor voidSerial (SomeDeserial s id :| [])
 
-eraseSerials :: SerialsFor '(a,b) t -> SerialsFor '( 'False, b ) t
-eraseSerials (SerialsFor _ desers) = SerialsFor TNull desers
+eraseSerials :: SerialsFor a b -> PureDeserials b
+eraseSerials (SerialsFor _ desers) = SerialsFor voidSerial desers
 
-eraseDeserials :: SerialsFor '(a,b) t -> SerialsFor '( a, 'False ) t
-eraseDeserials (SerialsFor sers _) = SerialsFor sers TNull
+eraseDeserials :: SerialsFor a b -> PureSerials a
+eraseDeserials (SerialsFor sers _) = SerialsFor sers voidDeserial
 
 
 -- | Builds a custom SerializationMethod (ie. which cannot be used for
@@ -242,7 +239,7 @@ eraseDeserials (SerialsFor sers _) = SerialsFor sers TNull
 customPureSerial
   :: T.Text   -- ^ The file extension associated to this SerializationMethod
   -> (forall m. (LocationMonad m) => a -> Loc -> m ())
-  -> SerialsFor WritableOnly a
+  -> PureSerials a
 customPureSerial ext f =
   case fromTextRepr ext of
     Nothing ->
@@ -255,7 +252,7 @@ customPureSerial ext f =
 customPureDeserial
   :: T.Text   -- ^ The file extension associated to this SerializationMethod
   -> (forall m. (LocationMonad m) => Loc -> m a)
-  -> SerialsFor ReadableOnly a
+  -> PureDeserials a
 customPureDeserial ext f =
   case fromTextRepr ext of
     Nothing ->
@@ -264,22 +261,18 @@ customPureDeserial ext f =
       somePureDeserial $ CustomPureDeserial ft f
 
 
-class HasSerializationMethods rw a where
-  allSerialsFor :: a -> SerialsFor rw a
-
-
 -- * Functions for compatiblity with part of the API still using 'SerialMethod'.
 
-indexPureSerialsByFileType :: SerialsFor (Writable t) a -> Map.Map SerialMethod (SomeSerialFor a)
-indexPureSerialsByFileType (SerialsFor (TList sers) _) = Map.fromList . toList $
+indexPureSerialsByFileType :: SerialsFor a b -> Map.Map SerialMethod (SomeSerialFor a)
+indexPureSerialsByFileType (SerialsFor sers _) = Map.fromList . toList $
   fmap (\s@(SomeSerial s' _) -> (associatedFileType s', s)) sers
 
-indexPureDeserialsByFileType :: SerialsFor (Readable t) a -> Map.Map SerialMethod (SomeDeserialFor a)
-indexPureDeserialsByFileType (SerialsFor _ (TList desers)) = Map.fromList . toList $
+indexPureDeserialsByFileType :: SerialsFor a b -> Map.Map SerialMethod (SomeDeserialFor b)
+indexPureDeserialsByFileType (SerialsFor _ desers) = Map.fromList . toList $
   fmap (\s@(SomeDeserial s' _) -> (associatedFileType s', s)) desers
 
-firstPureSerialFileType :: SerialsFor (Writable t) a -> SerialMethod
-firstPureSerialFileType (SerialsFor (TList (SomeSerial s _ :| _)) _) = associatedFileType s
+firstPureSerialFileType :: SerialsFor a b -> SerialMethod
+firstPureSerialFileType (SerialsFor (SomeSerial s _ :| _) _) = associatedFileType s
 
-firstPureDeserialFileType :: SerialsFor (Readable t) a -> SerialMethod
-firstPureDeserialFileType (SerialsFor _ (TList (SomeDeserial s _ :| _))) = associatedFileType s
+firstPureDeserialFileType :: SerialsFor a b -> SerialMethod
+firstPureDeserialFileType (SerialsFor _ (SomeDeserial s _ :| _)) = associatedFileType s

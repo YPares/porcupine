@@ -20,24 +20,23 @@ module System.TaskPipeline.Tasks.LayeredAccess
 
   -- Re-exports:
   , SerializationMethod(..)
+  , PureSerials, PureDeserials
   , JSONSerial(..), PlainTextSerial(..)
-  , someSerials, somePureSerial, somePureDeserial
-  , customPureSerial, customPureDeserial
-  , addSerials
-  , WritableAndReadable, WritableOnly, ReadableOnly, Writable, Readable
+  , someBidirSerial, somePureSerial, somePureDeserial
+  , customPureSerial, customPureDeserial, makeBidir
   , VirtualFile(..), DataSource, DataSink
   , dataSource, dataSink
-  , Contravariant(..)
+  , Profunctor(..)
   ) where
 
 import           Prelude                      hiding (id, (.))
 
 import           Control.Lens
-import           Data.Functor.Contravariant   (Contravariant (..))
 import           Data.Locations
 import           Data.Locations.LocationTree  (LocationTreePathItem,
                                                VirtualFile (..))
 import qualified Data.Map                     as Map
+import           Data.Profunctor              (Profunctor (..))
 import           Data.SerializationMethod
 import qualified Katip                        as K
 import           System.TaskPipeline.ATask
@@ -53,7 +52,7 @@ import           System.TaskPipeline.Resource
 -- method found in the config before every task is ran.
 loadDataTask
   :: (LocationMonad m, K.KatipContext m, Monoid b)
-  => VirtualFile (Readable t) a  -- ^ A 'DataSource'
+  => VirtualFile ignored a -- ^ A 'DataSource'
   -> String  -- ^ A name for the task (for the error message if the wanted
              -- 'SerializationMethod' isn't supported)
   -> ATask m PipelineResource (a -> b) b  -- ^ The resulting task takes in input
@@ -80,7 +79,7 @@ loadDataTask vfile taskName =
 -- | Writes some data to all the locations bound to a 'VirtualPath'
 writeDataTask
   :: (LocationMonad m, K.KatipContext m)
-  => VirtualFile (Writable t) a  -- ^ A 'DataSink'
+  => VirtualFile a ignored  -- ^ A 'DataSink'
   -> String  -- ^ A name for the task (for the error message if the wanted
              -- 'SerializationMethod' isn't supported)
   -> ATask m PipelineResource a ()

@@ -25,7 +25,6 @@ haskell_library(
             "//hackage:conduit",
             "//hackage:conduit-extra",
             "//hackage:containers",
-	    "//hackage:contravariant",
             "//hackage:data-default",
             "//hackage:deepseq",
             "//hackage:directory",
@@ -39,6 +38,7 @@ haskell_library(
             "//hackage:monad-control",
             "//hackage:mtl",
             "//hackage:optparse-applicative",
+	    "//hackage:profunctors",
             "//hackage:resourcet",
             "//hackage:streaming",
             "//hackage:streaming-bytestring",
@@ -50,6 +50,7 @@ haskell_library(
             "//hackage:unordered-containers",
             "//hackage:url",
             "//hackage:vinyl",
+	    "//hackage:void",
             "//hackage:yaml",
         ],
 )

@@ -63,6 +63,7 @@ import           Data.SerializationMethod
 import           Data.String
 import qualified Data.Text                as T
 import qualified Data.Tree                as DT
+import           Data.Void
 import           GHC.Generics             (Generic)
 -- import Data.Tree.Pretty
 -- import Diagrams.TwoD.Layout.Tree
@@ -322,41 +323,39 @@ prettyLocTree t = DT.drawTree t'
     t' = fmap str $ locTreeToDataTree t
 
 
--- | A virtual path in the location tree associated to
--- serialization/deserialization methods. @rw@ says whether we have the
--- sufficient serialization/deserialization methods to read and/or write from
--- that location.
-data VirtualFile rw a = VirtualFile
+-- | A virtual path in the location tree to which we can write @a@ and from
+-- which we can read @b@.
+data VirtualFile a b = VirtualFile
   { vfileLocation      :: [LocationTreePathItem]
   , vfileUsedByDefault :: Bool
-  , vfileSerials       :: SerialsFor rw a }
+  , vfileSerials       :: SerialsFor a b }
 
 -- | A virtual file that's only readable
-type DataSource = VirtualFile ReadableOnly
+type DataSource a = VirtualFile Void a
 
 -- | A virtual file that's only writable
-type DataSink = VirtualFile WritableOnly
+type DataSink a = VirtualFile a ()
 
 -- | Creates a virtual file from its virtual location and ways to
 -- serialize/deserialize the data.
-dataSource :: [LocationTreePathItem] -> SerialsFor (Readable t) a -> DataSource a
+dataSource :: [LocationTreePathItem] -> SerialsFor a b -> DataSource b
 dataSource path = virtualFile path . eraseSerials
 
-dataSink :: [LocationTreePathItem] -> SerialsFor (Writable t) a -> DataSink a
+dataSink :: [LocationTreePathItem] -> SerialsFor a b -> DataSink a
 dataSink path = virtualFile path . eraseDeserials
 
-virtualFile :: [LocationTreePathItem] -> SerialsFor rw a -> VirtualFile rw a
+virtualFile :: [LocationTreePathItem] -> SerialsFor a b -> VirtualFile a b
 virtualFile path sers = VirtualFile path True sers
 
 -- temporary
-vpDeserialToLTPIs :: VirtualFile (Readable t) a -> ([LocationTreePathItem], LTPIAndSubtree SerialMethod)
+vpDeserialToLTPIs :: VirtualFile a b -> ([LocationTreePathItem], LTPIAndSubtree SerialMethod)
 vpDeserialToLTPIs (VirtualFile [] _ _) = error "vpDeserialToLTPIs: EMPTY PATH"
 vpDeserialToLTPIs (VirtualFile p _ s) = (init p, f)
   where
     f = file (last p) (firstPureDeserialFileType s)
 
 -- temporary
-vpSerialToLTPIs :: VirtualFile (Writable t) a -> ([LocationTreePathItem], LTPIAndSubtree SerialMethod)
+vpSerialToLTPIs :: VirtualFile a b -> ([LocationTreePathItem], LTPIAndSubtree SerialMethod)
 vpSerialToLTPIs (VirtualFile [] _ _) = error "vpSerialToLTPIs: EMPTY PATH"
 vpSerialToLTPIs (VirtualFile p _ s) = (init p, f)
   where
