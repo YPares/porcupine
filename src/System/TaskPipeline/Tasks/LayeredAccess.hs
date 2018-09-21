@@ -25,7 +25,8 @@ module System.TaskPipeline.Tasks.LayeredAccess
   , customPureSerial, customPureDeserial
   , addSerials
   , WritableAndReadable, WritableOnly, ReadableOnly, Writable, Readable
-  , VirtualFile(..), virtualFile
+  , VirtualFile(..), DataSource, DataSink
+  , dataSource, dataSink
   , Contravariant(..)
   ) where
 
@@ -52,10 +53,7 @@ import           System.TaskPipeline.Resource
 -- method found in the config before every task is ran.
 loadDataTask
   :: (LocationMonad m, K.KatipContext m, Monoid b)
-  => VirtualFile (Readable t) a  -- ^ File path, with the supported
-                            -- 'SerializationMethod's of the data that should be
-                            -- loaded from it. Default serial method will be the
-                            -- first.
+  => VirtualFile (Readable t) a  -- ^ A 'DataSource'
   -> String  -- ^ A name for the task (for the error message if the wanted
              -- 'SerializationMethod' isn't supported)
   -> ATask m PipelineResource (a -> b) b  -- ^ The resulting task takes in input
@@ -82,10 +80,7 @@ loadDataTask vfile taskName =
 -- | Writes some data to all the locations bound to a 'VirtualPath'
 writeDataTask
   :: (LocationMonad m, K.KatipContext m)
-  => VirtualFile (Writable t) a  -- ^ File path, with the supported
-                            -- 'SerializationMethod's of the data that should be
-                            -- loaded from it. Default serial method will be the
-                            -- first.
+  => VirtualFile (Writable t) a  -- ^ A 'DataSink'
   -> String  -- ^ A name for the task (for the error message if the wanted
              -- 'SerializationMethod' isn't supported)
   -> ATask m PipelineResource a ()

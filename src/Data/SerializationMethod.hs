@@ -230,6 +230,13 @@ somePureSerial s = SerialsFor (TList $ SomeSerial s id :| []) TNull
 somePureDeserial :: (DeserializesWith s a) => s -> SerialsFor ReadableOnly a
 somePureDeserial s = SerialsFor TNull (TList $ SomeDeserial s id :| [])
 
+eraseSerials :: SerialsFor '(a,b) t -> SerialsFor '( 'False, b ) t
+eraseSerials (SerialsFor _ desers) = SerialsFor TNull desers
+
+eraseDeserials :: SerialsFor '(a,b) t -> SerialsFor '( a, 'False ) t
+eraseDeserials (SerialsFor sers _) = SerialsFor sers TNull
+
+
 -- | Builds a custom SerializationMethod (ie. which cannot be used for
 -- deserialization) which is just meant to be used for one datatype.
 customPureSerial

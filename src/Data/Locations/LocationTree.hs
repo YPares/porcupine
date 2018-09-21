@@ -24,7 +24,7 @@ module Data.Locations.LocationTree
     LocationTree(..), BareLocationTree
   , LocationTreePathItem(..), LocationTreePath(..)
   , SerialMethod(..), LTPIAndSubtree(..)
-  , VirtualFile(..)
+  , VirtualFile(..), DataSource, DataSink
   , (:||)(..), _Unprioritized, _Prioritized
   -- * Functions
   , locTreeNodeTag, locTreeSubfolders
@@ -44,7 +44,7 @@ module Data.Locations.LocationTree
   , locTreeToDataTree
   , prettyLocTree
   , apLocationTree
-  , virtualFile
+  , dataSource, dataSink
   , vpSerialToLTPIs, vpDeserialToLTPIs
   )
 where
@@ -331,8 +331,20 @@ data VirtualFile rw a = VirtualFile
   , vfileUsedByDefault :: Bool
   , vfileSerials       :: SerialsFor rw a }
 
+-- | A virtual file that's only readable
+type DataSource = VirtualFile ReadableOnly
+
+-- | A virtual file that's only writable
+type DataSink = VirtualFile WritableOnly
+
 -- | Creates a virtual file from its virtual location and ways to
 -- serialize/deserialize the data.
+dataSource :: [LocationTreePathItem] -> SerialsFor (Readable t) a -> DataSource a
+dataSource path = virtualFile path . eraseSerials
+
+dataSink :: [LocationTreePathItem] -> SerialsFor (Writable t) a -> DataSink a
+dataSink path = virtualFile path . eraseDeserials
+
 virtualFile :: [LocationTreePathItem] -> SerialsFor rw a -> VirtualFile rw a
 virtualFile path sers = VirtualFile path True sers
 
