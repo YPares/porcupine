@@ -1,7 +1,7 @@
 module Data.Locations.VirtualFile
   ( LocationTreePathItem
   , SerializationMethod(..)
-  , PureSerials, PureDeserials
+  , BidirSerials, PureSerials, PureDeserials
   , JSONSerial(..), PlainTextSerial(..)
   , Profunctor(..)
   , VirtualFile(..), DataSource, DataSink
@@ -23,6 +23,9 @@ data VirtualFile a b = VirtualFile
   { vfileLocation      :: [LocationTreePathItem]
   , vfileUsedByDefault :: Bool
   , vfileSerials       :: SerialsFor a b }
+
+instance Profunctor VirtualFile where
+  dimap f g (VirtualFile l u s) = VirtualFile l u $ dimap f g s
 
 -- | A virtual file that's only readable
 type DataSource a = VirtualFile Void a
