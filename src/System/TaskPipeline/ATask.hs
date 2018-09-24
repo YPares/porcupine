@@ -21,6 +21,7 @@ module System.TaskPipeline.ATask
   , RscAccess(..)
   , RscAccessTree
   , IsTaskResource
+  , rscAccessed
   , tryATask, throwATask, clockATask
   , unsafeLiftToATask
   , liftToATask
@@ -46,6 +47,10 @@ import           System.Clock
 -- | Monoid that tracks the number of times a resource has been accessed.
 data RscAccess a = RscAccess Int a
 
+-- | A lens to the data contained in 'RscAccess'
+rscAccessed :: Lens (RscAccess a) (RscAccess b) a b
+rscAccessed f (RscAccess n x) = RscAccess n <$> f x
+
 instance (Semigroup a) => Semigroup (RscAccess a) where
   RscAccess x a <> RscAccess y b = RscAccess (x+y) (a<>b)
 
@@ -66,7 +71,7 @@ data ATask m n a b = ATask
     -- ^ The tree of all resources required by task. When two tasks are
     -- sequenced, their resource tree are merged. When @n@ is
     -- 'PipelineResource', this LocationTree is an 'UnboundResourceTree'.
-  , aTaskPerform      :: ((a, RscAccessTree (n LocLayers)) -> m (b, RscAccessTree (n LocLayers)))
+  , aTaskPerform      :: (a, RscAccessTree (n LocLayers)) -> m (b, RscAccessTree (n LocLayers))
   -- ^ The action performed by the task. It is passed the final tree containing
   -- the actual resources bound to their definitive value, and should update
   -- this tree.
@@ -208,3 +213,4 @@ ataskInSubtree path (ATask tree fn) = ATask tree' fn'
     fn' (i, t) = do
       (o, t') <- fn (i, t^.atSubfolderRec path)
       return (o, t & atSubfolderRec path .~ t')
+

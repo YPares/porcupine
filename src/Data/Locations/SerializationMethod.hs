@@ -148,8 +148,8 @@ instance DeserializesWith PlainTextSerial T.Text where
       Left err -> throwM err
       Right r  -> return r
 
--- | A SerializationMethod that's meant to be used just locally, for one datatype and one
--- file
+-- | A SerializationMethod that's meant to be used just locally, for one
+-- datatype and one file
 data CustomPureSerial a =
   CustomPureSerial SerialMethod (forall m. (LocationMonad m) => a -> Loc -> m ())
 

@@ -4,10 +4,10 @@ module Data.Locations.VirtualFile
   , BidirSerials, PureSerials, PureDeserials
   , JSONSerial(..), PlainTextSerial(..)
   , Profunctor(..)
-  , VirtualFile(..), DataSource, DataSink
+  , VirtualFile(..), BidirVirtualFile, DataSource, DataSink
   , someBidirSerial, somePureSerial, somePureDeserial
   , customPureSerial, customPureDeserial, makeBidir
-  , dataSource, dataSink
+  , dataSource, dataSink, virtualFile
   , vpDeserialToLTPIs, vpSerialToLTPIs
   ) where
 
@@ -26,6 +26,9 @@ data VirtualFile a b = VirtualFile
 
 instance Profunctor VirtualFile where
   dimap f g (VirtualFile l u s) = VirtualFile l u $ dimap f g s
+
+-- | A virtual file which depending on the situation can be written or read
+type BidirVirtualFile a = VirtualFile a a
 
 -- | A virtual file that's only readable
 type DataSource a = VirtualFile Void a
