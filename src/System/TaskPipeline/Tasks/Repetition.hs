@@ -5,16 +5,16 @@ module System.TaskPipeline.Tasks.Repetition
   , repeatATask_
   ) where
 
-import Data.Aeson
-import Prelude hiding ((.))
-import qualified Data.Text as T
-import Control.Monad
-import Control.Lens (over, (^.), _1)
-import Data.Locations
-import System.TaskPipeline.ATask
-import System.TaskPipeline.Resource
-import qualified System.FilePath as P
-import Katip
+import           Control.Lens                 (over, (^.), _1)
+import           Control.Monad
+import           Data.Aeson
+import           Data.Locations
+import qualified Data.Text                    as T
+import           Katip
+import           Prelude                      hiding ((.))
+import qualified System.FilePath              as P
+import           System.TaskPipeline.ATask
+import           System.TaskPipeline.Resource
 
 
 data TaskRepetitionContext = TRC
@@ -56,7 +56,7 @@ repeatATask contextKey verb (ATask reqTree perform) = ATask reqTree perform'
                 , over (everyLeaf . locTreeNodeTag . rscAccessed . pRscVirtualFile . locLayers . _1)
                        (updateLoc ident) origTree) )
       return (results, case resultTrees of
-                         [] -> origTree
+                         []  -> origTree
                          h:_ -> h)
     -- We change the filename of every loc bound to a leaf, to add the
     -- identifier to it
