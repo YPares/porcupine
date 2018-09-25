@@ -41,7 +41,7 @@ repeatATask
   -> Verbosity                     -- ^ The minimal vebosity level at which to
                                    -- display this logger context
   -> ATask m PipelineResource a b  -- ^ The base task X to repeat
-  -> ATask m PipelineResource [(identifier, a)] [b]
+  -> ATask m PipelineResource [(identifier, a)] [(identifier, b)]
                                    -- ^ A task that will repeat X it for each
                                    -- input. Each input is associated to a
                                    -- identifier that will be appended to
@@ -50,14 +50,18 @@ repeatATask
 repeatATask contextKey verb (ATask reqTree perform) = ATask reqTree perform'
   where
     perform' (inputs, origTree) = do
-      (results, resultTrees) <- unzip <$> forM inputs (\(ident, inp) ->
-        katipAddContext (TRC contextKey (T.pack $ show ident) verb) $
-        perform ( inp
-                , over (everyLeaf . locTreeNodeTag . rscAccessed . pRscVirtualFile . locLayers . _1)
-                       (updateLoc ident) origTree) )
+      (results, resultTrees) <- unzip <$> forM inputs
+        (\(ident, inp) ->
+           katipAddContext (TRC contextKey (T.pack $ show ident) verb) $ do
+            (res, newTree) <- perform ( inp, updateTree ident origTree )
+            return ((ident, res), newTree)
+        )
       return (results, case resultTrees of
                          []  -> origTree
                          h:_ -> h)
+    updateTree ident =
+      over (everyLeaf . locTreeNodeTag . rscAccessed . pRscVirtualFile . locLayers . _1)
+           (updateLoc ident)
     -- We change the filename of every loc bound to a leaf, to add the
     -- identifier to it
     updateLoc ident loc = dir </> (fname ++ "-" ++ show ident) <.> T.unpack ext
