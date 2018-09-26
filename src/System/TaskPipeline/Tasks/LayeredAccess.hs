@@ -15,7 +15,6 @@
 module System.TaskPipeline.Tasks.LayeredAccess
   ( loadDataTask
   , writeDataTask
-  , layeredAccessTask'
   , unsafeRunIOTask
   ) where
 
@@ -84,7 +83,7 @@ writeDataTask vfile taskName =
           SomeSerial s f -> persistAtLoc s (f input) loc
         K.logFM K.InfoS $ K.logStr $ "Successfully wrote file '" ++ show loc ++ "'"
 
--- | Runs an IO action on the Locs mapped to some path. IT MUSN'T BE PERFORMING
+-- | Runs an IO action on the Locs mapped to some path. IT MUST NOT BE PERFORMING
 -- READS OR WRITES.
 unsafeRunIOTask
   :: (LocationMonad m)
@@ -92,19 +91,14 @@ unsafeRunIOTask
   -> String  -- ^ A name for the task (for the error message if wanted
              -- SerialMethod isn't supported)
   -> (i -> [Loc] -> IO o)
-      -- ^ If the 'SerialMethod' is accepted, this function should return @Just
-      -- f@, where @f@ is a function taking the input @i@ of the task, the 'Loc'
-      -- where it should read/write, and that should perform the access and
-      -- return a result @o@. This function will be called once per layer, and
-      -- the results of each called will be combined since @o@ must be a
-      -- 'Monoid'.
   -> ATask m PipelineResource i o
 unsafeRunIOTask path taskName f =
   liftToATask dir (Identity $ PRscSerialMethod <$> fname) taskName run
   where
     dir = init path
     fname = file (last path) LocDefault
-    run i (Identity layers) = liftIO $ f i $ toListOf (pRscVirtualFile . locLayers . _1) layers
+    run i (Identity layers) =
+      liftIO $ f i $ toListOf (pRscVirtualFile . locLayers . _1) layers
 
 -- | A slightly lower-level version of 'layeredAccessTask'. The file to access
 -- should be tagged with a PipelineResource, not with a SerialMethod. That
