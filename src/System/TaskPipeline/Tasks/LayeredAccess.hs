@@ -13,15 +13,16 @@
 -- | This module provides some utilities for when the pipeline needs to access
 -- several files organized in layers for each location in the 'LocationTree'
 module System.TaskPipeline.Tasks.LayeredAccess
-  ( layeredAccessTask
-  , layeredAccessTask'
-  , loadDataTask
+  ( loadDataTask
   , writeDataTask
+  , layeredAccessTask'
+  , unsafeRunIOTask
   ) where
 
 import           Prelude                            hiding (id, (.))
 
 import           Control.Lens
+import           Control.Monad.IO.Class
 import           Data.Locations
 import           Data.Locations.SerializationMethod
 import qualified Data.Map                           as Map
@@ -83,15 +84,14 @@ writeDataTask vfile taskName =
           SomeSerial s f -> persistAtLoc s (f input) loc
         K.logFM K.InfoS $ K.logStr $ "Successfully wrote file '" ++ show loc ++ "'"
 
--- | Accesses each layer mapped to the required file and combines the result of
--- each access.
-layeredAccessTask
-  :: (LocationMonad m, Monoid o)
-  => [LocationTreePathItem]   -- ^ Folder path
-  -> LTPIAndSubtree SerialMethod  -- ^ File in folder
+-- | Runs an IO action on the Locs mapped to some path. IT MUSN'T BE PERFORMING
+-- READS OR WRITES.
+unsafeRunIOTask
+  :: (LocationMonad m)
+  => [LocationTreePathItem]   -- ^ File path
   -> String  -- ^ A name for the task (for the error message if wanted
              -- SerialMethod isn't supported)
-  -> (SerialMethod -> Maybe (i -> Loc -> m o))
+  -> (i -> [Loc] -> IO o)
       -- ^ If the 'SerialMethod' is accepted, this function should return @Just
       -- f@, where @f@ is a function taking the input @i@ of the task, the 'Loc'
       -- where it should read/write, and that should perform the access and
@@ -99,8 +99,12 @@ layeredAccessTask
       -- the results of each called will be combined since @o@ must be a
       -- 'Monoid'.
   -> ATask m PipelineResource i o
-layeredAccessTask path fname taskName f =
-  layeredAccessTask' path (PRscSerialMethod <$> fname) taskName f
+unsafeRunIOTask path taskName f =
+  liftToATask dir (Identity $ PRscSerialMethod <$> fname) taskName run
+  where
+    dir = init path
+    fname = file (last path) LocDefault
+    run i (Identity layers) = liftIO $ f i $ toListOf (pRscVirtualFile . locLayers . _1) layers
 
 -- | A slightly lower-level version of 'layeredAccessTask'. The file to access
 -- should be tagged with a PipelineResource, not with a SerialMethod. That
