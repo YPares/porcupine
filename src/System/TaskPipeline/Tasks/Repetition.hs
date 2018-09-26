@@ -18,9 +18,9 @@ import           System.TaskPipeline.Resource
 
 
 data TaskRepetitionContext = TRC
-  { keyName      :: T.Text
-  , repetitionId :: T.Text
-  , verb         :: Verbosity }
+  { _keyName      :: T.Text
+  , _repetitionId :: T.Text
+  , _verb         :: Verbosity }
 
 instance ToJSON TaskRepetitionContext where
   toJSON (TRC k i _) = object [ k .= i ]
@@ -35,7 +35,7 @@ instance LogItem TaskRepetitionContext where
 -- input list. The updated output tree of the task will be the one returned by
 -- the **first** repetition.
 repeatATask
-  :: (Monad m, KatipContext m, Show identifier)
+  :: (KatipContext m, Show identifier)
   => T.Text                        -- ^ A key for the logger context to indicate
                                    -- which repetition we're at
   -> Verbosity                     -- ^ The minimal vebosity level at which to
@@ -72,7 +72,7 @@ repeatATask contextKey verb (ATask reqTree perform) = ATask reqTree perform'
 
 -- | See 'repeatATask'. Just ignores the result.
 repeatATask_
-  :: (Monad m, KatipContext m, Show identifier)
+  :: (KatipContext m, Show identifier)
   => T.Text                        -- ^ A key for the logger context to indicate
                                    -- which repetition we're at
   -> Verbosity                     -- ^ The minimal vebosity level at which to
