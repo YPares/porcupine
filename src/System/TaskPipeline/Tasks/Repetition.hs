@@ -5,7 +5,7 @@ module System.TaskPipeline.Tasks.Repetition
   , repeatATask_
   ) where
 
-import           Control.Lens                 (over, (^.), _1)
+import           Control.Lens                 (over, (^.), _1, traversed)
 import           Control.Monad
 import           Data.Aeson
 import           Data.Locations
@@ -60,7 +60,7 @@ repeatATask contextKey verb (ATask reqTree perform) = ATask reqTree perform'
                          []  -> origTree
                          h:_ -> h)
     updateTree ident =
-      over (everyLeaf . locTreeNodeTag . rscAccessed . pRscVirtualFile . locLayers . _1)
+      over (traversed . rscAccessed . pRscVirtualFile . locLayers . _1)
            (updateLoc ident)
     -- We change the filename of every loc bound to a leaf, to add the
     -- identifier to it
