@@ -27,18 +27,17 @@ castAs _ = cast
 -- expose them to the user, and returns the final values of these options
 getOptionsTask
   :: (LocationMonad m, Typeable rs, RecordUsableWithCLI rs)
-  => [LocationTreePathItem]  -- ^ The folder path in the LocationTree
-  -> LTPIAndSubtree a        -- ^ The virtual file that will "contain" the options
+  => [LocationTreePathItem]  -- ^ The path for the options in the LocationTree
   -> String                  -- ^ The task name (for error messages)
   -> DocRec rs               -- ^ The DocRec containing the fields with their
                              -- docs and default values
   -> ATask m PipelineResource () (DocRec rs)  -- ^ An ATask that returns the new
                                               -- options values, overriden by
                                               -- the user
-getOptionsTask path filep taskName defOpts =
-  liftToATask path
+getOptionsTask path taskName defOpts =
+  liftToATask (init path)
      (Identity $
-       filep & traversed .~ PRscOptions (RecOfOptions defOpts)) taskName run
+       file (last path) (PRscOptions $ RecOfOptions defOpts)) taskName run
   where
     spacePrepend = replicate (length taskName + 2) ' '
     run _ (Identity (PRscVirtualFile _)) = throwM $ TaskRunError $
@@ -48,9 +47,7 @@ getOptionsTask path filep taskName defOpts =
         Nothing -> throwM $ TaskRunError $
           taskName        <> ": The DocRec received isn't of the same type as the input one\n"
           <> spacePrepend <> "This might be caused by a duplicated Virtual Option file in the same location\n"
-          <> spacePrepend <> "To solve this case you need to change the Option virtual file name\n"
-          <> spacePrepend <> "from : opts  <- getOptionsTask locFolderPath (\"Options\" :: LTPIAndSubtree ()) taskName opts -< ()\n"
-          <> spacePrepend <> "to   : opts  <- getOptionsTask locFolderPath (\"MyOptions\" :: LTPIAndSubtree ()) taskName opts -< ()"
+          <> spacePrepend <> "To solve this case you need to change the Option virtual file name"
         Just newOpts -> return newOpts
     run _ (Identity PRscNothing) = return defOpts
     run _ _ = throwM $ TaskRunError $
