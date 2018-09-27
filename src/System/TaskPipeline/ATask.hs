@@ -103,16 +103,21 @@ instance (Monad m, IsTaskResource n) => Arrow (ATask m n) where
     where
       combine (a', tt1) (b', tt2) = ((a',b'), tt1 <> tt2)
 
--- | to allow us to write if then else in task arrows
-instance (Monad m, IsTaskResource n) => ArrowChoice (ATask m n)
-  where
-    left :: ATask m n b c -> ATask m n (Either b d) (Either c d)
-    left (ATask tree perf) = ATask tree f
-      where
-        -- f :: (Either b d, RscAccessTree (n LocLayers)) -> m (Either c d, RscAccessTree (n LocLayers))
-        f (Left l, rscTree)  = do (b, rscTree') <- perf (l, rscTree)
-                                  return (Left b, rscTree')
-        f (Right r, rscTree) = return (Right r, rscTree)
+-- -- | to allow us to write if then else in task arrows
+--
+-- -- Commented out for now because it isn't clear whether we want it.
+-- Task pipelines should be the most statically inspectable as possible,
+-- and if/else and cases go against that.
+--
+-- instance (Monad m, IsTaskResource n) => ArrowChoice (ATask m n)
+--   where
+--     left :: ATask m n b c -> ATask m n (Either b d) (Either c d)
+--     left (ATask tree perf) = ATask tree f
+--       where
+--         -- f :: (Either b d, RscAccessTree (n LocLayers)) -> m (Either c d, RscAccessTree (n LocLayers))
+--         f (Left l, rscTree)  = do (b, rscTree') <- perf (l, rscTree)
+--                                   return (Left b, rscTree')
+--         f (Right r, rscTree) = return (Right r, rscTree)
 
 instance (Functor m) => Functor (ATask m n a) where
   fmap f (ATask tree fn) = ATask tree (fmap (\(a,tt) -> (f a,tt)) . fn)
