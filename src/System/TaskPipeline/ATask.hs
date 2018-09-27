@@ -9,6 +9,7 @@
 {-# LANGUAGE TypeFamilies               #-}
 {-# LANGUAGE TypeOperators              #-}
 {-# LANGUAGE UndecidableInstances       #-}
+{-# LANGUAGE OverloadedStrings          #-}
 {-# OPTIONS_GHC -Wall #-}
 {-# OPTIONS_GHC -fno-warn-orphans       #-}
 
@@ -27,6 +28,7 @@ module System.TaskPipeline.ATask
   , liftToATask
   , ataskInSubtree
   , voidTask
+  , getTaskErrorPrefix, throwWithPrefix
   ) where
 
 import           Prelude                hiding (id, (.))
@@ -41,6 +43,8 @@ import           Control.Monad.Catch
 import           Control.Monad.IO.Class
 import qualified Data.Foldable          as F
 import           Data.Locations
+import qualified Data.Text              as T
+import           Katip
 import           System.Clock
 
 
@@ -170,17 +174,28 @@ clockATask (ATask reqs fn) = ATask reqs $ \i -> do
     end     <- getTime Realtime
     return ((output', diffTimeSpec end start), tree')
 
+getTaskErrorPrefix :: (KatipContext m) => m String
+getTaskErrorPrefix = do
+  Namespace ns <- getKatipNamespace
+  case ns of
+    [] -> return ""
+    _  -> return $ T.unpack $ T.intercalate "." ns <> ": "
+
+throwWithPrefix :: (KatipContext m, MonadThrow m) => String -> m a
+throwWithPrefix msg = do
+  prefix <- getTaskErrorPrefix
+  throwM $ TaskRunError $ prefix ++ msg
+  
 -- | Wraps in a task a function that needs to access some items present in a
 -- subfolder of the 'LocationTree' and mark these accesses as done. This is the
 -- main way to create an ATask
 liftToATask
-  :: (LocationMonad m, Traversable t, IsTaskResource n)
+  :: (LocationMonad m, KatipContext m, Traversable t, IsTaskResource n)
   => [LocationTreePathItem]  -- ^ Path to subfolder in 'LocationTree'
   -> t (LTPIAndSubtree (n WithDefaultUsage))    -- ^ Items of interest in the subfolder
-  -> String  -- ^ A name for the task (for error messages)
   -> (i -> t (n LocLayers) -> m o)       -- ^ What to run with these items
   -> ATask m n i o           -- ^ The resulting ATask
-liftToATask path filesToAccess taskName writeFn = ATask tree runAccess
+liftToATask path filesToAccess writeFn = ATask tree runAccess
   where
     tree = foldr (\pathItem subtree -> folderNode [ pathItem :/ subtree ])
                  (folderNode $ F.toList filesToAccess) path
@@ -188,12 +203,12 @@ liftToATask path filesToAccess taskName writeFn = ATask tree runAccess
       let mbSubtree = rscTree ^? atSubfolderRec path
       subtree <- case mbSubtree of
         Just s -> return s
-        Nothing -> throwM $ TaskRunError $
-          taskName ++ ": path '" ++ show path ++ "' not found in the LocationTree"
+        Nothing -> throwWithPrefix $
+          "path '" ++ show path ++ "' not found in the LocationTree"
       nodeTags <- forM filesToAccess $ \(filePathItem :/ _) -> do
         case subtree ^? atSubfolder filePathItem . locTreeNodeTag of
-          Nothing -> throwM $ TaskRunError $
-            taskName ++ ": path '" ++ show filePathItem ++ "' not found in the LocationTree"
+          Nothing -> throwWithPrefix $
+            "path '" ++ show filePathItem ++ "' not found in the LocationTree"
           Just (RscAccess _ tag) -> return tag
       output <- writeFn input nodeTags
       let incrAccess (RscAccess n x) = RscAccess (n+1) x
