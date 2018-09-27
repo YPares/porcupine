@@ -39,17 +39,11 @@ import           System.TaskPipeline.Resource
 -- statically. We should allow for checking the validity of the deserialization
 -- method found in the config before every task is ran.
 loadDataTask
-  :: (LocationMonad m, K.KatipContext m, Monoid b)
+  :: (LocationMonad m, K.KatipContext m, Monoid a)
   => VirtualFile ignored a -- ^ A 'DataSource'
   -> String  -- ^ A name for the task (for the error message if the wanted
              -- 'SerializationMethod' isn't supported)
-  -> ATask m PipelineResource (a -> b) b  -- ^ The resulting task takes in input
-                                          -- a function to extract a Monoid from
-                                          -- the data it reads. Usually it will
-                                          -- just be 'id', but that can permit
-                                          -- to use runtime data to transform
-                                          -- the data that is read into a
-                                          -- Monoid.
+  -> ATask m PipelineResource () a  -- ^ The resulting task
 loadDataTask vfile taskName =
   layeredAccessTask' path fname' taskName run
   where
@@ -58,9 +52,9 @@ loadDataTask vfile taskName =
     deserials = indexPureDeserialsByFileType $ vfileSerials vfile
     run ft = do
       deserial <- Map.lookup ft deserials
-      return $ \f' loc -> do
+      return $ \_ loc -> do
         r <- case deserial of
-          SomeDeserial s f -> f' . f <$> loadFromLoc s loc
+          SomeDeserial s f -> f <$> loadFromLoc s loc
         K.logFM K.InfoS $ K.logStr $ "Successfully loaded file '" ++ show loc ++ "'"
         return r
 
