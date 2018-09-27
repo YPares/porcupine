@@ -5,7 +5,7 @@ module System.TaskPipeline.Tasks.Repetition
   , repeatATask_
   ) where
 
-import           Control.Lens                 (over, (^.), _1, traversed)
+import           Control.Lens                 (over, traversed, (^.), _1)
 import           Control.Monad
 import           Data.Aeson
 import           Data.Locations

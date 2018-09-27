@@ -38,7 +38,7 @@ import qualified Katip                        as K
 -- be removed in the future. See the newest 'SerializationMethod' class that
 -- handles the serialization/deserialization code per se.
 data SerialMethod =
-  LocDefault | JSON | CSV | Markdown | PDF | BinaryObj | SQLTableData
+  LocDefault | JSON | CSV | Markdown | PDF | Unusable | BinaryObj | SQLTableData
   deriving (Eq, Ord, Show, Read, Generic, ToJSON, Binary)
 
 instance Default SerialMethod where
@@ -98,7 +98,7 @@ data VoidSerial = VoidSerial
 
 instance SerializationMethod VoidSerial where
   canSerializeAtLoc _ _ = True
-  associatedFileType _  = LocDefault
+  associatedFileType _  = Unusable
 
 instance SerializesWith VoidSerial Void where
   persistAtLoc _ _ _ = return ()
