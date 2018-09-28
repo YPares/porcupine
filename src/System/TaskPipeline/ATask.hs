@@ -4,12 +4,12 @@
 {-# LANGUAGE GADTs                      #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE InstanceSigs               #-}
+{-# LANGUAGE OverloadedStrings          #-}
 {-# LANGUAGE TemplateHaskell            #-}
 {-# LANGUAGE TupleSections              #-}
 {-# LANGUAGE TypeFamilies               #-}
 {-# LANGUAGE TypeOperators              #-}
 {-# LANGUAGE UndecidableInstances       #-}
-{-# LANGUAGE OverloadedStrings          #-}
 {-# OPTIONS_GHC -Wall #-}
 {-# OPTIONS_GHC -fno-warn-orphans       #-}
 
@@ -185,7 +185,7 @@ throwWithPrefix :: (KatipContext m, MonadThrow m) => String -> m a
 throwWithPrefix msg = do
   prefix <- getTaskErrorPrefix
   throwM $ TaskRunError $ prefix ++ msg
-  
+
 -- | Wraps in a task a function that needs to access some items present in a
 -- subfolder of the 'LocationTree' and mark these accesses as done. This is the
 -- main way to create an ATask
