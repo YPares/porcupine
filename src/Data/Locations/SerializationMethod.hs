@@ -18,16 +18,19 @@ import           Control.Monad.Catch
 import           Data.Aeson                   as A
 import           Data.Binary
 import           Data.Default
+import           Data.Hashable
 import           Data.List.NonEmpty           (NonEmpty (..), toList)
 import           Data.Locations.Loc           as Loc
 import           Data.Locations.LocationMonad as Loc
-import qualified Data.Map                     as Map
+import qualified Data.Map                     as Map  -- TODO: Remove
+import qualified Data.HashMap.Strict          as HM
 import           Data.Profunctor
 import           Data.Representable
 import qualified Data.Text                    as T
+import           Data.Typeable
 import           Data.Void
 import           GHC.Generics
-import qualified Katip                        as K
+import qualified Options.Applicative          as O
 
 
 -- | Some locs will allow several serialization methods to be used, but often we
@@ -38,8 +41,8 @@ import qualified Katip                        as K
 -- be removed in the future. See the newest 'SerializationMethod' class that
 -- handles the serialization/deserialization code per se.
 data SerialMethod =
-  LocDefault | JSON | CSV | Markdown | PDF | Unusable | BinaryObj | SQLTableData
-  deriving (Eq, Ord, Show, Read, Generic, ToJSON, Binary)
+  LocDefault | JSON | CSV | Markdown | PDF | Unusable | NullMapping
+  deriving (Eq, Ord, Show, Read, Generic, Hashable, ToJSON, Binary)
 
 instance Default SerialMethod where
   def = LocDefault
@@ -73,12 +76,33 @@ instance Show RetrievingError where
   show (DecodingError loc msg) =
     "Error while decoding file " <> show loc <> ": " <> T.unpack msg
 
+data FromIntermediaryFn a =
+  forall i. (Typeable i) => FromIntermediaryFn (i -> a)
+
+data ReadFromLocFn a =
+  forall m. (LocationMonad m) => ReadFromLocFn (Loc -> m a)
+
+data DataReaders a = DataReaders
+  { dataReaderFromNothing       :: Maybe a
+  , dataReadersFromIntermediary :: HM.HashMap TypeRep (FromIntermediaryFn a)
+  , dataReaderFromCommandLine   :: Maybe (O.Parser a)
+  , dataReadersFromInputFile    :: HM.HashMap T.Text (ReadFromLocFn a) }
+
+data ToIntermediaryFn a =
+  forall i. (Typeable i) => ToIntermediaryFn (a -> i)
+
+data WriteAtLocFn a =
+  forall m. (LocationMonad m) => WriteAtLocFn (a -> Loc -> m ())
+
+data DataWriters a = DataWriters
+  { dataWritersToIntermediary :: HM.HashMap TypeRep (ToIntermediaryFn a)
+  , daatWritersToOutputFile   :: HM.HashMap T.Text (WriteAtLocFn a) }
 
 class SerializationMethod serial where
   canSerializeAtLoc :: serial -> Loc -> Bool
   associatedFileType :: serial -> SerialMethod  -- only temporary, to ease
-                                                      -- transition
-
+                                                -- transition
+                        
 -- | Tells whether some type @a@ can be serialized in some location with some
 -- serialization method @serial@.
 class (SerializationMethod serial) => SerializesWith serial a | serial -> a where
@@ -87,13 +111,7 @@ class (SerializationMethod serial) => SerializesWith serial a | serial -> a wher
 class (SerializationMethod serial) => DeserializesWith serial a | serial -> a where
   loadFromLoc  :: (LocationMonad m) => serial -> Loc -> m a
 
--- | Writes a file and logs the information about the write
-persistAndLog :: (SerializesWith serial a, LocationMonad m, K.KatipContext m)
-              => serial -> a -> Loc -> m ()
-persistAndLog s a l = do
-  persistAtLoc s a l
-  K.logFM K.NoticeS $ K.logStr $ "Wrote file '" ++ show l ++ "'"
-
+-- | Only for serializing Void and deserializing ()
 data VoidSerial = VoidSerial
 
 instance SerializationMethod VoidSerial where
@@ -105,6 +123,7 @@ instance SerializesWith VoidSerial Void where
 
 instance DeserializesWith VoidSerial () where
   loadFromLoc _ _ = return ()
+
 
 -- | Has 'SerializesWith' & 'DeserializesWith' instances that permits to
 -- store/load JSON files through a 'LocationMonad'
@@ -128,6 +147,7 @@ instance (FromJSON a) => DeserializesWith (JSONSerial a) a where
       Right y  -> return y
       Left msg -> throwM $ DecodingError loc $ T.pack msg
 
+
 -- | The crudest SerializationMethod there is. Works only for 'T.Text'. Should
 -- be used only for small files.
 newtype PlainTextSerial = PlainTextSerial { textSerialExt :: T.Text }
@@ -147,6 +167,7 @@ instance DeserializesWith PlainTextSerial T.Text where
     case res of
       Left err -> throwM err
       Right r  -> return r
+
 
 -- | A SerializationMethod that's meant to be used just locally, for one
 -- datatype and one file
@@ -169,6 +190,18 @@ instance SerializationMethod (CustomPureDeserial a) where
   associatedFileType (CustomPureDeserial ft _) = ft
 instance DeserializesWith (CustomPureDeserial a) a where
   loadFromLoc (CustomPureDeserial _ f) = f
+
+
+-- | A very simple deserial that deserializing nothing and just returs a default
+-- value.
+newtype DefaultValueDeserial a = DefaultValueDeserial a
+
+instance SerializationMethod (DefaultValueDeserial a) where
+  canSerializeAtLoc _ _ = True
+  associatedFileType _ = NullMapping
+instance DeserializesWith (DefaultValueDeserial a) a where
+  loadFromLoc (DefaultValueDeserial x) _ = return x
+
 
 -- * Grouping 'SerializationMethod's together, to indicate all the possible
 -- serials for a type of data
@@ -259,6 +292,11 @@ customPureDeserial ext f =
       error $ "customPureDeserial: " ++ T.unpack ext ++ " isn't associated with any SerialMethod"
     Just ft ->
       somePureDeserial $ CustomPureDeserial ft f
+
+-- | To be used when the file is mapped to null. Won't read anything, will just
+-- return the default value.
+defaultValueDeserial :: a -> PureDeserials a
+defaultValueDeserial = somePureDeserial . DefaultValueDeserial
 
 
 -- * Functions for compatiblity with part of the API still using 'SerialMethod'.
