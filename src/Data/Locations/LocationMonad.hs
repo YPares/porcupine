@@ -68,7 +68,7 @@ instance Show RetrievingError where
   show (FileReadError loc) = "Impossible to read file " <> show loc
   show (DecodingError loc msg) =
     "Error while decoding file " <> show loc <> ": " <> Text.unpack msg
-    
+
 
 -- | Runs computations accessing 'Loc's
 class (MonadMask m, MonadUnliftIO m) => LocationMonad m where

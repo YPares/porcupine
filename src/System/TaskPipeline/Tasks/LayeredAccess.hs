@@ -15,6 +15,7 @@
 module System.TaskPipeline.Tasks.LayeredAccess
   ( loadData
   , writeData
+  , accessVirtualFile
   , getLocsMappedTo
   , unsafeRunIOTask
   ) where
@@ -23,54 +24,76 @@ import           Prelude                            hiding (id, (.))
 
 import           Control.Lens
 import           Control.Monad.IO.Class
+import qualified Data.HashMap.Strict                as HM
 import           Data.Locations
 import           Data.Locations.SerializationMethod
-import qualified Data.HashMap.Strict                as HM
 import           Katip
 import           System.TaskPipeline.ATask
 import           System.TaskPipeline.Resource
 
 
--- | Reads some data from all the locations bound to a 'VirtualPath', and merges
--- them thanks to a Monoid instance. Handles the deserialization of the data
--- provided @a@ has some 'DeserializationMethod's available.
+-- | Uses only the read part of a 'VirtualFile'. It is therefore considered as a
+-- pure 'DataSource'. For practical reasons the task input is () rather than
+-- Void.
 --
--- TODO: the list of possible 'DeserializationMethod' should be known
--- statically. We should allow for checking the validity of the deserialization
--- method found in the config before every task is ran.
+-- See 'accessVirtualFile'.
 loadData
   :: (LocationMonad m, KatipContext m, Monoid a)
   => VirtualFile ignored a -- ^ A 'DataSource'
   -> ATask m PipelineResource () a  -- ^ The resulting task
-loadData vfile =
-  layeredAccessTask' path fname' run
-  where
-    (path, fname) = vpDeserialToLTPIs vfile
-    fname' = fmap (PRscVirtualFile . WithDefaultUsage (vfileUsedByDefault vfile)) fname
-    readers = indexPureDeserialsByFileType $ vfileSerials vfile
-    run ft = do
-      ReadFromLocFn reader <- HM.lookup ft readers
-      return $ \_ loc -> do
-        r <- reader loc
-        logFM InfoS $ logStr $ "Successfully loaded file '" ++ show loc ++ "'"
-        return r
+loadData vf = arr (const $ error "THIS IS VOID")  -- The input of vf is now Void
+          >>> (accessVirtualFile $ vf{vfileSerials = eraseSerials $ vfileSerials vf})
 
--- | Writes some data to all the locations bound to a 'VirtualPath'
+-- | Uses only the write part of a 'VirtualFile'. It is therefore considered as
+-- a pure 'DataSink'.
+--
+-- See 'accessVirtualFile'
 writeData
   :: (LocationMonad m, KatipContext m)
   => VirtualFile a ignored  -- ^ A 'DataSink'
   -> ATask m PipelineResource a ()
-writeData vfile =
-  layeredAccessTask' path fname' run
+writeData vf = accessVirtualFile $ vf{vfileSerials = eraseDeserials $ vfileSerials vf}
+
+-- | Writes some data to all the locations bound to a 'VirtualFile' if this
+-- 'VirtualFile' has writers, then reads some data over several layers from it
+-- (and merges them thanks to a Monoid instance) if this 'VirtualFile' has
+-- readers.
+--
+-- TODO: the list of possible 'DeserializationMethod' should be known
+-- statically. We should allow for checking the validity of the deserialization
+-- method found in the config before every task is ran.
+accessVirtualFile
+  :: (LocationMonad m, KatipContext m, Monoid b)
+  => VirtualFile a b
+  -> ATask m PipelineResource a b
+accessVirtualFile vfile =
+  liftToATask path (Identity fname') $
+    \input (Identity layers) ->
+      case layers of
+        PRscNothing -> return mempty
+        PRscVirtualFile l -> mconcat <$>
+          mapM (access input) (l^..locLayers)
+        _ -> throwWithPrefix $
+          "Unsupported pipeline resource to load.\
+          \ Only file paths or 'null' can be used"
   where
     (path, fname) = vpSerialToLTPIs vfile
     fname' = fmap (PRscVirtualFile . WithDefaultUsage (vfileUsedByDefault vfile)) fname
     writers = indexPureSerialsByFileType $ vfileSerials vfile
-    run ft = do
-      WriteToLocFn writer <- HM.lookup ft writers
-      return $ \input loc -> do
-        writer input loc
-        logFM InfoS $ logStr $ "Successfully wrote file '" ++ show loc ++ "'"
+    readers = indexPureDeserialsByFileType $ vfileSerials vfile
+    access input (locWithoutExt, ser) = do
+      let loc = addExtToLocIfMissing locWithoutExt ser
+      case HM.lookup ser writers of
+        Nothing -> return ()
+        Just (WriteToLocFn writer) -> do
+          writer input loc
+          logFM InfoS $ logStr $ "Successfully wrote file '" ++ show loc ++ "'"
+      case HM.lookup ser readers of
+        Nothing -> return mempty
+        Just (ReadFromLocFn reader) -> do
+          r <- reader loc
+          logFM InfoS $ logStr $ "Successfully loaded file '" ++ show loc ++ "'"
+          return r
 
 -- | Returns the locs mapped to some path in the location tree. It *doesn't*
 -- expose this path as a requirement (hence the result list may be empty, as no
@@ -88,38 +111,3 @@ unsafeRunIOTask
   => (i -> IO o)
   -> ATask m PipelineResource i o
 unsafeRunIOTask f = unsafeLiftToATask (liftIO . f)
-
--- | A slightly lower-level version of 'layeredAccessTask'. The file to access
--- should be tagged with a PipelineResource, not with a SerialMethod. That
--- permits for instance that the file is by default bound to @PRscVirtualFile
--- Nothing@ (which will correspond to `null` in the yaml config file)
-layeredAccessTask'
-  :: (LocationMonad m, KatipContext m, Monoid o)
-  => [LocationTreePathItem]   -- ^ Folder path
-  -> LTPIAndSubtree UnboundPipelineResource  -- ^ File in folder
-  -> (SerialMethod -> Maybe (i -> Loc -> m o))
-      -- ^ If the 'SerialMethod' is accepted, this function should return @Just
-      -- f@, where @f@ is a function taking the input @i@ of the task, the 'Loc'
-      -- where it should read/write, and that should perform the access and
-      -- return a result @o@. This function will be called once per layer, and
-      -- the results of each called will be combined since @o@ must be a
-      -- 'Monoid'.
-  -> ATask m PipelineResource i o
-layeredAccessTask' path fname f =
-  liftToATask path (Identity fname) $
-    \i (Identity layers) ->
-      case layers of
-        PRscVirtualFile l -> mconcat <$>
-          mapM (access i) (l^..locLayers)
-        PRscNothing -> return mempty
-        _ -> throwWithPrefix $
-          "Unsupported pipeline resource to load.\
-          \ Only file paths or 'null' can be used"
-  where
-    access input (loc, ser) =
-      case f ser of
-        Nothing -> throwWithPrefix $
-          "When accessing " ++ show loc' ++ ", " ++
-          show ser ++ " serialization method not supported."
-        Just f' -> f' input loc'
-      where loc' = addExtToLocIfMissing loc ser
