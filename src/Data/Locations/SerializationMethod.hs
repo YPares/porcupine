@@ -20,6 +20,7 @@ import           Control.Monad.Catch
 import           Data.Aeson                   as A
 import           Data.Binary
 import           Data.Default
+import           Data.DocRecord
 import           Data.Functor.Contravariant
 import           Data.Hashable
 import qualified Data.HashMap.Strict          as HM
@@ -32,7 +33,7 @@ import qualified Data.Text                    as T
 import           Data.Typeable
 import           Data.Void
 import           GHC.Generics
-import qualified Options.Applicative          as O
+-- import qualified Options.Applicative          as O
 
 
 -- | How to read an @a@ from some identified type @i@, which is meant to be a
@@ -49,6 +50,13 @@ singletonFromIntermediaryFn f = HM.singleton argTypeRep (FromIntermediaryFn f)
 newtype ReadFromLocFn a =
   ReadFromLocFn (forall m. (LocationMonad m, MonadThrow m) => Loc -> m a)
 
+data ReadFromConfig a = forall rs. (Typeable rs) => ReadFromConfig
+  { readFromConfigDefault    :: a
+  , readFromConfigFromDocRec :: DocRec rs -> a }
+
+instance Functor ReadFromConfig where
+  fmap f (ReadFromConfig c d) = ReadFromConfig (f c) (f . d)
+
 -- | Here, "serial" is short for "serialization method". 'SerialReaders'
 -- describes the different ways a serial can be used to deserialize (read) data.
 data SerialReaders a = SerialReaders
@@ -56,8 +64,8 @@ data SerialReaders a = SerialReaders
        -- ^ How to read data from an intermediate type (like 'A.Value' or
        -- 'T.Text') that should be directly read from the pipeline's
        -- configuration
-  , serialReaderFromCommandLine   :: First (O.Parser a)
-       -- ^ How to read data from the CLI
+  , serialReaderFromConfig        :: First (ReadFromConfig a)
+       -- ^ How to read data from the CLI and merge it with 
   , serialReadersFromInputFile    :: HM.HashMap T.Text (ReadFromLocFn a)
        -- ^ How to read data from an external file or data storage.
   }
@@ -72,7 +80,7 @@ instance Functor SerialReaders where
   fmap f sr = SerialReaders
     { serialReadersFromIntermediary = fmap (\(FromIntermediaryFn f') -> FromIntermediaryFn $ fmap f . f')
                                       (serialReadersFromIntermediary sr)
-    , serialReaderFromCommandLine = fmap f <$> serialReaderFromCommandLine sr
+    , serialReaderFromConfig = fmap f <$> serialReaderFromConfig sr
     , serialReadersFromInputFile = fmap (\(ReadFromLocFn f') -> ReadFromLocFn $ fmap f . f')
                                    (serialReadersFromInputFile sr)
     }
@@ -89,26 +97,33 @@ singletonToIntermediaryFn f = HM.singleton (typeOf $ f undefined) (ToIntermediar
 newtype WriteToLocFn a =
   WriteToLocFn (forall m. (LocationMonad m, MonadThrow m) => a -> Loc -> m ())
 
+-- | The contravariant part of 'ReadFromConfig'. Permits to write default values
+-- of the input config
+data WriteToConfigFn a = forall rs. (Typeable rs) => WriteToConfigFn (a -> DocRec rs)
+
 -- | The writing part of a serial. 'SerialWriters' describes the different ways
 -- a serial can be used to serialize (write) data.
 data SerialWriters a = SerialWriters
   { serialWritersToIntermediary :: HM.HashMap TypeRep (ToIntermediaryFn a)
       -- ^ How to write the data to an intermediate type (like 'A.Value') that
       -- should be integrated to the stdout of the pipeline.
+  , serialWriterToConfig       :: First (WriteToConfigFn a)
   , serialWritersToOutputFile   :: HM.HashMap T.Text (WriteToLocFn a)
       -- ^ How to write the data to an external file or storage.
   }
 
 instance Semigroup (SerialWriters a) where
-  SerialWriters i f <> SerialWriters i' f' =
-    SerialWriters (HM.unionWith const i i') (HM.unionWith const f f')
+  SerialWriters i c f <> SerialWriters i' c' f' =
+    SerialWriters (HM.unionWith const i i') (c<>c') (HM.unionWith const f f')
 instance Monoid (SerialWriters a) where
-  mempty = SerialWriters mempty mempty
+  mempty = SerialWriters mempty mempty mempty
 
 instance Contravariant SerialWriters where
   contramap f sw = SerialWriters
     { serialWritersToIntermediary = fmap (\(ToIntermediaryFn f') -> ToIntermediaryFn $ f' . f)
                                     (serialWritersToIntermediary sw)
+    , serialWriterToConfig = fmap (\(WriteToConfigFn f') -> WriteToConfigFn $ f' . f)
+                             (serialWriterToConfig sw)
     , serialWritersToOutputFile = fmap (\(WriteToLocFn f') -> WriteToLocFn $ f' . f)
                                   (serialWritersToOutputFile sw)
     }
@@ -139,7 +154,7 @@ instance SerializationMethod (JSONSerial a) where
   getSerialDefaultExt _ = Just "json"
 
 instance (ToJSON a) => SerializesWith (JSONSerial a) a where
-  getSerialWriters _ = SerialWriters
+  getSerialWriters _ = mempty
     { serialWritersToIntermediary = singletonToIntermediaryFn A.encode
     , serialWritersToOutputFile   = HM.singleton "json" $ WriteToLocFn write
     } where
@@ -168,7 +183,7 @@ instance SerializationMethod PlainTextSerial where
   getSerialDefaultExt (PlainTextSerial exts) = Just $ head exts
 
 instance SerializesWith PlainTextSerial T.Text where
-  getSerialWriters (PlainTextSerial exts) = SerialWriters
+  getSerialWriters (PlainTextSerial exts) = mempty
     { serialWritersToIntermediary =
         singletonToIntermediaryFn id <> singletonToIntermediaryFn A.encode
         -- A text can be written to a raw string or a String field in a JSON
@@ -188,6 +203,17 @@ instance DeserializesWith PlainTextSerial T.Text where
       case res of
         Left err -> throwM err
         Right r  -> return r
+
+-- | A serialization method used for options which can have a default value,
+-- that can be exposed through the configuration.
+data DocRecSerial a = forall rs. (Typeable rs) => DocRecSerial a (a -> DocRec rs) (DocRec rs -> a)
+instance SerializationMethod (DocRecSerial a)
+instance SerializesWith (DocRecSerial a) a where
+  getSerialWriters (DocRecSerial _ f _) = mempty
+    { serialWriterToConfig = First $ Just $ WriteToConfigFn f }
+instance DeserializesWith (DocRecSerial a) a where
+  getSerialReaders (DocRecSerial d _ f) = mempty
+    { serialReaderFromConfig = First $ Just $ ReadFromConfig d f }
 
 -- -- | A very simple deserial that deserializing nothing and just returns a default
 -- -- value.

@@ -27,6 +27,8 @@ import           Control.Monad.IO.Class
 import qualified Data.HashMap.Strict                as HM
 import           Data.Locations
 import           Data.Locations.SerializationMethod
+import           Data.Monoid                        (First (..))
+import           Data.Typeable
 import           Katip
 import           System.TaskPipeline.ATask
 import           System.TaskPipeline.Resource
@@ -41,7 +43,7 @@ loadData
   :: (LocationMonad m, KatipContext m, Monoid a)
   => VirtualFile ignored a -- ^ A 'DataSource'
   -> ATask m PipelineResource () a  -- ^ The resulting task
-loadData vf = arr (const $ error "THIS IS VOID")  -- The input of vf is now Void
+loadData vf = arr (const $ error "THIS IS VOID")  -- Won't be evaluated
           >>> (accessVirtualFile $ vf{vfileSerials = eraseSerials $ vfileSerials vf})
 
 -- | Uses only the write part of a 'VirtualFile'. It is therefore considered as
@@ -73,9 +75,17 @@ accessVirtualFile vfile =
         PRscNothing -> return mempty
         PRscVirtualFile l -> mconcat <$>
           mapM (access input) (l^..locLayers)
+        PRscOptions (RecOfOptions newDocRec) ->
+          case serialReaderFromConfig $ serialReaders $ vfileSerials vfile of
+            First Nothing -> throwWithPrefix $
+              "accessVirtualFile: " ++ show (vfilePath vfile) ++ ": this path doesn't accept options"
+            First (Just (ReadFromConfig _ convert)) ->
+              case cast newDocRec of
+                Nothing -> throwWithPrefix $
+                  "accessVirtualFile: " ++ show (vfilePath vfile) ++ ": the DocRec received isn't of the expected type"
+                Just newDocRec' -> return $ convert newDocRec'
         _ -> throwWithPrefix $
-          "Unsupported pipeline resource to load.\
-          \ Only file paths or 'null' can be used"
+             "accessVirtualFile: Unsupported pipeline resource to load. SHOULD NOT HAPPEN."
   where
     (path, fname) = vpSerialToLTPIs vfile
     fname' = fmap (PRscVirtualFile . WithDefaultUsage (vfileUsedByDefault vfile)) fname
