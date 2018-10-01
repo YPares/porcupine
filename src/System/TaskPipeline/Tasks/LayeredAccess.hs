@@ -25,7 +25,7 @@ import           Control.Lens
 import           Control.Monad.IO.Class
 import           Data.Locations
 import           Data.Locations.SerializationMethod
-import qualified Data.Map                           as Map
+import qualified Data.HashMap.Strict                as HM
 import           Katip
 import           System.TaskPipeline.ATask
 import           System.TaskPipeline.Resource
@@ -47,12 +47,11 @@ loadData vfile =
   where
     (path, fname) = vpDeserialToLTPIs vfile
     fname' = fmap (PRscVirtualFile . WithDefaultUsage (vfileUsedByDefault vfile)) fname
-    deserials = indexPureDeserialsByFileType $ vfileSerials vfile
+    readers = indexPureDeserialsByFileType $ vfileSerials vfile
     run ft = do
-      deserial <- Map.lookup ft deserials
+      ReadFromLocFn reader <- HM.lookup ft readers
       return $ \_ loc -> do
-        r <- case deserial of
-          SomeDeserial s f -> f <$> loadFromLoc s loc
+        r <- reader loc
         logFM InfoS $ logStr $ "Successfully loaded file '" ++ show loc ++ "'"
         return r
 
@@ -66,12 +65,11 @@ writeData vfile =
   where
     (path, fname) = vpSerialToLTPIs vfile
     fname' = fmap (PRscVirtualFile . WithDefaultUsage (vfileUsedByDefault vfile)) fname
-    serials = indexPureSerialsByFileType $ vfileSerials vfile
+    writers = indexPureSerialsByFileType $ vfileSerials vfile
     run ft = do
-      serial <- Map.lookup ft serials
+      WriteToLocFn writer <- HM.lookup ft writers
       return $ \input loc -> do
-        case serial of
-          SomeSerial s f -> persistAtLoc s (f input) loc
+        writer input loc
         logFM InfoS $ logStr $ "Successfully wrote file '" ++ show loc ++ "'"
 
 -- | Returns the locs mapped to some path in the location tree. It *doesn't*

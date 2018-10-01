@@ -25,6 +25,7 @@ haskell_library(
             "//hackage:conduit",
             "//hackage:conduit-extra",
             "//hackage:containers",
+	    "//hackage:contravariant", # Won't be necessary in GHC 8.6
             "//hackage:data-default",
             "//hackage:deepseq",
             "//hackage:directory",
