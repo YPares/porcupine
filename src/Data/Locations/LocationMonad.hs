@@ -58,6 +58,18 @@ instance Show Error where
 
 instance Exception Error
 
+data RetrievingError
+  = FileReadError Error
+  | DecodingError Loc Text.Text
+
+instance Exception RetrievingError
+
+instance Show RetrievingError where
+  show (FileReadError loc) = "Impossible to read file " <> show loc
+  show (DecodingError loc msg) =
+    "Error while decoding file " <> show loc <> ": " <> Text.unpack msg
+    
+
 -- | Runs computations accessing 'Loc's
 class (MonadMask m, MonadUnliftIO m) => LocationMonad m where
   writeBSS :: Loc -> BSS.ByteString m () -> m ()

@@ -67,17 +67,6 @@ instance Representable SerialMethod where
     _      -> empty
 
 
-data RetrievingError
-  = FileReadError Loc.Error
-  | DecodingError Loc.Loc T.Text
-
-instance Exception RetrievingError
-
-instance Show RetrievingError where
-  show (FileReadError loc) = "Impossible to read file " <> show loc
-  show (DecodingError loc msg) =
-    "Error while decoding file " <> show loc <> ": " <> T.unpack msg
-
 -- | How to read an @a@ from some identified type @i@, which is meant to be a
 -- general-purpose intermediate representation, like 'A.Value'.
 data FromIntermediaryFn a =
