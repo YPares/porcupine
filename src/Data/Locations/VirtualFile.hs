@@ -1,3 +1,5 @@
+{-# LANGUAGE TypeOperators #-}
+
 module Data.Locations.VirtualFile
   ( LocationTreePathItem
   , SerializationMethod(..)
@@ -5,17 +7,18 @@ module Data.Locations.VirtualFile
   , JSONSerial(..), PlainTextSerial(..)
   , Profunctor(..)
   , VirtualFile, BidirVirtualFile, DataSource, DataSink
-  , vfileUsedByDefault, vfileSerials, vfilePath
+  , vfileUsedByDefault, vfileSerials, vfilePath, vfileBidirProof
   , someBidirSerial, somePureSerial, somePureDeserial
   , customPureSerial, customPureDeserial, makeBidir
-  , dataSource, dataSink, virtualFile
+  , dataSource, dataSink, bidirVirtualFile
   , unusedByDefault
-  , vpDeserialToLTPIs, vpSerialToLTPIs
+  , makeSink, makeSource
   ) where
 
 import           Data.Locations.LocationTree
 import           Data.Locations.SerializationMethod
 import           Data.Profunctor                    (Profunctor (..))
+import           Data.Type.Equality
 import           Data.Void
 
 
@@ -24,10 +27,13 @@ import           Data.Void
 data VirtualFile a b = VirtualFile
   { vfilePath          :: [LocationTreePathItem]
   , vfileUsedByDefault :: Bool
+  , vfileBidirProof    :: Maybe (a :~: b)
+                       -- Temporary, necessary until we can do away with docrec
+                       -- conversion in the writer part of SerialsFor
   , vfileSerials       :: SerialsFor a b }
 
 instance Profunctor VirtualFile where
-  dimap f g (VirtualFile l u s) = VirtualFile l u $ dimap f g s
+  dimap f g (VirtualFile l u _ s) = VirtualFile l u Nothing $ dimap f g s
 
 -- | A virtual file which depending on the situation can be written or read
 type BidirVirtualFile a = VirtualFile a a
@@ -52,22 +58,20 @@ dataSink path = virtualFile path . eraseDeserials
 -- the data. You should prefer 'dataSink' and 'dataSource' for clarity when the
 -- file is meant to be readonly or writeonly.
 virtualFile :: [LocationTreePathItem] -> SerialsFor a b -> VirtualFile a b
-virtualFile path sers = VirtualFile path True sers
+virtualFile path sers = VirtualFile path True Nothing sers
+
+-- | Like VirtualFile, except we will embed the proof that @a@ and @b@ are the same
+bidirVirtualFile :: [LocationTreePathItem] -> BidirSerials a -> BidirVirtualFile a
+bidirVirtualFile path sers = VirtualFile path True (Just Refl) sers
 
 -- | Indicates that the file should be mapped to 'null' by default
 unusedByDefault :: VirtualFile a b -> VirtualFile a b
 unusedByDefault vf = vf{vfileUsedByDefault=False}
 
--- temporary
-vpDeserialToLTPIs :: VirtualFile a b -> ([LocationTreePathItem], LTPIAndSubtree SerialMethod)
-vpDeserialToLTPIs (VirtualFile [] _ _) = error "vpDeserialToLTPIs: EMPTY PATH"
-vpDeserialToLTPIs (VirtualFile p _ s) = (init p, f)
-  where
-    f = file (last p) (firstPureDeserialFileType s)
+makeSink :: VirtualFile a b -> DataSink a
+makeSink vf = vf{vfileSerials=eraseDeserials $ vfileSerials vf
+                ,vfileBidirProof=Nothing}
 
--- temporary
-vpSerialToLTPIs :: VirtualFile a b -> ([LocationTreePathItem], LTPIAndSubtree SerialMethod)
-vpSerialToLTPIs (VirtualFile [] _ _) = error "vpSerialToLTPIs: EMPTY PATH"
-vpSerialToLTPIs (VirtualFile p _ s) = (init p, f)
-  where
-    f = file (last p) (firstPureSerialFileType s)
+makeSource :: VirtualFile a b -> DataSource b
+makeSource vf = vf{vfileSerials=eraseSerials $ vfileSerials vf
+                  ,vfileBidirProof=Nothing}

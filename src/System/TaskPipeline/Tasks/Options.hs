@@ -1,9 +1,5 @@
 {-# LANGUAGE FlexibleContexts #-}
-{-# LANGUAGE GADTs            #-}
 {-# OPTIONS_GHC -Wall #-}
-
--- IMPORTANT! Some inferences with DocRecs (equational constraints) don't work
--- if we don't activate GADTs
 
 module System.TaskPipeline.Tasks.Options
   ( getOptions
@@ -11,16 +7,16 @@ module System.TaskPipeline.Tasks.Options
                                            -- DocRecords
   ) where
 
-import           Prelude hiding (id, (.))
+import           Prelude                                 hiding (id, (.))
 
 import           Data.DocRecord
 import           Data.DocRecord.OptParse
-import           Katip
 import           Data.Locations.LocationMonad
 import           Data.Locations.SerializationMethod
 import           Data.Locations.VirtualFile
-import           Data.Monoid (Last (..))
+import           Data.Monoid                             (Last (..))
 import           Data.Typeable
+import           Katip
 import           System.TaskPipeline.ATask
 import           System.TaskPipeline.Resource
 import           System.TaskPipeline.Tasks.LayeredAccess
@@ -39,7 +35,7 @@ getOptions
 getOptions path defOpts = arr (const defOpts') >>> accessVirtualFile vfile >>> arr post
   where
     defOpts' = Last $ Just defOpts
-    post (Last Nothing) = defOpts
+    post (Last Nothing)  = defOpts
     post (Last (Just x)) = x
-    vfile = virtualFile path $ someBidirSerial $
+    vfile = bidirVirtualFile path $ someBidirSerial $
       DocRecSerial defOpts' (\(Last (Just x)) -> x) (Last . Just)

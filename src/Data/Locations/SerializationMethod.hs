@@ -3,6 +3,7 @@
 {-# LANGUAGE DeriveAnyClass            #-}
 {-# LANGUAGE DeriveGeneric             #-}
 {-# LANGUAGE ExistentialQuantification #-}
+{-# LANGUAGE FlexibleContexts          #-}
 {-# LANGUAGE FlexibleInstances         #-}
 {-# LANGUAGE FunctionalDependencies    #-}
 {-# LANGUAGE GADTs                     #-}
@@ -21,6 +22,7 @@ import           Data.Aeson                   as A
 import           Data.Binary
 import           Data.Default
 import           Data.DocRecord
+import           Data.DocRecord.OptParse      (RecordUsableWithCLI)
 import           Data.Functor.Contravariant
 import           Data.Hashable
 import qualified Data.HashMap.Strict          as HM
@@ -65,7 +67,7 @@ data SerialReaders a = SerialReaders
        -- 'T.Text') that should be directly read from the pipeline's
        -- configuration
   , serialReaderFromConfig        :: First (ReadFromConfig a)
-       -- ^ How to read data from the CLI and merge it with 
+       -- ^ How to read data from the CLI and merge it with
   , serialReadersFromInputFile    :: HM.HashMap T.Text (ReadFromLocFn a)
        -- ^ How to read data from an external file or data storage.
   }
@@ -99,7 +101,8 @@ newtype WriteToLocFn a =
 
 -- | The contravariant part of 'ReadFromConfig'. Permits to write default values
 -- of the input config
-data WriteToConfigFn a = forall rs. (Typeable rs) => WriteToConfigFn (a -> DocRec rs)
+data WriteToConfigFn a = forall rs. (Typeable rs, RecordUsableWithCLI rs)
+                      => WriteToConfigFn (a -> DocRec rs)
 
 -- | The writing part of a serial. 'SerialWriters' describes the different ways
 -- a serial can be used to serialize (write) data.
@@ -107,7 +110,7 @@ data SerialWriters a = SerialWriters
   { serialWritersToIntermediary :: HM.HashMap TypeRep (ToIntermediaryFn a)
       -- ^ How to write the data to an intermediate type (like 'A.Value') that
       -- should be integrated to the stdout of the pipeline.
-  , serialWriterToConfig       :: First (WriteToConfigFn a)
+  , serialWriterToConfig        :: First (WriteToConfigFn a)
   , serialWritersToOutputFile   :: HM.HashMap T.Text (WriteToLocFn a)
       -- ^ How to write the data to an external file or storage.
   }
@@ -206,7 +209,8 @@ instance DeserializesWith PlainTextSerial T.Text where
 
 -- | A serialization method used for options which can have a default value,
 -- that can be exposed through the configuration.
-data DocRecSerial a = forall rs. (Typeable rs) => DocRecSerial a (a -> DocRec rs) (DocRec rs -> a)
+data DocRecSerial a = forall rs. (Typeable rs, RecordUsableWithCLI rs)
+                   => DocRecSerial a (a -> DocRec rs) (DocRec rs -> a)
 instance SerializationMethod (DocRecSerial a)
 instance SerializesWith (DocRecSerial a) a where
   getSerialWriters (DocRecSerial _ f _) = mempty
@@ -371,12 +375,6 @@ indexPureDeserialsByFileType :: SerialsFor a b -> HM.HashMap SerialMethod (ReadF
 indexPureDeserialsByFileType (SerialsFor _ desers _) =
   HM.fromList $ map (\(k,v) -> (associatedFileType k,v)) $ HM.toList $
   serialReadersFromInputFile desers
-
-firstPureSerialFileType :: SerialsFor a b -> SerialMethod
-firstPureSerialFileType (SerialsFor _ _ (First (Just ext))) = associatedFileType ext
-
-firstPureDeserialFileType :: SerialsFor a b -> SerialMethod
-firstPureDeserialFileType (SerialsFor _ _ (First (Just ext))) = associatedFileType ext
 
 associatedFileType :: T.Text -> SerialMethod
 associatedFileType x = case fromTextRepr x of

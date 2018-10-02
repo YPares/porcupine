@@ -1,6 +1,7 @@
 {-# LANGUAGE Arrows                     #-}
 {-# LANGUAGE ExistentialQuantification  #-}
 {-# LANGUAGE FlexibleContexts           #-}
+{-# LANGUAGE GADTs                      #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE OverloadedStrings          #-}
 {-# LANGUAGE PartialTypeSignatures      #-}
@@ -44,7 +45,7 @@ loadData
   => VirtualFile ignored a -- ^ A 'DataSource'
   -> ATask m PipelineResource () a  -- ^ The resulting task
 loadData vf = arr (const $ error "THIS IS VOID")  -- Won't be evaluated
-          >>> (accessVirtualFile $ vf{vfileSerials = eraseSerials $ vfileSerials vf})
+          >>> (accessVirtualFile $ makeSource vf)
 
 -- | Uses only the write part of a 'VirtualFile'. It is therefore considered as
 -- a pure 'DataSink'.
@@ -54,7 +55,24 @@ writeData
   :: (LocationMonad m, KatipContext m)
   => VirtualFile a ignored  -- ^ A 'DataSink'
   -> ATask m PipelineResource a ()
-writeData vf = accessVirtualFile $ vf{vfileSerials = eraseDeserials $ vfileSerials vf}
+writeData = accessVirtualFile . makeSink
+
+virtualFileToLTPIs :: VirtualFile a b -> ([LocationTreePathItem], LTPIAndSubtree UnboundPipelineResource)
+virtualFileToLTPIs vf
+  | null (vfilePath vf) = error "virtualFileToLTPIs: EMPTY PATH"
+  | otherwise           = (init p, fname)
+  where
+    p = vfilePath vf
+    s = vfileSerials vf
+    First mbopts = (,,) <$> First (vfileBidirProof vf)
+                        <*> serialWriterToConfig (serialWriters s)
+                        <*> (readFromConfigDefault <$> serialReaderFromConfig (serialReaders s))
+    extension = case serialDefaultExt s of
+      First (Just ext) -> associatedFileType ext
+      First Nothing    -> LocDefault
+    fname = file (last p) $ case mbopts of
+      Just (Refl, WriteToConfigFn convert, defVal) -> PRscOptions $ RecOfOptions $ convert defVal
+      Nothing -> PRscVirtualFile $ WithDefaultUsage (vfileUsedByDefault vf) extension
 
 -- | Writes some data to all the locations bound to a 'VirtualFile' if this
 -- 'VirtualFile' has writers, then reads some data over several layers from it
@@ -69,7 +87,7 @@ accessVirtualFile
   => VirtualFile a b
   -> ATask m PipelineResource a b
 accessVirtualFile vfile =
-  liftToATask path (Identity fname') $
+  liftToATask path (Identity fname) $
     \input (Identity layers) ->
       case layers of
         PRscNothing -> return mempty
@@ -87,8 +105,7 @@ accessVirtualFile vfile =
         _ -> throwWithPrefix $
              "accessVirtualFile: Unsupported pipeline resource to load. SHOULD NOT HAPPEN."
   where
-    (path, fname) = vpSerialToLTPIs vfile
-    fname' = fmap (PRscVirtualFile . WithDefaultUsage (vfileUsedByDefault vfile)) fname
+    (path, fname) = virtualFileToLTPIs vfile
     writers = indexPureSerialsByFileType $ vfileSerials vfile
     readers = indexPureDeserialsByFileType $ vfileSerials vfile
     access input (locWithoutExt, ser) = do
