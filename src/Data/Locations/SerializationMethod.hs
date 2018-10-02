@@ -279,6 +279,8 @@ instance Profunctor SerialsFor where
 instance Semigroup (SerialsFor a b) where
   SerialsFor s d ext <> SerialsFor s' d' ext' =
     SerialsFor (s<>s') (d<>d') (ext<>ext')
+instance Monoid (SerialsFor a b) where
+  mempty = SerialsFor mempty mempty mempty
 
 -- | Packs together ways to serialize and deserialize some data @a@
 someBidirSerial :: (SerializesWith s a, DeserializesWith s a) => s -> BidirSerials a

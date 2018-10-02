@@ -57,9 +57,9 @@ writeData
   -> ATask m PipelineResource a ()
 writeData = accessVirtualFile . makeSink
 
-virtualFileToLTPIs :: VirtualFile a b -> ([LocationTreePathItem], LTPIAndSubtree UnboundPipelineResource)
-virtualFileToLTPIs vf
-  | null (vfilePath vf) = error "virtualFileToLTPIs: EMPTY PATH"
+virtualFileToPipelineResource :: VirtualFile a b -> ([LocationTreePathItem], LTPIAndSubtree UnboundPipelineResource)
+virtualFileToPipelineResource vf
+  | null (vfilePath vf) = error "virtualFileToPipelineResource: EMPTY PATH"
   | otherwise           = (init p, fname)
   where
     p = vfilePath vf
@@ -95,17 +95,14 @@ accessVirtualFile vfile =
           mapM (access input) (l^..locLayers)
         PRscOptions (RecOfOptions newDocRec) ->
           case serialReaderFromConfig $ serialReaders $ vfileSerials vfile of
-            First Nothing -> throwWithPrefix $
-              "accessVirtualFile: " ++ show (vfilePath vfile) ++ ": this path doesn't accept options"
+            First Nothing -> err vfile "this path doesn't accept options"
             First (Just (ReadFromConfig _ convert)) ->
               case cast newDocRec of
-                Nothing -> throwWithPrefix $
-                  "accessVirtualFile: " ++ show (vfilePath vfile) ++ ": the DocRec received isn't of the expected type"
+                Nothing -> err vfile "the DocRec received isn't of the expected type"
                 Just newDocRec' -> return $ convert newDocRec'
-        _ -> throwWithPrefix $
-             "accessVirtualFile: Unsupported pipeline resource to load. SHOULD NOT HAPPEN."
+        _ -> err vfile "unsupported pipeline resource to load. SHOULD NOT HAPPEN."
   where
-    (path, fname) = virtualFileToLTPIs vfile
+    (path, fname) = virtualFileToPipelineResource vfile
     writers = indexPureSerialsByFileType $ vfileSerials vfile
     readers = indexPureDeserialsByFileType $ vfileSerials vfile
     access input (locWithoutExt, ser) = do
@@ -121,6 +118,32 @@ accessVirtualFile vfile =
           r <- reader loc
           logFM InfoS $ logStr $ "Successfully loaded file '" ++ show loc ++ "'"
           return r
+
+-- | When building the pipeline, stores into the location tree the way to read
+-- or write the required resource. When running the pipeline, it is handed the
+-- function to actually access the data.
+accessVirtualFile'
+  :: (LocationMonad m, KatipContext m, Typeable a, Typeable b, Monoid b)
+  => VirtualFile a b
+  -> ATask m (VirtualFileOrData m) a b
+accessVirtualFile' vfile =
+  liftToATask path (Identity fname) $
+    \input (Identity (AccessDataNode' action')) -> do
+      AccessDataNode action <- case action' of
+            First (Just a) -> return a
+            First Nothing -> err vfile "no action available for access"
+      res <- case cast input of
+        Just input' -> action input'
+        Nothing -> err vfile "input types don't match"
+      case cast res of
+        Just res' -> return res'
+        Nothing -> err vfile "output types don't match"
+  where
+    path = init $ vfilePath vfile
+    fname = file (last $ vfilePath vfile) $ VirtualFileNode' $ Just $ VirtualFileNode $ removeVFilePath vfile
+
+err :: (KatipContext m, MonadThrow m) => VirtualFile a1 b -> [Char] -> m a2
+err vfile s = throwWithPrefix $ "accessVirtualFile: " ++ show (vfilePath vfile) ++ ": " ++ s
 
 -- | Returns the locs mapped to some path in the location tree. It *doesn't*
 -- expose this path as a requirement (hence the result list may be empty, as no

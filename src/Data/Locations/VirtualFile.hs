@@ -1,5 +1,7 @@
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE TemplateHaskell #-}
+{-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE GADTs #-}
 
 module Data.Locations.VirtualFile
   ( LocationTreePathItem
@@ -9,20 +11,24 @@ module Data.Locations.VirtualFile
   , Profunctor(..)
   , VirtualFile, BidirVirtualFile, DataSource, DataSink
   , VirtualFileInTree
+  , VirtualFileOrData(..), VirtualFileNode(..), AccessDataNode(..)
   , vfileUsedByDefault, vfileSerials, vfilePath, vfileBidirProof
   , someBidirSerial, somePureSerial, somePureDeserial
   , customPureSerial, customPureDeserial, makeBidir
   , dataSource, dataSink, bidirVirtualFile
   , makeSink, makeSource
   , documentedFile, unusedByDefault
+  , removeVFilePath
   ) where
 
 import           Control.Lens
 import           Data.Locations.LocationTree
+import           Data.Locations.Mappings
 import           Data.Locations.SerializationMethod
 import           Data.Monoid                        (First (..))
 import           Data.Profunctor                    (Profunctor (..))
 import qualified Data.Text                          as T
+import           Data.Typeable
 import           Data.Type.Equality
 import           Data.Void
 
@@ -42,6 +48,8 @@ vfileStateData f vf = (\d' -> vf{_vfileStateData=d'}) <$> f (_vfileStateData vf)
 instance Semigroup d => Semigroup (VirtualFile_ d a b) where
   VirtualFile d b s <> VirtualFile d' b' s' =
     VirtualFile (d<>d') (b<>b') (s<>s')
+instance Monoid d => Monoid (VirtualFile_ d a b) where
+  mempty = VirtualFile mempty mempty mempty
 
 fn :: First a
 fn = First Nothing
@@ -71,6 +79,9 @@ type VirtualFile = VirtualFile_ VFMetadataWithPath
 
 -- | A VirtualFile without its path. Becomes a Semigroup.
 type VirtualFileInTree = VirtualFile_ VFMetadata
+
+removeVFilePath :: VirtualFile a b -> VirtualFileInTree a b
+removeVFilePath vf = vf & vfileStateData %~ view vfileState_MD
 
 vfilePath :: VirtualFile a b -> [LocationTreePathItem]
 vfilePath = view (vfileStateData . vfileState_Path)
@@ -125,3 +136,33 @@ unusedByDefault = vfileStateData . vfileState_MD . vfileMD_UsedByDefault .~ Fals
 -- | Gives a documentation to the 'VirtualFile'
 documentedFile :: T.Text -> VirtualFile a b -> VirtualFile a b
 documentedFile doc = vfileStateData . vfileState_MD . vfileMD_Documentation .~ First (Just doc)
+
+
+data VirtualFileNode where
+  VirtualFileNode :: (Typeable a, Typeable b, Monoid b) => VirtualFileInTree a b -> VirtualFileNode
+
+instance Semigroup VirtualFileNode where
+  VirtualFileNode vf <> VirtualFileNode vf' = case cast vf' of
+    Just vf'' -> VirtualFileNode $ vf <> vf''
+    Nothing -> error "Two differently typed VirtualFiles are at the same location"
+
+data AccessDataNode m where
+  AccessDataNode :: (Typeable a, Typeable b) => (a -> m b) -> AccessDataNode m
+
+-- The marker f is here only for compatibility with ATask. Will be removed in
+-- the future when ATask is modified.
+-- | The nodes of the LocationTree when using VirtualFiles
+data VirtualFileOrData m f where
+  VirtualFileNode' :: Maybe VirtualFileNode -> VirtualFileOrData m WithDefaultUsage
+  AccessDataNode'  :: First (AccessDataNode m) -> VirtualFileOrData m LocLayers
+
+-- TODO: It is dubious that composing AccessDataNodes is really needed in the
+-- end. Find a way to remove that.
+
+instance Semigroup (VirtualFileOrData m f) where
+  VirtualFileNode' vf <> VirtualFileNode' vf' = VirtualFileNode' $ vf <> vf'
+  AccessDataNode' f <> AccessDataNode' f' = AccessDataNode' $ f <> f'
+instance Monoid (VirtualFileOrData m WithDefaultUsage) where
+  mempty = VirtualFileNode' mempty
+instance Monoid (VirtualFileOrData m LocLayers) where
+  mempty = AccessDataNode' mempty
