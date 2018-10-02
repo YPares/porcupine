@@ -64,7 +64,7 @@ virtualFileToLTPIs vf
   where
     p = vfilePath vf
     s = vfileSerials vf
-    First mbopts = (,,) <$> First (vfileBidirProof vf)
+    First mbopts = (,,) <$> vfileBidirProof vf
                         <*> serialWriterToConfig (serialWriters s)
                         <*> (readFromConfigDefault <$> serialReaderFromConfig (serialReaders s))
     extension = case serialDefaultExt s of
