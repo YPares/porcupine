@@ -229,9 +229,12 @@ instance DeserializesWith (DocRecSerial a) a where
 
 -- | A SerializationMethod that's meant to be used just for one datatype. Don't
 -- abuse it.
-data CustomPureSerial a =
-  CustomPureSerial [T.Text] -- ^ Possible file extensions to write to
-                   (forall m. (LocationMonad m) => a -> Loc -> m ()) -- ^ Writing function
+data CustomPureSerial a = CustomPureSerial
+  { customPureSerialExtensions :: [T.Text]
+                               -- ^ Possible file extensions to write to
+  , customPureSerialWrite      :: forall m. (LocationMonad m) => a -> Loc -> m ()
+                               -- ^ Writing function
+  }
 instance SerializationMethod (CustomPureSerial a) where
   getSerialDefaultExt (CustomPureSerial exts _) = Just $ head exts
 instance SerializesWith (CustomPureSerial a) a where
@@ -241,9 +244,12 @@ instance SerializesWith (CustomPureSerial a) a where
 
 -- | A DeserializationMethod that's meant to be used just for one
 -- datatype. Don't abuse it.
-data CustomPureDeserial a =
-  CustomPureDeserial [T.Text] -- ^ Possible file extensions to read from
-                     (forall m. (LocationMonad m) => Loc -> m a) -- ^ Reading function
+data CustomPureDeserial a = CustomPureDeserial
+  { customPureDeserialExtensions :: [T.Text]
+                                 -- ^ Possible file extensions to read from
+  , customPureDeserialRead       :: forall m. (LocationMonad m) => Loc -> m a
+                                 -- ^ Reading function
+  }
 instance SerializationMethod (CustomPureDeserial a) where
   getSerialDefaultExt (CustomPureDeserial exts _) = Just $ head exts
 instance DeserializesWith (CustomPureDeserial a) a where
