@@ -9,11 +9,14 @@
 {-# LANGUAGE OverloadedStrings          #-}
 {-# LANGUAGE TupleSections              #-}
 {-# LANGUAGE ViewPatterns               #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE FunctionalDependencies #-}
 {-# OPTIONS_GHC -Wall #-}
 
 module Data.Locations.Mappings
   ( LocationMappings
   , WithDefaultUsage(..)
+  , HasDefautUsage(..)
   , LocLayers(..)
   , Mapping
   , allLocsInMappings
@@ -80,14 +83,19 @@ allLocsInMappings (LocationMappings m) =
     f Unmapped     = Nothing
     f (MappedTo a) = Just $ mapMaybe fst a
 
+-- Temporary
+class HasDefautUsage a b | a -> b where
+  isUsedByDefault :: a -> Bool
+  hasDefaultUsageInner :: a -> b
+
 -- | Pre-fills the mappings from the context of a 'LocationTree', with extra
 -- metadata saying whether each node should be explicitely mapped or unmapped.
-mappingsFromLocTree :: LocationTree (WithDefaultUsage a) -> LocationMappings a
-mappingsFromLocTree (LocationTree (WithDefaultUsage toBeMapped n) (HM.toList -> [])) =
+mappingsFromLocTree :: (HasDefautUsage a b) => LocationTree a -> LocationMappings b
+mappingsFromLocTree (LocationTree node (HM.toList -> [])) =
   LocationMappings $
     HM.fromList [(LTP []
-                 , if toBeMapped
-                   then MappedTo [(Nothing, Just n)]
+                 , if isUsedByDefault node
+                   then MappedTo [(Nothing, Just $ hasDefaultUsageInner node)]
                    else Unmapped)]
 mappingsFromLocTree (LocationTree _ sub) =
   LocationMappings (mconcat $ map f $ HM.toList sub)
@@ -159,6 +167,11 @@ instance FromJSON (Mapping SerialMethod) where
 -- | Just packs a value with a Bool indicating whether by default, this value
 -- should be used or not.
 data WithDefaultUsage a = WithDefaultUsage Bool a
+
+instance HasDefautUsage (WithDefaultUsage a) a where
+  isUsedByDefault (WithDefaultUsage b _) = b
+  hasDefaultUsageInner (WithDefaultUsage _ x) = x
+
 
 -- | This type is used to indicate that a location in a 'LocationTree' is mapped
 -- not to one but to several physical locs, at least one (LocLayers behaves like

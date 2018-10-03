@@ -63,23 +63,8 @@ pattern VirtualFileNode x = VirtualFileNodeE (Just (VirtualFileNodeI x))
 type DataAccessNode m = ResourceTreeNode m InDataAccessState
 pattern DataAccessNode x = DataAccessNodeE (First (Just (DataAccessNodeI x)))
 
-instance Show (ResourceTreeNode m InVirtualState) where
-  show (VirtualFileNode vf) = show $ getVirtualFileDescription vf
-  show _ = ""
-  -- TODO: Cleaner Show
-  -- TODO: Display read/written types here, since they're already Typeable
-
-instance Show (ResourceTreeNode m InPhysicalState) where
-  show (PhysicalFileNodeE (Just (VirtualFileNodeI vf))) = T.unpack
-    (mconcat (intersperse " << "
-             (map (toTextRepr . uncurry addExtToLocIfMissing') $
-               toListOf (vfileStateData . _1 . locLayers) vf)))
-    ++ " - " ++ show (getVirtualFileDescription vf)
-  show _ = "null"
-
 -- TODO: It is dubious that composing DataAccessNodes is really needed in the
 -- end. Find a way to remove that.
-
 instance Semigroup (ResourceTreeNode m st) where
   VirtualFileNodeE vf <> VirtualFileNodeE vf' = VirtualFileNodeE $ vf <> vf'
   DataAccessNodeE f <> DataAccessNodeE f' = DataAccessNodeE $ f <> f'
@@ -88,6 +73,20 @@ instance Monoid (ResourceTreeNode m InVirtualState) where
 instance Monoid (ResourceTreeNode m InDataAccessState) where
   mempty = DataAccessNodeE mempty
 
+instance Show (ResourceTreeNode m InVirtualState) where
+  show (VirtualFileNode vf) = show $ getVirtualFileDescription vf
+  show _ = ""
+  -- TODO: Cleaner Show
+  -- TODO: Display read/written types here, since they're already Typeable
+
+instance Show (ResourceTreeNode m InPhysicalState) where
+  show (PhysicalFileNodeE (Just (VirtualFileNodeI vf))) =
+    T.unpack (mconcat
+              (intersperse " << "
+               (map (toTextRepr . uncurry addExtToLocIfMissing') $
+                 toListOf (vfileStateData . _1 . locLayers) vf)))
+    ++ " - " ++ show (getVirtualFileDescription vf)
+  show _ = "null"
 
 -- * Resource tree API
 

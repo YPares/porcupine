@@ -27,7 +27,6 @@ module Data.Locations.LocationTree
   , (:||)(..), _Unprioritized, _Prioritized
   -- * Functions
   , locTreeNodeTag, locTreeSubfolders
-  , everyLeaf
   , inLocTree
   , allSubLocTrees
   , atSubfolder, atSubfolderRec
@@ -180,12 +179,6 @@ filteredLocsInTree f (LocationTree a sub) =
     <*> (Just . HM.fromList . catMaybes <$> traverse onSub (HM.toList sub))
   where
     onSub (k,t) = fmap (k,) <$> filteredLocsInTree f t
-
--- | Traverses all the leaves of the 'LocationTree'
-everyLeaf :: Traversal' (LocationTree a) (LocationTree a)
-everyLeaf f node@(LocationTree a sub)
-  | HM.null sub = f node
-  | otherwise = LocationTree a <$> traversed f sub
 
 -- | Access or edit a subtree
 inLocTree :: LocationTreePath -> Lens' (LocationTree a) (Maybe (LocationTree a))
