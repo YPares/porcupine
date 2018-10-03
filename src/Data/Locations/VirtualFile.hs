@@ -1,8 +1,5 @@
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE TemplateHaskell #-}
-{-# LANGUAGE FlexibleInstances #-}
-{-# LANGUAGE PatternSynonyms #-}
-{-# LANGUAGE GADTs #-}
 
 module Data.Locations.VirtualFile
   ( LocationTreePathItem
@@ -11,10 +8,7 @@ module Data.Locations.VirtualFile
   , JSONSerial(..), PlainTextSerial(..)
   , Profunctor(..)
   , VirtualFile, BidirVirtualFile, DataSource, DataSink
-  , VirtualFileInTree
-  , VirtualFileOrData  -- temporary
-  , VirtualFileNode, pattern VirtualFileNode
-  , DataAccessNode, pattern DataAccessNode
+  , PathlessVirtualFile
   , vfileUsedByDefault, vfileSerials, vfilePath, vfileBidirProof
   , someBidirSerial, somePureSerial, somePureDeserial
   , customPureSerial, customPureDeserial, makeBidir
@@ -26,14 +20,12 @@ module Data.Locations.VirtualFile
 
 import           Control.Lens
 import           Data.Locations.LocationTree
-import           Data.Locations.Mappings
 import           Data.Locations.SerializationMethod
 import           Data.Monoid                        (First (..))
 import           Data.Profunctor                    (Profunctor (..))
 import qualified Data.Text                          as T
-import           Data.Typeable
-import           Data.Type.Equality
 import           Data.Void
+import Data.Type.Equality
 
 
 -- | A virtual file in the location tree to which we can write @a@ and from
@@ -81,9 +73,9 @@ makeLenses ''VFMetadataWithPath
 type VirtualFile = VirtualFile_ VFMetadataWithPath
 
 -- | A VirtualFile without its path. Becomes a Semigroup.
-type VirtualFileInTree = VirtualFile_ VFMetadata
+type PathlessVirtualFile = VirtualFile_ VFMetadata
 
-removeVFilePath :: VirtualFile a b -> VirtualFileInTree a b
+removeVFilePath :: VirtualFile a b -> PathlessVirtualFile a b
 removeVFilePath vf = vf & vfileStateData %~ view vfileState_MD
 
 vfilePath :: VirtualFile a b -> [LocationTreePathItem]
@@ -140,51 +132,3 @@ unusedByDefault = vfileStateData . vfileState_MD . vfileMD_UsedByDefault .~ Fals
 documentedFile :: T.Text -> VirtualFile a b -> VirtualFile a b
 documentedFile doc = vfileStateData . vfileState_MD . vfileMD_Documentation .~ First (Just doc)
 
-
--- | The internal part of a 'VirtualFileNode', closing over the type params of
--- the 'VirtualFile'
-data VirtualFileNodeI where
-  VirtualFileNodeI :: (Typeable a, Typeable b, Monoid b) => VirtualFileInTree a b -> VirtualFileNodeI
-
-instance Semigroup VirtualFileNodeI where
-  VirtualFileNodeI vf <> VirtualFileNodeI vf' = case cast vf' of
-    Just vf'' -> VirtualFileNodeI $ vf <> vf''
-    Nothing -> error "Two differently typed VirtualFiles are at the same location"
-
--- | The internal part of a 'DataAccessNode, closing over the type params of the
--- access function
-data DataAccessNodeI m where
-  DataAccessNodeI :: (Typeable a, Typeable b) => (a -> m b) -> DataAccessNodeI m
-
--- The end type param is only compatibility with ATask. Will be removed in the
--- future when ATask is modified, and these aliases modified.
-
--- | The nodes of the LocationTree when using VirtualFiles
-type VirtualFileNode m = VirtualFileOrData m WithDefaultUsage
-
--- | The nodes of the LocationTree after the VirtualFiles have been resolved to
--- physical paths, and data possibly extracted from these paths
-type DataAccessNode m = VirtualFileOrData m LocLayers
-
-data VirtualFileOrData m f where
-  VirtualFileNodeE :: Maybe VirtualFileNodeI -> VirtualFileNode m
-  DataAccessNodeE  :: First (DataAccessNodeI m) -> DataAccessNode m
-
--- pattern VirtualFileNode
---   :: (Typeable a, Typeable b, Monoid b) => VirtualFileInTree a b -> VirtualFileNode m
-pattern VirtualFileNode x = VirtualFileNodeE (Just (VirtualFileNodeI x))
-
--- pattern DataAccessNode
---   :: (Typeable a, Typeable b) => (a -> m b) -> DataAccessNode m
-pattern DataAccessNode x = DataAccessNodeE (First (Just (DataAccessNodeI x)))
-
--- TODO: It is dubious that composing DataAccessNodes is really needed in the
--- end. Find a way to remove that.
-
-instance Semigroup (VirtualFileOrData m f) where
-  VirtualFileNodeE vf <> VirtualFileNodeE vf' = VirtualFileNodeE $ vf <> vf'
-  DataAccessNodeE f <> DataAccessNodeE f' = DataAccessNodeE $ f <> f'
-instance Monoid (VirtualFileOrData m WithDefaultUsage) where
-  mempty = VirtualFileNodeE mempty
-instance Monoid (VirtualFileOrData m LocLayers) where
-  mempty = DataAccessNodeE mempty

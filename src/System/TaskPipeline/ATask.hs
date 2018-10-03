@@ -46,6 +46,7 @@ import           Data.Locations
 import qualified Data.Text              as T
 import           Katip
 import           System.Clock
+import           System.TaskPipeline.ResourceTree
 
 
 -- | Monoid that tracks the number of times a resource has been accessed.

@@ -33,6 +33,7 @@ import           Data.Typeable
 import           Katip
 import           System.TaskPipeline.ATask
 import           System.TaskPipeline.Resource
+import           System.TaskPipeline.ResourceTree
 
 
 -- | Uses only the read part of a 'VirtualFile'. It is therefore considered as a
@@ -130,9 +131,10 @@ accessVirtualFile' vfile =
   liftToATask path (Identity fname) $
     \input (Identity mbAction) -> case mbAction of
       DataAccessNode action -> do
-        res <- case cast input of
+        (res, accessesDone) <- case cast input of
           Just input' -> action input'
           Nothing -> err vfile "input types don't match"
+        mapM_ logAccess accessesDone
         case cast res of
           Just res' -> return res'
           Nothing -> err vfile "output types don't match"
@@ -140,6 +142,10 @@ accessVirtualFile' vfile =
   where
     path = init $ vfilePath vfile
     fname = file (last $ vfilePath vfile) $ VirtualFileNode $ removeVFilePath vfile
+    logAccess (DidReadLoc l) =
+      logFM InfoS $ logStr $ "Successfully read file '" ++ l ++ "'"
+    logAccess (DidWriteLoc l) =
+      logFM InfoS $ logStr $ "Successfully wrote file '" ++ l ++ "'"
 
 err :: (KatipContext m, MonadThrow m) => VirtualFile a1 b -> String -> m a2
 err vfile s = throwWithPrefix $ "accessVirtualFile: " ++ show (vfilePath vfile) ++ ": " ++ s
