@@ -1,6 +1,7 @@
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE PatternSynonyms #-}
 {-# LANGUAGE GADTs #-}
 
 module Data.Locations.VirtualFile
@@ -11,7 +12,9 @@ module Data.Locations.VirtualFile
   , Profunctor(..)
   , VirtualFile, BidirVirtualFile, DataSource, DataSink
   , VirtualFileInTree
-  , VirtualFileOrData(..), VirtualFileNode(..), AccessDataNode(..)
+  , VirtualFileOrData  -- temporary
+  , VirtualFileNode, pattern VirtualFileNode
+  , DataAccessNode, pattern DataAccessNode
   , vfileUsedByDefault, vfileSerials, vfilePath, vfileBidirProof
   , someBidirSerial, somePureSerial, somePureDeserial
   , customPureSerial, customPureDeserial, makeBidir
@@ -138,31 +141,50 @@ documentedFile :: T.Text -> VirtualFile a b -> VirtualFile a b
 documentedFile doc = vfileStateData . vfileState_MD . vfileMD_Documentation .~ First (Just doc)
 
 
-data VirtualFileNode where
-  VirtualFileNode :: (Typeable a, Typeable b, Monoid b) => VirtualFileInTree a b -> VirtualFileNode
+-- | The internal part of a 'VirtualFileNode', closing over the type params of
+-- the 'VirtualFile'
+data VirtualFileNodeI where
+  VirtualFileNodeI :: (Typeable a, Typeable b, Monoid b) => VirtualFileInTree a b -> VirtualFileNodeI
 
-instance Semigroup VirtualFileNode where
-  VirtualFileNode vf <> VirtualFileNode vf' = case cast vf' of
-    Just vf'' -> VirtualFileNode $ vf <> vf''
+instance Semigroup VirtualFileNodeI where
+  VirtualFileNodeI vf <> VirtualFileNodeI vf' = case cast vf' of
+    Just vf'' -> VirtualFileNodeI $ vf <> vf''
     Nothing -> error "Two differently typed VirtualFiles are at the same location"
 
-data AccessDataNode m where
-  AccessDataNode :: (Typeable a, Typeable b) => (a -> m b) -> AccessDataNode m
+-- | The internal part of a 'DataAccessNode, closing over the type params of the
+-- access function
+data DataAccessNodeI m where
+  DataAccessNodeI :: (Typeable a, Typeable b) => (a -> m b) -> DataAccessNodeI m
 
--- The marker f is here only for compatibility with ATask. Will be removed in
--- the future when ATask is modified.
+-- The end type param is only compatibility with ATask. Will be removed in the
+-- future when ATask is modified, and these aliases modified.
+
 -- | The nodes of the LocationTree when using VirtualFiles
-data VirtualFileOrData m f where
-  VirtualFileNode' :: Maybe VirtualFileNode -> VirtualFileOrData m WithDefaultUsage
-  AccessDataNode'  :: First (AccessDataNode m) -> VirtualFileOrData m LocLayers
+type VirtualFileNode m = VirtualFileOrData m WithDefaultUsage
 
--- TODO: It is dubious that composing AccessDataNodes is really needed in the
+-- | The nodes of the LocationTree after the VirtualFiles have been resolved to
+-- physical paths, and data possibly extracted from these paths
+type DataAccessNode m = VirtualFileOrData m LocLayers
+
+data VirtualFileOrData m f where
+  VirtualFileNodeE :: Maybe VirtualFileNodeI -> VirtualFileNode m
+  DataAccessNodeE  :: First (DataAccessNodeI m) -> DataAccessNode m
+
+-- pattern VirtualFileNode
+--   :: (Typeable a, Typeable b, Monoid b) => VirtualFileInTree a b -> VirtualFileNode m
+pattern VirtualFileNode x = VirtualFileNodeE (Just (VirtualFileNodeI x))
+
+-- pattern DataAccessNode
+--   :: (Typeable a, Typeable b) => (a -> m b) -> DataAccessNode m
+pattern DataAccessNode x = DataAccessNodeE (First (Just (DataAccessNodeI x)))
+
+-- TODO: It is dubious that composing DataAccessNodes is really needed in the
 -- end. Find a way to remove that.
 
 instance Semigroup (VirtualFileOrData m f) where
-  VirtualFileNode' vf <> VirtualFileNode' vf' = VirtualFileNode' $ vf <> vf'
-  AccessDataNode' f <> AccessDataNode' f' = AccessDataNode' $ f <> f'
+  VirtualFileNodeE vf <> VirtualFileNodeE vf' = VirtualFileNodeE $ vf <> vf'
+  DataAccessNodeE f <> DataAccessNodeE f' = DataAccessNodeE $ f <> f'
 instance Monoid (VirtualFileOrData m WithDefaultUsage) where
-  mempty = VirtualFileNode' mempty
+  mempty = VirtualFileNodeE mempty
 instance Monoid (VirtualFileOrData m LocLayers) where
-  mempty = AccessDataNode' mempty
+  mempty = DataAccessNodeE mempty

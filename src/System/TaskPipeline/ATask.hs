@@ -18,7 +18,7 @@ module System.TaskPipeline.ATask
   ( module Control.Category
   , module Control.Arrow
   , MonadThrow(..), TaskRunError(..)
-  , ATask(..)
+  , ATask(..), ATask'
   , RscAccess(..)
   , RscAccessTree
   , IsTaskResource
@@ -80,6 +80,9 @@ data ATask m n a b = ATask
   -- the actual resources bound to their definitive value, and should update
   -- this tree.
   }
+
+-- | An 'ATask' over a tree of 'VirtualFile's
+type ATask' m = ATask m (VirtualFileOrData m)
 
 -- | The type used within a task for the resources must be a Monoid
 type IsTaskResource n = (Monoid (n WithDefaultUsage), Monoid (n LocLayers))

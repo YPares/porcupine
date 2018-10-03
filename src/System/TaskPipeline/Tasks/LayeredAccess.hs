@@ -125,24 +125,23 @@ accessVirtualFile vfile =
 accessVirtualFile'
   :: (LocationMonad m, KatipContext m, Typeable a, Typeable b, Monoid b)
   => VirtualFile a b
-  -> ATask m (VirtualFileOrData m) a b
+  -> ATask' m a b
 accessVirtualFile' vfile =
   liftToATask path (Identity fname) $
-    \input (Identity (AccessDataNode' action')) -> do
-      AccessDataNode action <- case action' of
-            First (Just a) -> return a
-            First Nothing -> err vfile "no action available for access"
-      res <- case cast input of
-        Just input' -> action input'
-        Nothing -> err vfile "input types don't match"
-      case cast res of
-        Just res' -> return res'
-        Nothing -> err vfile "output types don't match"
+    \input (Identity mbAction) -> case mbAction of
+      DataAccessNode action -> do
+        res <- case cast input of
+          Just input' -> action input'
+          Nothing -> err vfile "input types don't match"
+        case cast res of
+          Just res' -> return res'
+          Nothing -> err vfile "output types don't match"
+      _ -> err vfile "no action available for access"
   where
     path = init $ vfilePath vfile
-    fname = file (last $ vfilePath vfile) $ VirtualFileNode' $ Just $ VirtualFileNode $ removeVFilePath vfile
+    fname = file (last $ vfilePath vfile) $ VirtualFileNode $ removeVFilePath vfile
 
-err :: (KatipContext m, MonadThrow m) => VirtualFile a1 b -> [Char] -> m a2
+err :: (KatipContext m, MonadThrow m) => VirtualFile a1 b -> String -> m a2
 err vfile s = throwWithPrefix $ "accessVirtualFile: " ++ show (vfilePath vfile) ++ ": " ++ s
 
 -- | Returns the locs mapped to some path in the location tree. It *doesn't*
