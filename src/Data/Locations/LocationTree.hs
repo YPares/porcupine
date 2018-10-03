@@ -38,7 +38,7 @@ module Data.Locations.LocationTree
   , showLTPIName
   , ltpiName
   , parseSerMethList
-  , locItemWithExt, addExtToLocIfMissing
+  , locItemWithExt, addExtToLocIfMissing, addExtToLocIfMissing'
   , locNode, folderNode, fileEmpty, file
   , splitLocTree, joinLocTrees
   , locTreeToDataTree
@@ -260,12 +260,14 @@ locItemWithExt (ltpi :/ n) =
   T.unpack $ _ltpiName ltpi <> "." <> toTextRepr (_locTreeNodeTag n)
 
 addExtToLocIfMissing :: Loc -> SerialMethod -> Loc
-addExtToLocIfMissing loc ser | T.null (loc^.locExt) =
+addExtToLocIfMissing loc ser = addExtToLocIfMissing' loc $ toTextRepr ser
+
+addExtToLocIfMissing' :: Loc -> T.Text -> Loc
+addExtToLocIfMissing' loc ext | T.null (loc^.locExt) =
   if T.null ext
-    then loc
-    else loc & locExt .~ ext
-  where ext = toTextRepr ser
-addExtToLocIfMissing loc _ = loc
+     then loc
+     else loc & locExt .~ ext
+addExtToLocIfMissing' loc _ = loc
 
 -- | Like Either, but equipped with a Monoid instance that would prioritize Right over Left
 data a :|| b = Unprioritized a | Prioritized b

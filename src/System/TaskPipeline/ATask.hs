@@ -83,7 +83,7 @@ data ATask m n a b = ATask
   }
 
 -- | An 'ATask' over a tree of 'VirtualFile's
-type ATask' m = ATask m (VirtualFileOrData m)
+type ATask' m = ATask m (ResourceTreeNode m)
 
 -- | The type used within a task for the resources must be a Monoid
 type IsTaskResource n = (Monoid (n WithDefaultUsage), Monoid (n LocLayers))

@@ -59,6 +59,9 @@ data ReadFromConfig a = forall rs. (Typeable rs) => ReadFromConfig
 instance Functor ReadFromConfig where
   fmap f (ReadFromConfig c d) = ReadFromConfig (f c) (f . d)
 
+-- | A file extension
+type FileExt = T.Text
+
 -- | Here, "serial" is short for "serialization method". 'SerialReaders'
 -- describes the different ways a serial can be used to deserialize (read) data.
 data SerialReaders a = SerialReaders
@@ -68,7 +71,7 @@ data SerialReaders a = SerialReaders
        -- configuration
   , serialReaderFromConfig        :: First (ReadFromConfig a)
        -- ^ How to read data from the CLI and merge it with
-  , serialReadersFromInputFile    :: HM.HashMap T.Text (ReadFromLocFn a)
+  , serialReadersFromInputFile    :: HM.HashMap FileExt (ReadFromLocFn a)
        -- ^ How to read data from an external file or data storage.
   }
 
@@ -111,7 +114,7 @@ data SerialWriters a = SerialWriters
       -- ^ How to write the data to an intermediate type (like 'A.Value') that
       -- should be integrated to the stdout of the pipeline.
   , serialWriterToConfig        :: First (WriteToConfigFn a)
-  , serialWritersToOutputFile   :: HM.HashMap T.Text (WriteToLocFn a)
+  , serialWritersToOutputFile   :: HM.HashMap FileExt (WriteToLocFn a)
       -- ^ How to write the data to an external file or storage.
   }
 
@@ -136,7 +139,7 @@ instance Contravariant SerialWriters where
 class SerializationMethod serial where
   -- | If not nothing, it should correspond to one of the keys in
   -- serialReadersFromInputFile or serialWritersToOutputFile.
-  getSerialDefaultExt :: serial -> Maybe T.Text
+  getSerialDefaultExt :: serial -> Maybe FileExt
   getSerialDefaultExt _ = Nothing
 
 -- | Tells whether some type @a@ can be serialized by some _serial_ (serialization
@@ -180,7 +183,7 @@ instance (FromJSON a) => DeserializesWith (JSONSerial a) a where
 -- input strings in the pipeline configuration file. Should be used only for
 -- small files or input strings. The prefered file extension is the first of the
 -- list.
-newtype PlainTextSerial = PlainTextSerial { plainTextSerialFileExtensions :: [T.Text] }
+newtype PlainTextSerial = PlainTextSerial { plainTextSerialFileExtensions :: [FileExt] }
 
 instance SerializationMethod PlainTextSerial where
   getSerialDefaultExt (PlainTextSerial exts) = Just $ head exts
@@ -230,7 +233,7 @@ instance DeserializesWith (DocRecSerial a) a where
 -- | A SerializationMethod that's meant to be used just for one datatype. Don't
 -- abuse it.
 data CustomPureSerial a = CustomPureSerial
-  { customPureSerialExtensions :: [T.Text]
+  { customPureSerialExtensions :: [FileExt]
                                -- ^ Possible file extensions to write to
   , customPureSerialWrite      :: forall m. (LocationMonad m) => a -> Loc -> m ()
                                -- ^ Writing function
@@ -245,7 +248,7 @@ instance SerializesWith (CustomPureSerial a) a where
 -- | A DeserializationMethod that's meant to be used just for one
 -- datatype. Don't abuse it.
 data CustomPureDeserial a = CustomPureDeserial
-  { customPureDeserialExtensions :: [T.Text]
+  { customPureDeserialExtensions :: [FileExt]
                                  -- ^ Possible file extensions to read from
   , customPureDeserialRead       :: forall m. (LocationMonad m) => Loc -> m a
                                  -- ^ Reading function
@@ -261,7 +264,7 @@ instance DeserializesWith (CustomPureDeserial a) a where
 data SerialsFor a b = SerialsFor
   { serialWriters    :: SerialWriters a
   , serialReaders    :: SerialReaders b
-  , serialDefaultExt :: First T.Text }
+  , serialDefaultExt :: First FileExt }
 
 -- | Can serialize and deserialize @a@. Use 'dimap' to transform it
 type BidirSerials a = SerialsFor a a
@@ -310,7 +313,7 @@ eraseDeserials (SerialsFor sers _ ext) = SerialsFor sers mempty ext
 -- | Builds a custom SerializationMethod (ie. which cannot be used for
 -- deserialization) which is just meant to be used for one datatype.
 customPureSerial
-  :: [T.Text]   -- ^ The file extensions associated to this SerializationMethod
+  :: [FileExt]   -- ^ The file extensions associated to this SerializationMethod
   -> (forall m. (LocationMonad m) => a -> Loc -> m ())
   -> PureSerials a
 customPureSerial exts f =
@@ -323,7 +326,7 @@ customPureSerial exts f =
 -- | Builds a custom SerializationMethod (ie. which cannot be used for
 -- deserialization) which is just meant to be used for one datatype.
 customPureDeserial
-  :: [T.Text]   -- ^ The file extensions associated to this SerializationMethod
+  :: [FileExt]   -- ^ The file extensions associated to this SerializationMethod
   -> (forall m. (LocationMonad m) => Loc -> m a)
   -> PureDeserials a
 customPureDeserial exts f =
@@ -384,7 +387,7 @@ indexPureDeserialsByFileType (SerialsFor _ desers _) =
   HM.fromList $ map (\(k,v) -> (associatedFileType k,v)) $ HM.toList $
   serialReadersFromInputFile desers
 
-associatedFileType :: T.Text -> SerialMethod
+associatedFileType :: FileExt -> SerialMethod
 associatedFileType x = case fromTextRepr x of
   Nothing -> error $ "No SerialMethod associated to: " ++ T.unpack x
   Just r  -> r

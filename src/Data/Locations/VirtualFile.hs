@@ -4,28 +4,36 @@
 module Data.Locations.VirtualFile
   ( LocationTreePathItem
   , SerializationMethod(..)
+  , FileExt
   , BidirSerials, PureSerials, PureDeserials
   , JSONSerial(..), PlainTextSerial(..)
   , Profunctor(..)
+  , VirtualFile_(..), VFMetadata(..)
   , VirtualFile, BidirVirtualFile, DataSource, DataSink
-  , PathlessVirtualFile
-  , vfileUsedByDefault, vfileSerials, vfilePath, vfileBidirProof
+  , VirtualFileIntent(..), VirtualFileDescription(..)
+  , vfileUsedByDefault, vfilePath
   , someBidirSerial, somePureSerial, somePureDeserial
   , customPureSerial, customPureDeserial, makeBidir
   , dataSource, dataSink, bidirVirtualFile
   , makeSink, makeSource
   , documentedFile, unusedByDefault
   , removeVFilePath
+  , vfileStateData
+  , getVirtualFileDescription
   ) where
 
 import           Control.Lens
 import           Data.Locations.LocationTree
 import           Data.Locations.SerializationMethod
+import Data.Aeson (Value)
 import           Data.Monoid                        (First (..))
 import           Data.Profunctor                    (Profunctor (..))
 import qualified Data.Text                          as T
+import Data.Typeable
 import           Data.Void
 import Data.Type.Equality
+import qualified Data.HashMap.Strict as HM
+import qualified Data.HashSet as HS
 
 
 -- | A virtual file in the location tree to which we can write @a@ and from
@@ -52,6 +60,51 @@ fn = First Nothing
 instance Profunctor (VirtualFile_ d) where
   dimap f g (VirtualFile d _ s) = VirtualFile d fn $ dimap f g s
 
+-- | Describes how a virtual file is meant to be used
+data VirtualFileIntent =
+  VFForWriting | VFForReading | VFForRW | VFForCaching | VFForCLIOptions
+  deriving (Show, Eq)
+
+-- | Gives the purpose of the 'VirtualFile'. Used to document the pipeline and check
+-- mappings to physical files.
+data VirtualFileDescription = VirtualFileDescription
+  { vfileDescIntent :: Maybe VirtualFileIntent
+                        -- ^ How is the 'VirtualFile' meant to be used
+  , vfileDescEmbeddableInConfig :: Bool
+                        -- ^ True if the data can be read directly from the
+                        -- pipeline's config file
+  , vfileDescEmbeddableInOutput :: Bool
+                        -- ^ True if the data can be written directly in the
+                        -- pipeline's output location tree
+  , vfileDescPossibleExtensions :: [FileExt]
+                        -- ^ Possible extensions for the files this virtual file
+                        -- can be mapped to (prefered extension is the first)
+  }
+  deriving (Show)
+
+-- | Gives a 'VirtualFileDescription'. To be used on files stored in the
+-- ResourceTree.
+getVirtualFileDescription :: VirtualFile_ d a b -> VirtualFileDescription
+getVirtualFileDescription (VirtualFile _ bidir (SerialsFor (SerialWriters toI toC toE)
+                                                           (SerialReaders fromI fromC fromE)
+                                                           prefExt)) =
+  VirtualFileDescription intent readableFromConfig writableInOutput exts
+  where
+    intent
+      | First (Just _) <- fromC, First (Just _) <- toC = Just VFForCLIOptions
+      | HM.null fromE && HM.null toE = Nothing
+      | HM.null fromE = Just VFForWriting
+      | HM.null toE = Just VFForReading
+      | First (Just _) <- bidir = Just VFForCaching
+      | otherwise = Just VFForRW
+    otherExts = HS.fromList $ HM.keys toE <> HM.keys fromE
+    exts = case prefExt of
+             First (Just e) -> e:(HS.toList $ HS.delete e otherExts)
+             _ -> HS.toList otherExts
+    typeOfAesonVal = typeOf (undefined :: Value)
+    readableFromConfig = typeOfAesonVal `HM.member` fromI
+    writableInOutput = typeOfAesonVal `HM.member` toI
+
 data VFMetadata = VFMetadata
   { _vfileMD_UsedByDefault :: Bool
   , _vfileMD_Documentation :: First T.Text }
@@ -61,28 +114,17 @@ makeLenses ''VFMetadata
 instance Semigroup VFMetadata where
   VFMetadata u d <> VFMetadata u' d' = VFMetadata (u && u') (d<>d')
 
--- | Used before the VirtualFile is placed in the LocationTree, to know where it
--- should go.
-data VFMetadataWithPath = VFMetadataWithPath
-  { _vfileState_Path :: [LocationTreePathItem]
-  , _vfileState_MD   :: VFMetadata }
-
-makeLenses ''VFMetadataWithPath
-
 -- | A VirtualFile, as declared by an application.
-type VirtualFile = VirtualFile_ VFMetadataWithPath
+type VirtualFile = VirtualFile_ ([LocationTreePathItem], VFMetadata)
 
--- | A VirtualFile without its path. Becomes a Semigroup.
-type PathlessVirtualFile = VirtualFile_ VFMetadata
-
-removeVFilePath :: VirtualFile a b -> PathlessVirtualFile a b
-removeVFilePath vf = vf & vfileStateData %~ view vfileState_MD
+removeVFilePath :: VirtualFile a b -> VirtualFile_ VFMetadata a b
+removeVFilePath vf = vf & vfileStateData %~ view _2
 
 vfilePath :: VirtualFile a b -> [LocationTreePathItem]
-vfilePath = view (vfileStateData . vfileState_Path)
+vfilePath = view (vfileStateData . _1)
 
 vfileUsedByDefault :: VirtualFile a b -> Bool
-vfileUsedByDefault = view (vfileStateData . vfileState_MD . vfileMD_UsedByDefault)
+vfileUsedByDefault = view (vfileStateData . _2 . vfileMD_UsedByDefault)
 
 -- | A virtual file which depending on the situation can be written or read
 type BidirVirtualFile a = VirtualFile a a
@@ -99,7 +141,7 @@ type DataSink a = VirtualFile a ()
 -- file is meant to be readonly or writeonly.
 virtualFile :: [LocationTreePathItem] -> Maybe (a :~: b) -> SerialsFor a b -> VirtualFile a b
 virtualFile path refl sers =
-  VirtualFile (VFMetadataWithPath path $ VFMetadata True fn) (First refl) sers
+  VirtualFile (path, VFMetadata True fn) (First refl) sers
 
 -- | Creates a virtual file from its virtual path and ways to deserialize the
 -- data.
@@ -126,9 +168,8 @@ makeSource vf = vf{vfileSerials=eraseSerials $ vfileSerials vf
 
 -- | Indicates that the file should be mapped to 'null' by default
 unusedByDefault :: VirtualFile a b -> VirtualFile a b
-unusedByDefault = vfileStateData . vfileState_MD . vfileMD_UsedByDefault .~ False
+unusedByDefault = vfileStateData . _2 . vfileMD_UsedByDefault .~ False
 
 -- | Gives a documentation to the 'VirtualFile'
 documentedFile :: T.Text -> VirtualFile a b -> VirtualFile a b
-documentedFile doc = vfileStateData . vfileState_MD . vfileMD_Documentation .~ First (Just doc)
-
+documentedFile doc = vfileStateData . _2 . vfileMD_Documentation .~ First (Just doc)
