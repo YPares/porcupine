@@ -158,7 +158,7 @@ instance Show BoundPipelineResource where
 
 -- | Get pre-filled mappings from an 'UnboundResourceTree'.
 rscTreeToMappings :: UnboundResourceTree -> Maybe (LocationMappings SerialMethod)
-rscTreeToMappings tree = fmap (\(WithDefaultUsage _ x) -> x) <$>
+rscTreeToMappings tree = fmap (fmap (\(WithDefaultUsage _ x) -> x)) <$>
                          (mappingsFromLocTree <$> over filteredLocsInTree rm tree)
   where
     rm (PRscVirtualFile m) = Just m

@@ -36,7 +36,6 @@ module Data.Locations.LocationTree
   , singLTP
   , showLTPIName
   , ltpiName
-  , parseSerMethList
   , locItemWithExt, addExtToLocIfMissing, addExtToLocIfMissing'
   , locNode, folderNode, fileEmpty, file
   , splitLocTree, joinLocTrees
@@ -93,19 +92,6 @@ data LocationTree a = LocationTree
 -- | A 'LocationTree' without any mountings (just a prefered serial method),
 -- waiting for them to be configured by the user.
 type BareLocationTree = LocationTree SerialMethod
-
-parseSerMethList :: (Monad m) => Value -> m [Maybe SerialMethod]
-parseSerMethList Null         = pure [fromTextRepr ""]
-parseSerMethList (String fmt) = case fromTextRepr fmt of
-  Just f  -> pure [Just f]
-  Nothing -> fail $ "Unhandled serialization method: " ++ T.unpack fmt
-parseSerMethList (Object (HM.toList -> [(_fmt, Object _reprOpts)])) = fail
-  "Serialization options for formats aren't implemented yet"
-  -- TODO: implement options (pretty printing etc.) for serialization methods
-parseSerMethList (Array fmts) = concat <$>
-  mapM parseSerMethList (toListOf traversed fmts)
-parseSerMethList _            = fail
-  "Format must be a string, a null or an array of strings"
 
 instance (Monoid a) => Monoid (LocationTree a) where
   mempty = LocationTree mempty mempty
