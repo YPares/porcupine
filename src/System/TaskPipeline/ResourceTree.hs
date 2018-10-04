@@ -2,18 +2,21 @@
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE ViewPatterns #-}
+{-# LANGUAGE DeriveFunctor #-}
 
 module System.TaskPipeline.ResourceTree where
 
 import Control.Lens
 import Data.Typeable
-import           Data.Locations.Mappings
-import Data.Locations.LocationTree
-import Data.Locations.VirtualFile
+import           Data.Locations.SerializationMethod
+import Data.Locations
 import           Data.Monoid                        (First (..))
 import qualified Data.Text as T
+import qualified Data.HashMap.Strict as HM
 import Data.List (intersperse)
 import Data.Representable
+import Data.Aeson
 
 
 -- * API for manipulating resource tree _nodes_
@@ -104,16 +107,71 @@ instance HasDefaultMappingRule (ResourceTreeNode m InVirtualState) where
                         -- Intermediary levels (folders, where there is no
                         -- VirtualFile) are kept
 
-rscTreeToMappings :: VirtualResourceTree m -> Maybe (LocationMappings (VirtualFileNode m))
+-- | Filters the tree to get only the nodes that don't have data and can be
+-- mapped to external files
+rscTreeToMappings
+  :: VirtualResourceTree m
+  -> Maybe (LocationMappings (VirtualFileNode m))
 rscTreeToMappings tree = mappingsFromLocTree <$> over filteredLocsInTree rmOpts tree
   where
-    rmOpts n@(VirtualFileNode vfile) = case intent of
-      Just VFForCLIOptions -> Nothing  -- options shouldn't appear in the
-                                       -- resource tree
-      _ -> Just n
-      where
-        intent = vfileDescIntent $ getVirtualFileDescription vfile
+    rmOpts n@(VirtualFileNode vfile)
+      | Just VFForCLIOptions <- intent = Nothing
+      where intent = vfileDescIntent $ getVirtualFileDescription vfile
     rmOpts n = Just n
 
--- rscTreeToOptionTree :: VirtualResourceTree m -> Maybe (LocationTree (Maybe DocRecOfOptions))
--- rscTreeToOptionTree = over filteredLocsInTree
+-- | Filters the tree to get only the nodes than can be embedded in the config file
+rscTreeToEmbeddedDataTree
+  :: VirtualResourceTree m
+  -> Maybe (VirtualResourceTree m)
+rscTreeToEmbeddedDataTree = over filteredLocsInTree keepOpts
+  where
+    keepOpts n@(VirtualFileNode vfile)
+      | Just VFForCLIOptions <- intent = Just n
+      | otherwise = Nothing
+      where intent = vfileDescIntent $ getVirtualFileDescription vfile
+    keepOpts n = Just n
+
+embeddedDataSection :: T.Text
+embeddedDataSection = "data"
+
+mappingsSection :: T.Text
+mappingsSection = "locations"
+
+embeddedDataTreeToJSONFields
+  :: T.Text -> VirtualResourceTree m -> [(T.Text, Value)]
+embeddedDataTreeToJSONFields thisPath (LocationTree mbOpts sub) =
+  [(thisPath, Object $ opts' <> sub')]
+  where
+    opts' = case mbOpts of
+      (VirtualFileNode vf) -> case extractDefaultAesonValue vf of
+        Just o -> HM.singleton "_data" o
+        _ -> mempty
+      _ -> mempty
+    sub' = HM.fromList $
+      concat $ map (\(k,v) -> embeddedDataTreeToJSONFields (_ltpiName k) v) $ HM.toList sub
+
+-- | A 'VirtualResourceTree' associated with the mapping that should be applied
+-- to it.
+data ResourceTreeAndMappings m =
+  ResourceTreeAndMappings (LocationTree (VirtualFileNode m))
+                          (Either Loc (LocationMappings (VirtualFileNode m)))
+
+instance ToJSON (ResourceTreeAndMappings m) where
+  toJSON (ResourceTreeAndMappings tree mappings) = Object $
+    (case rscTreeToMappings tree of
+       Just m ->
+         HM.singleton mappingsSection $ toJSON' $ case mappings of
+           Right m'     -> fmap (fmap nodeExt) m'
+           Left rootLoc -> mappingRootOnly rootLoc (Just "") <> fmap (fmap nodeExt) m
+    ) <> (
+    case rscTreeToEmbeddedDataTree tree of
+      Just t  -> HM.fromList $ embeddedDataTreeToJSONFields embeddedDataSection t
+      Nothing -> HM.empty
+    )
+    where
+      toJSON' :: LocationMappings FileExt -> Value
+      toJSON' = toJSON
+      nodeExt :: VirtualFileNode m -> FileExt
+      nodeExt (VirtualFileNode
+                (serialDefaultExt . vfileSerials -> First (Just ext))) = ext
+      nodeExt _ = ""

@@ -30,8 +30,6 @@ module System.TaskPipeline.Resource
  , rscTreeBasedCLIOverriding
  , applyMappingsToResourceTree
  , applyMappingsToResourceTree'
-
- , rscTreeToMappings, rscTreeToOptionTree
  ) where
 
 import           Control.Lens
@@ -208,7 +206,7 @@ instance A.ToJSON ResourceTreeAndMappings where
     (case rscTreeToMappings tree of
        Just m -> [(mappingsYamlSection, A.toJSON $ case mappings of
                       Right m'     -> m'
-                      Left rootLoc -> mappingRootOnly rootLoc <> m)]
+                      Left rootLoc -> mappingRootOnly rootLoc (Just LocDefault) <> m)]
        Nothing -> [])
     ++
     (case rscTreeToOptionTree tree of
@@ -246,7 +244,7 @@ applyMappingsToResourceTree' tree mappings =
   where
     m' = case mappings of
       Right m      -> m
-      Left rootLoc -> mappingRootOnly rootLoc
+      Left rootLoc -> mappingRootOnly rootLoc (Just LocDefault)
 
 -- | Works on a tree of PipelineResources and permits to override the whole of
 -- the tree (options and file mappings) through the Yaml configuration file and

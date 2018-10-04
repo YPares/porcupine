@@ -1,5 +1,6 @@
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE TemplateHaskell #-}
+{-# LANGUAGE GADTs #-}
 
 module Data.Locations.VirtualFile
   ( LocationTreePathItem
@@ -20,12 +21,13 @@ module Data.Locations.VirtualFile
   , removeVFilePath
   , vfileStateData
   , getVirtualFileDescription
+  , extractDefaultAesonValue
   ) where
 
 import           Control.Lens
 import           Data.Locations.LocationTree
 import           Data.Locations.SerializationMethod
-import Data.Aeson (Value)
+import Data.Aeson (Value, toJSON)
 import           Data.Monoid                        (First (..))
 import           Data.Profunctor                    (Profunctor (..))
 import qualified Data.Text                          as T
@@ -180,3 +182,13 @@ unusedByDefault = vfileStateData . _2 . vfileMD_UsedByDefault .~ False
 -- | Gives a documentation to the 'VirtualFile'
 documentedFile :: T.Text -> VirtualFile a b -> VirtualFile a b
 documentedFile doc = vfileStateData . _2 . vfileMD_Documentation .~ First (Just doc)
+
+extractDefaultAesonValue :: VirtualFile_ d a b -> Maybe Value
+extractDefaultAesonValue vf = case mbopts of
+  Just (Refl, WriteToConfigFn convert, defVal) -> Just $ toJSON $ convert defVal
+  _ -> Nothing
+  where
+        s = vfileSerials vf
+        First mbopts = (,,) <$> vfileBidirProof vf
+                        <*> serialWriterToConfig (serialWriters s)
+                        <*> (readFromConfigDefault <$> serialReaderFromConfig (serialReaders s))

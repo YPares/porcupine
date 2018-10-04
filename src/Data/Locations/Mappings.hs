@@ -31,7 +31,6 @@ module Data.Locations.Mappings
 
 import           Control.Lens
 import           Data.Aeson
-import           Data.Default
 import           Data.Either
 import           Data.Function               (on)
 import qualified Data.HashMap.Strict         as HM
@@ -65,7 +64,7 @@ instance Semigroup (LocationMappings_ n) where
       f a Unmapped                 = a
       f (MappedTo l) (MappedTo l') = MappedTo (l ++ l')
 
-instance (Representable n) => ToJSON (LocationMappings_ (MbLocWithExt n)) where
+instance (ToJSON n) => ToJSON (LocationMappings_ n) where
   toJSON (LocationMappings_ m) = Object $ HM.fromList $
     map (\(k, v) -> (toTextRepr k, toJSON v)) $ HM.toList m
 
@@ -202,8 +201,8 @@ locLayers f (LocLayers l ls) = LocLayers <$> f l <*> traverse f ls
 
 -- | Creates a 'LocationMappings_' where the whole LocationTree is mapped to a
 -- single folder
-mappingRootOnly :: (Default a) => Loc -> LocationMappings_ (MbLocWithExt a)
-mappingRootOnly l = LocationMappings_ $ HM.fromList [(LTP [], MappedTo [MbLocWithExt (Just l) def])]
+mappingRootOnly :: Loc -> Maybe a -> LocationMappings_ (MbLocWithExt a)
+mappingRootOnly l a = LocationMappings_ $ HM.fromList [(LTP [], MappedTo [MbLocWithExt (Just l) a])]
 
 -- | Gets the last layer folder mapped to the root. Returns Nothing if the root
 -- has several mappings.
