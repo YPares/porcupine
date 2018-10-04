@@ -16,7 +16,7 @@
 module Data.Locations.Mappings
   ( LocationMappings
   , WithDefaultUsage(..)
-  , HasDefautUsage(..)
+  , HasDefaultMappingRule(..)
   , LocLayers(..)
   , Mapping
   , allLocsInMappings
@@ -83,19 +83,18 @@ allLocsInMappings (LocationMappings m) =
     f Unmapped     = Nothing
     f (MappedTo a) = Just $ mapMaybe fst a
 
--- Temporary
-class HasDefautUsage a b | a -> b where
-  isUsedByDefault :: a -> Bool
-  hasDefaultUsageInner :: a -> b
+class HasDefaultMappingRule a where
+  isMappedByDefault :: a -> Bool  -- ^ False if the resource by default should
+                                  -- be mapped to 'null'
 
 -- | Pre-fills the mappings from the context of a 'LocationTree', with extra
 -- metadata saying whether each node should be explicitely mapped or unmapped.
-mappingsFromLocTree :: (HasDefautUsage a b) => LocationTree a -> LocationMappings b
+mappingsFromLocTree :: (HasDefaultMappingRule a) => LocationTree a -> LocationMappings a
 mappingsFromLocTree (LocationTree node (HM.toList -> [])) =
   LocationMappings $
     HM.fromList [(LTP []
-                 , if isUsedByDefault node
-                   then MappedTo [(Nothing, Just $ hasDefaultUsageInner node)]
+                 , if isMappedByDefault node
+                   then MappedTo [(Nothing, Just node)]
                    else Unmapped)]
 mappingsFromLocTree (LocationTree _ sub) =
   LocationMappings (mconcat $ map f $ HM.toList sub)
@@ -168,9 +167,8 @@ instance FromJSON (Mapping SerialMethod) where
 -- should be used or not.
 data WithDefaultUsage a = WithDefaultUsage Bool a
 
-instance HasDefautUsage (WithDefaultUsage a) a where
-  isUsedByDefault (WithDefaultUsage b _) = b
-  hasDefaultUsageInner (WithDefaultUsage _ x) = x
+instance HasDefaultMappingRule (WithDefaultUsage a) where
+  isMappedByDefault (WithDefaultUsage b _) = b
 
 
 -- | This type is used to indicate that a location in a 'LocationTree' is mapped

@@ -34,6 +34,7 @@ import           Data.Void
 import Data.Type.Equality
 import qualified Data.HashMap.Strict as HM
 import qualified Data.HashSet as HS
+import Data.Locations.Mappings (HasDefaultMappingRule(..))
 
 
 -- | A virtual file in the location tree to which we can write @a@ and from
@@ -44,6 +45,9 @@ data VirtualFile_ d a b = VirtualFile
                     -- Temporary, necessary until we can do away with docrec
                     -- conversion in the writer part of SerialsFor
   , vfileSerials    :: SerialsFor a b }
+
+instance (HasDefaultMappingRule d) => HasDefaultMappingRule (VirtualFile_ d a b) where
+  isMappedByDefault = isMappedByDefault . _vfileStateData
 
 vfileStateData :: Lens (VirtualFile_ d a b) (VirtualFile_ d' a b) d d'
 vfileStateData f vf = (\d' -> vf{_vfileStateData=d'}) <$> f (_vfileStateData vf)
@@ -108,6 +112,9 @@ getVirtualFileDescription (VirtualFile _ bidir (SerialsFor (SerialWriters toI to
 data VFMetadata = VFMetadata
   { _vfileMD_UsedByDefault :: Bool
   , _vfileMD_Documentation :: First T.Text }
+
+instance HasDefaultMappingRule VFMetadata where
+  isMappedByDefault = _vfileMD_UsedByDefault
 
 makeLenses ''VFMetadata
 

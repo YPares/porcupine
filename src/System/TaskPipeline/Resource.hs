@@ -158,11 +158,12 @@ instance Show BoundPipelineResource where
 
 -- | Get pre-filled mappings from an 'UnboundResourceTree'.
 rscTreeToMappings :: UnboundResourceTree -> Maybe (LocationMappings SerialMethod)
-rscTreeToMappings tree = mappingsFromLocTree <$> over filteredLocsInTree rm tree
+rscTreeToMappings tree = fmap (\(WithDefaultUsage _ x) -> x) <$>
+                         (mappingsFromLocTree <$> over filteredLocsInTree rm tree)
   where
     rm (PRscVirtualFile m) = Just m
     rm PRscNothing         = Just $ WithDefaultUsage True def
-                             -- Intermediary levels (folders) are kepy, and just
+                             -- Intermediary levels (folders) are kept, and just
                              -- mapped mapped to LocDefault.
     rm _                   = Nothing
 
