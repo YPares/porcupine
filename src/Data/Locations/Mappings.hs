@@ -225,21 +225,22 @@ insertMappings (LocationMappings_ m) tree = foldl' go initTree $ HM.toList m
 
 -- | For each location in the tree, gives it a final, physical location or
 -- just put Nothing if it isn't mapped
-propagateMappings :: (Monoid n'')
-                  => (LocLayers (Maybe n') -> n -> n'')
+propagateMappings :: (Maybe (LocLayers (Maybe n')) -> n -> n'')
                   -> LocationTree (n, Mapping (MbLocWithExt n'))
                   -> LocationTree n''
 propagateMappings f tree = propagateMappings' Nothing tree
   where
+    -- if a folder is set to null, we recursively unmap everything is contains,
+    -- ignoring every submapping that might exist:
     propagateMappings' _ t@(LocationTree (_, Unmapped) _) =
-      t & traversed .~ mempty
+      t & traversed %~ unmap
+      where unmap (n, _) = f Nothing n
+    -- if a folder is mapped, we propagate the mapping downwards:
     propagateMappings' inheritedLayers (LocationTree (thisNode, MappedTo theseMappings) thisSub) =
       LocationTree thisNode' $ imap recur thisSub
       where
         theseLayers = applyMappingsToLayers inheritedLayers theseMappings
-        thisNode' = case theseLayers of
-          Nothing -> mempty
-          Just tl -> f tl thisNode
+        thisNode' = f theseLayers thisNode
         recur fname subtree = propagateMappings' sublayers subtree
           where
             sublayers =
@@ -268,8 +269,8 @@ applyMappingsToLayers inheritedLayers tm = layers
 -- | Transform a tree to one where unmapped nodes have been changed to 'mempty'
 -- and mapped nodes have been associated to their physical 'Loc'. @n'@ is often
 -- some file type or metadata that's required in the mapping.
-applyMappings :: (Monoid n'')
-              => (LocLayers (Maybe n') -> n -> n'')  -- ^ Add a physical location to a node
+applyMappings :: (Maybe (LocLayers (Maybe n')) -> n -> n'')
+                                   -- ^ Add physical locations (if they exist) to a node
               -> LocationMappings n'  -- ^ Mappings to apply
               -> LocationTree n       -- ^ Original tree
               -> LocationTree n''  -- ^ Tree with physical locations

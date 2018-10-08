@@ -28,7 +28,7 @@ import Data.Maybe
 data SomeVirtualFile md where
   SomeVirtualFile :: (Typeable a, Typeable b, Monoid b) => VirtualFile_ md a b -> SomeVirtualFile md
 
-instance (Semigroup md, Typeable md ) => Semigroup (SomeVirtualFile md) where
+instance (Semigroup md, Typeable md) => Semigroup (SomeVirtualFile md) where
   SomeVirtualFile vf <> SomeVirtualFile vf' = case cast vf' of
     Just vf'' -> SomeVirtualFile $ vf <> vf''
     Nothing -> error "Two differently typed VirtualFiles are at the same location"
@@ -190,9 +190,17 @@ instance ToJSON (ResourceTreeAndMappings m) where
       nodeExt (MbLocWithExt loc _) = MbLocWithExt loc Nothing
 
 -- | Transform a virtual file node in file node with physical locations
-applyOneRscMapping :: LocLayers (Maybe FileExt) -> VirtualFileNode m -> PhysicalFileNode m
-applyOneRscMapping layers (VirtualFileNode vf) = PhysicalFileNode $ vf & vfileStateData %~ (layers,)
+applyOneRscMapping :: Maybe (LocLayers (Maybe FileExt)) -> VirtualFileNode m -> PhysicalFileNode m
+applyOneRscMapping (Just layers) (VirtualFileNode vf) = PhysicalFileNode $ vf & vfileStateData %~ (layers,)
 applyOneRscMapping _ _ = PhysicalFileNodeE Nothing
+
+applyMappingsToResourceTree :: ResourceTreeAndMappings m -> PhysicalResourceTree m
+applyMappingsToResourceTree (ResourceTreeAndMappings tree mappings) =
+  applyMappings applyOneRscMapping m' tree
+  where
+    m' = case mappings of
+           Right m -> m
+           Left rootLoc -> mappingRootOnly rootLoc Nothing
 
 -- data TaskConstructionError =
 --   TaskConstructionError String

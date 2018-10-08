@@ -218,11 +218,12 @@ instance A.ToJSON ResourceTreeAndMappings where
 -- corresponding nodes of the tree
 applyOneRscMapping
   :: Functor f
-  => f (Maybe SerialMethod)
+  => Maybe (f (Maybe SerialMethod))
   -> UnboundPipelineResource -> PipelineResource f
-applyOneRscMapping layers (PRscSerialMethod serMeth) =
+applyOneRscMapping Nothing _ = mempty
+applyOneRscMapping (Just layers) (PRscSerialMethod serMeth) =
   PRscVirtualFile $ fmap (fromMaybe serMeth) layers
-applyOneRscMapping layers PRscNothing =
+applyOneRscMapping (Just layers) PRscNothing =
   PRscVirtualFile $ fmap (fromMaybe def) layers
 applyOneRscMapping _ (PRscOptions o) = PRscOptions o
   -- We never apply any mapping to options, we just use them as they are
