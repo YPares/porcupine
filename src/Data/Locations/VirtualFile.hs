@@ -1,6 +1,7 @@
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE GADTs #-}
+{-# LANGUAGE FlexibleContexts #-}
 
 module Data.Locations.VirtualFile
   ( LocationTreePathItem
@@ -12,6 +13,7 @@ module Data.Locations.VirtualFile
   , VirtualFile_(..), VFMetadata(..)
   , VirtualFile, BidirVirtualFile, DataSource, DataSink
   , VirtualFileIntent(..), VirtualFileDescription(..)
+  , DocRecOfOptions, RecOfOptions(..)
   , vfileUsedByDefault, vfilePath
   , someBidirSerial, somePureSerial, somePureDeserial
   , customPureSerial, customPureDeserial, makeBidir
@@ -21,13 +23,15 @@ module Data.Locations.VirtualFile
   , removeVFilePath
   , vfileStateData
   , getVirtualFileDescription
-  , extractDefaultAesonValue
+  , vfileRecOfOptions, vfileDefaultAesonValue
   ) where
 
 import           Control.Lens
 import           Data.Locations.LocationTree
 import           Data.Locations.SerializationMethod
 import Data.Aeson (Value, toJSON)
+import Data.DocRecord
+import Data.DocRecord.OptParse (RecordUsableWithCLI)
 import           Data.Monoid                        (First (..))
 import           Data.Profunctor                    (Profunctor (..))
 import qualified Data.Text                          as T
@@ -183,12 +187,21 @@ unusedByDefault = vfileStateData . _2 . vfileMD_UsedByDefault .~ False
 documentedFile :: T.Text -> VirtualFile a b -> VirtualFile a b
 documentedFile doc = vfileStateData . _2 . vfileMD_Documentation .~ First (Just doc)
 
-extractDefaultAesonValue :: VirtualFile_ d a b -> Maybe Value
-extractDefaultAesonValue vf = case mbopts of
-  Just (Refl, WriteToConfigFn convert, defVal) -> Just $ toJSON $ convert defVal
+-- | Contains any set of options that should be exposed via the CLI
+data RecOfOptions field where
+  RecOfOptions :: (Typeable rs, RecordUsableWithCLI rs) => Rec field rs -> RecOfOptions field
+
+type DocRecOfOptions = RecOfOptions DocField
+
+vfileRecOfOptions :: VirtualFile_ d a b -> Maybe DocRecOfOptions
+vfileRecOfOptions vf = case mbopts of
+  Just (Refl, WriteToConfigFn convert, defVal) -> Just $ RecOfOptions $ convert defVal
   _ -> Nothing
   where
         s = vfileSerials vf
         First mbopts = (,,) <$> vfileBidirProof vf
                         <*> serialWriterToConfig (serialWriters s)
                         <*> (readFromConfigDefault <$> serialReaderFromConfig (serialReaders s))
+
+vfileDefaultAesonValue :: VirtualFile_ d a b -> Maybe Value
+vfileDefaultAesonValue = fmap (\(RecOfOptions r) -> toJSON r) . vfileRecOfOptions

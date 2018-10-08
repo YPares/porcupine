@@ -155,7 +155,7 @@ embeddedDataTreeToJSONFields thisPath (LocationTree mbOpts sub) =
   [(thisPath, Object $ opts' <> sub')]
   where
     opts' = case mbOpts of
-      (VirtualFileNode vf) -> case extractDefaultAesonValue vf of
+      (VirtualFileNode vf) -> case vfileDefaultAesonValue vf of
         Just o -> HM.singleton "_data" o
         _ -> mempty
       _ -> mempty
@@ -165,7 +165,7 @@ embeddedDataTreeToJSONFields thisPath (LocationTree mbOpts sub) =
 -- | A 'VirtualResourceTree' associated with the mapping that should be applied
 -- to it.
 data ResourceTreeAndMappings m =
-  ResourceTreeAndMappings (LocationTree (VirtualFileNode m))
+  ResourceTreeAndMappings (VirtualResourceTree m)
                           (Either Loc (LocationMappings FileExt))
 
 instance ToJSON (ResourceTreeAndMappings m) where
@@ -215,3 +215,12 @@ applyMappingsToResourceTree (ResourceTreeAndMappings tree mappings) =
 --     layers = vf ^. vfileStateData . _1
 --     run input = 
 -- resolveNodeDataAccess _ = DataAccessNodeE $ First Nothing
+
+-- rscTreeConfigurationReader
+--   :: VirtualResourceTree m
+--   -> CLIOverriding ResourceTreeAndMappings (LocationTree (VirtualFileNode m, RecOfOptions SourcedDocField))
+-- rscTreeConfigurationReader defTree = CLIOverriding{..}
+--   where
+--     extractOpts (VirtualFileNode
+--     treeOfOpts =
+--     overridesParser =

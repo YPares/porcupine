@@ -44,17 +44,9 @@ import           Data.Maybe
 import           Data.Monoid
 import           Data.Representable
 import qualified Data.Text                          as T
-import           Data.Typeable
 import           Options.Applicative
 import           System.TaskPipeline.CLI.Overriding
 
-
--- | Contains any set of options that should be exposed via the CLI
-data RecOfOptions field = forall rs.
-  (Typeable rs, RecordUsableWithCLI rs)
-  => RecOfOptions (Rec field rs)
-
-type DocRecOfOptions = RecOfOptions DocField
 
 -- | A more general version of 'PipelineResource' that doesn't constrain the
 -- records of options to be DocRecords (extra layers, eg. to add tags to every
