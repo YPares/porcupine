@@ -18,6 +18,7 @@ module Data.Locations.Mappings
   , WithDefaultUsage(..)
   , HasDefaultMappingRule(..)
   , LocLayers(..)
+  , MbLocWithExt(..)
   , Mapping
   , allLocsInMappings
   , mappingsFromLocTree
