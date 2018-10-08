@@ -123,10 +123,10 @@ accessVirtualFile vfile =
 -- | When building the pipeline, stores into the location tree the way to read
 -- or write the required resource. When running the pipeline, it is handed the
 -- function to actually access the data.
-accessVirtualFile'
-  :: (LocationMonad m, KatipContext m, Typeable a, Typeable b, Monoid b)
-  => VirtualFile a b
-  -> ATask' m a b
+-- accessVirtualFile'
+--   :: (LocationMonad m, KatipContext m, Typeable a, Typeable b, Monoid b)
+--   => VirtualFile a b
+--   -> ATask' m a b
 accessVirtualFile' vfile =
   liftToATask path (Identity fname) $
     \input (Identity mbAction) -> case mbAction of

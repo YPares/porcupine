@@ -18,7 +18,7 @@ module System.TaskPipeline.ATask
   ( module Control.Category
   , module Control.Arrow
   , MonadThrow(..), TaskRunError(..)
-  , ATask(..), ATask'
+  , ATask(..)
   , RscAccess(..)
   , RscAccessTree
   , IsTaskResource
@@ -46,7 +46,6 @@ import           Data.Locations
 import qualified Data.Text              as T
 import           Katip
 import           System.Clock
-import           System.TaskPipeline.ResourceTree
 
 
 -- | Monoid that tracks the number of times a resource has been accessed.
@@ -81,9 +80,6 @@ data ATask m n a b = ATask
   -- the actual resources bound to their definitive value, and should update
   -- this tree.
   }
-
--- | An 'ATask' over a tree of 'VirtualFile's
-type ATask' m = ATask m (ResourceTreeNode m)
 
 -- | The type used within a task for the resources must be a Monoid
 type IsTaskResource n = (Monoid (n WithDefaultUsage), Monoid (n LocLayers))

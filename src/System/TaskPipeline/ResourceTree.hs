@@ -5,6 +5,7 @@
 {-# LANGUAGE ViewPatterns #-}
 {-# LANGUAGE DeriveFunctor #-}
 {-# LANGUAGE TupleSections #-}
+{-# LANGUAGE RecordWildCards #-}
 
 module System.TaskPipeline.ResourceTree where
 
@@ -19,6 +20,10 @@ import Data.List (intersperse)
 import Data.Representable
 import Data.Aeson
 import Data.Maybe
+import Data.DocRecord
+import Data.DocRecord.OptParse
+import           System.TaskPipeline.CLI.Overriding
+import Options.Applicative
 
 
 -- * API for manipulating resource tree _nodes_
@@ -155,9 +160,7 @@ embeddedDataTreeToJSONFields thisPath (LocationTree mbOpts sub) =
   [(thisPath, Object $ opts' <> sub')]
   where
     opts' = case mbOpts of
-      (VirtualFileNode vf) -> case vfileDefaultAesonValue vf of
-        Just o -> HM.singleton "_data" o
-        _ -> mempty
+      (VirtualFileNode (vfileDefaultAesonValue -> Just o)) -> HM.singleton "_data" o
       _ -> mempty
     sub' = HM.fromList $
       concat $ map (\(k,v) -> embeddedDataTreeToJSONFields (_ltpiName k) v) $ HM.toList sub
@@ -216,11 +219,22 @@ applyMappingsToResourceTree (ResourceTreeAndMappings tree mappings) =
 --     run input = 
 -- resolveNodeDataAccess _ = DataAccessNodeE $ First Nothing
 
--- rscTreeConfigurationReader
---   :: VirtualResourceTree m
---   -> CLIOverriding ResourceTreeAndMappings (LocationTree (VirtualFileNode m, RecOfOptions SourcedDocField))
--- rscTreeConfigurationReader defTree = CLIOverriding{..}
---   where
---     extractOpts (VirtualFileNode
---     treeOfOpts =
---     overridesParser =
+rscTreeConfigurationReader
+  :: VirtualResourceTree m
+  -> CLIOverriding (ResourceTreeAndMappings m) (LocationTree (VirtualFileNode m, Maybe (RecOfOptions SourcedDocField)))
+rscTreeConfigurationReader defTree = CLIOverriding{..}
+  where
+    overridesParser = traverseOf (traversed . _2 . _Just) parseOptions treeWithOpts
+    nodeAndRecOfOptions :: VirtualFileNode m -> (VirtualFileNode m, Maybe DocRecOfOptions)
+    nodeAndRecOfOptions n@(VirtualFileNode vf) = (n, vfileRecOfOptions vf)
+    nodeAndRecOfOptions n = (n, Nothing)
+    treeWithOpts = fmap nodeAndRecOfOptions defTree
+    parseOptions :: RecOfOptions DocField -> Parser (RecOfOptions SourcedDocField)
+    parseOptions (RecOfOptions r) = RecOfOptions <$>
+      parseRecFromCLI (tagWithDefaultSource r)
+
+    nullOverrides = allOf (traversed . _2 . _Just) nullRec
+    nullRec (RecOfOptions RNil) = True
+    nullRec _ = False
+    
+    overrideCfgFromYamlFile = undefined
