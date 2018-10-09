@@ -50,6 +50,8 @@
 
 module System.TaskPipeline.ResourceTree where
 
+import Control.Monad
+import Control.Monad.Catch
 import Control.Lens
 import Data.Typeable
 import           Data.Locations.SerializationMethod
@@ -315,15 +317,36 @@ applyMappingsToResourceTree (ResourceTreeAndMappings tree mappings) =
 -- ** Transforming a physical resource tree to a data access tree (ie. a tree
 -- where each node is just a function that pulls or writes the relevant data)
 
--- data TaskConstructionError =
---   TaskConstructionError String
---   deriving (Show)
--- instance Exception TaskConstructionError
+data TaskConstructionError =
+  TaskConstructionError String
+  deriving (Show)
+instance Exception TaskConstructionError
 
--- -- | Transform a file node with physical locations in node with a data access
--- -- function to run
--- resolveDataAccess :: (MonadThrow m') => PhysicalFileNode m -> m' (DataAccessNode m)
--- resolveDataAccess (PhysicalFileNode vf layers) = DataAccessNode run
---   where
---     run input = 
--- resolveDataAccess _ = DataAccessNodeE $ First Nothing
+-- | Transform a file node with physical locations in node with a data access
+-- function to run. Matches the location (esp. file extensions) to writers
+-- available in the 'VirtualFile'.
+resolveDataAccess :: forall m m'. (LocationMonad m, MonadThrow m') => PhysicalFileNode m -> m' (DataAccessNode m)
+resolveDataAccess (PhysicalFileNode vf (toListOf locLayers -> layers)) = do
+  writeLocs <- findFunctions writers
+  readLocs <- findFunctions readers
+  return $ DataAccessNode $ \input -> do
+    forM_ writeLocs $ \(WriteToLocFn f, loc) ->
+      f input loc
+    layersRes <- mconcat <$> mapM (\(ReadFromLocFn f, loc) -> f loc) readLocs
+    return $ case vf ^? vfileEmbeddedValue of
+      Just v -> (layersRes <> v, [])
+      Nothing -> (layersRes, [])
+  where
+    readers = vf ^. vfileSerials . serialReaders . serialReadersFromInputFile
+    writers = vf ^. vfileSerials . serialWriters . serialWritersToOutputFile
+    findFunctions :: HM.HashMap FileExt v -> m' [(v, Loc)]
+    findFunctions hm | HM.null hm = return []
+                     | otherwise  = mapM findFunction layers
+      where
+        findFunction (loc, fromMaybe "" -> ext) = case HM.lookup ext hm of
+          Just f -> return (f, loc)
+          -- TODO: add VirtualFile path to error
+          Nothing -> throwM $ TaskConstructionError $
+            "Extension '" ++ T.unpack ext ++ "' insn't supported by the VirtualFile which "
+            ++ show loc ++ " is bound to. Accepted extensions are " ++ show (HM.keys hm) ++ "."
+resolveDataAccess _ = return $ DataAccessNodeE $ First Nothing
