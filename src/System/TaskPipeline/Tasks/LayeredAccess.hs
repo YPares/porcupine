@@ -65,14 +65,11 @@ virtualFileToPipelineResource vf
   where
     p = vfilePath vf
     s = vfileSerials vf
-    First mbopts = (,,) <$> vfileBidirProof vf
-                        <*> serialWriterToConfig (serialWriters s)
-                        <*> (readFromConfigDefault <$> serialReaderFromConfig (serialReaders s))
     extension = case serialDefaultExt s of
       First (Just ext) -> associatedFileType ext
       First Nothing    -> LocDefault
-    fname = file (last p) $ case mbopts of
-      Just (Refl, WriteToConfigFn convert, defVal) -> PRscOptions $ RecOfOptions $ convert defVal
+    fname = file (last p) $ case vfileRecOfOptions vf of
+      Just r -> PRscOptions r
       Nothing -> PRscVirtualFile $ WithDefaultUsage (vfileUsedByDefault vf) extension
 
 -- | Writes some data to all the locations bound to a 'VirtualFile' if this

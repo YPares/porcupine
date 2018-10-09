@@ -5,23 +5,18 @@
 
 module Data.Locations.VirtualFile
   ( LocationTreePathItem
-  , SerializationMethod(..)
-  , FileExt
-  , BidirSerials, PureSerials, PureDeserials
-  , JSONSerial(..), PlainTextSerial(..)
+  , module Data.Locations.SerializationMethod
   , Profunctor(..)
   , VirtualFile_(..), VFMetadata(..)
   , VirtualFile, BidirVirtualFile, DataSource, DataSink
   , VirtualFileIntent(..), VirtualFileDescription(..)
   , DocRecOfOptions, RecOfOptions(..)
-  , vfileUsedByDefault, vfilePath
-  , someBidirSerial, somePureSerial, somePureDeserial
-  , customPureSerial, customPureDeserial, makeBidir
+  , vfileStateData, vfileBidirProof, vfileSerials
+  , isVFileUsedByDefault, vfilePath
   , dataSource, dataSink, bidirVirtualFile
   , makeSink, makeSource
   , documentedFile, unusedByDefault
   , removeVFilePath
-  , vfileStateData
   , getVirtualFileDescription
   , vfileRecOfOptions, vfileDefaultAesonValue
   ) where
@@ -47,16 +42,15 @@ import Data.Locations.Mappings (HasDefaultMappingRule(..))
 -- which we can read @b@.
 data VirtualFile_ d a b = VirtualFile
   { _vfileStateData :: d
-  , vfileBidirProof :: First (a :~: b)
+  , _vfileBidirProof :: First (a :~: b)
                     -- Temporary, necessary until we can do away with docrec
                     -- conversion in the writer part of SerialsFor
-  , vfileSerials    :: SerialsFor a b }
+  , _vfileSerials    :: SerialsFor a b }
+
+makeLenses ''VirtualFile_
 
 instance (HasDefaultMappingRule d) => HasDefaultMappingRule (VirtualFile_ d a b) where
   isMappedByDefault = isMappedByDefault . _vfileStateData
-
-vfileStateData :: Lens (VirtualFile_ d a b) (VirtualFile_ d' a b) d d'
-vfileStateData f vf = (\d' -> vf{_vfileStateData=d'}) <$> f (_vfileStateData vf)
 
 instance Semigroup d => Semigroup (VirtualFile_ d a b) where
   VirtualFile d b s <> VirtualFile d' b' s' =
@@ -136,8 +130,8 @@ removeVFilePath vf = vf & vfileStateData %~ view _2
 vfilePath :: VirtualFile a b -> [LocationTreePathItem]
 vfilePath = view (vfileStateData . _1)
 
-vfileUsedByDefault :: VirtualFile a b -> Bool
-vfileUsedByDefault = view (vfileStateData . _2 . vfileMD_UsedByDefault)
+isVFileUsedByDefault :: VirtualFile a b -> Bool
+isVFileUsedByDefault = view (vfileStateData . _2 . vfileMD_UsedByDefault)
 
 -- | A virtual file which depending on the situation can be written or read
 type BidirVirtualFile a = VirtualFile a a
@@ -171,12 +165,12 @@ bidirVirtualFile :: [LocationTreePathItem] -> BidirSerials a -> BidirVirtualFile
 bidirVirtualFile path sers = virtualFile path (Just Refl) sers
 
 makeSink :: VirtualFile a b -> DataSink a
-makeSink vf = vf{vfileSerials=eraseDeserials $ vfileSerials vf
-                ,vfileBidirProof=fn}
+makeSink vf = vf{_vfileSerials=eraseDeserials $ _vfileSerials vf
+                ,_vfileBidirProof=fn}
 
 makeSource :: VirtualFile a b -> DataSource b
-makeSource vf = vf{vfileSerials=eraseSerials $ vfileSerials vf
-                  ,vfileBidirProof=fn}
+makeSource vf = vf{_vfileSerials=eraseSerials $ _vfileSerials vf
+                  ,_vfileBidirProof=fn}
 
 
 -- | Indicates that the file should be mapped to 'null' by default
@@ -193,15 +187,21 @@ data RecOfOptions field where
 
 type DocRecOfOptions = RecOfOptions DocField
 
+-- | If the file has a defaut value that can be converted to and from docrecords
+-- (so that it can be read from config file AND command-line), we convert it.
 vfileRecOfOptions :: VirtualFile_ d a b -> Maybe DocRecOfOptions
 vfileRecOfOptions vf = case mbopts of
   Just (Refl, WriteToConfigFn convert, defVal) -> Just $ RecOfOptions $ convert defVal
   _ -> Nothing
   where
-        s = vfileSerials vf
-        First mbopts = (,,) <$> vfileBidirProof vf
-                        <*> serialWriterToConfig (serialWriters s)
-                        <*> (readFromConfigDefault <$> serialReaderFromConfig (serialReaders s))
+    s = _vfileSerials vf
+    First mbopts = (,,) <$> _vfileBidirProof vf
+                        <*> _serialWriterToConfig (_serialWriters s)
+                        <*> (_serialReaderFromConfig (_serialReaders s) >>= First . _readFromConfigValue)
 
+-- vfileSetValueFromConfig :: VirtualFile_ d a b -> 
+
+-- | If the file has a defaut value that can be converted to and from docrecords
+-- (so that it can be read from config file AND command-line), we convert it.
 vfileDefaultAesonValue :: VirtualFile_ d a b -> Maybe Value
 vfileDefaultAesonValue = fmap (\(RecOfOptions r) -> toJSON r) . vfileRecOfOptions
