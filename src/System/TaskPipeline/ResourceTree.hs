@@ -71,10 +71,10 @@ import Options.Applicative
 
 -- | The internal part of a 'VirtualFileNode', closing over the type params of
 -- the 'VirtualFile'
-data SomeVirtualFile md where
-  SomeVirtualFile :: (Typeable a, Typeable b, Monoid b) => VirtualFile_ md a b -> SomeVirtualFile md
+data SomeVirtualFile where
+  SomeVirtualFile :: (Typeable a, Typeable b, Monoid b) => VirtualFile_ VFMetadata a b -> SomeVirtualFile
 
-instance (Semigroup md, Typeable md) => Semigroup (SomeVirtualFile md) where
+instance Semigroup SomeVirtualFile where
   SomeVirtualFile vf <> SomeVirtualFile vf' = case cast vf' of
     Just vf'' -> SomeVirtualFile $ vf <> vf''
     Nothing -> error "Two differently typed VirtualFiles are at the same location"
@@ -96,10 +96,10 @@ type InDataAccessState = LocLayers
 -- | Each node of the 'ResourceTree' can be in 3 possible states
 data ResourceTreeNode m state where
   VirtualFileNodeE
-    :: Maybe (SomeVirtualFile VFMetadata)
+    :: Maybe SomeVirtualFile
     -> ResourceTreeNode m InVirtualState  -- ^ State used when building the task pipeline
   PhysicalFileNodeE
-    :: Maybe (SomeVirtualFile (LocLayers (Maybe FileExt), VFMetadata))
+    :: Maybe (SomeVirtualFile, LocLayers (Maybe FileExt))
     -> ResourceTreeNode m InPhysicalState -- ^ State used for inspecting resource mappings
   DataAccessNodeE
     :: First (SomeDataAccess m)  -- Data access function isn't a semigroup,
@@ -112,7 +112,7 @@ type VirtualFileNode m = ResourceTreeNode m InVirtualState
 pattern VirtualFileNode x = VirtualFileNodeE (Just (SomeVirtualFile x))
 
 type PhysicalFileNode m = ResourceTreeNode m InPhysicalState
-pattern PhysicalFileNode x = PhysicalFileNodeE (Just (SomeVirtualFile x))
+pattern PhysicalFileNode x l = PhysicalFileNodeE (Just (SomeVirtualFile x, l))
 
 -- | The nodes of the LocationTree after the VirtualFiles have been resolved to
 -- physical paths, and data possibly extracted from these paths
@@ -136,11 +136,11 @@ instance Show (VirtualFileNode m) where
   -- TODO: Cleaner Show
   -- TODO: Display read/written types here, since they're already Typeable
 instance Show (PhysicalFileNode m) where
-  show (PhysicalFileNode vf) =
+  show (PhysicalFileNode vf layers) =
     T.unpack (mconcat
               (intersperse " << "
                (map locToText $
-                 toListOf (vfileStateData . _1 . locLayers) vf)))
+                 toListOf locLayers layers)))
     ++ " - " ++ show (getVirtualFileDescription vf)
     where
       locToText (loc, mbext) = toTextRepr $ addExtToLocIfMissing' loc (fromMaybe "" mbext)
@@ -300,7 +300,7 @@ rscTreeConfigurationReader defTree =
 
 -- | Transform a virtual file node in file node with physical locations
 applyOneRscMapping :: Maybe (LocLayers (Maybe FileExt)) -> VirtualFileNode m -> PhysicalFileNode m
-applyOneRscMapping (Just layers) (VirtualFileNode vf) = PhysicalFileNode $ vf & vfileStateData %~ (layers,)
+applyOneRscMapping (Just layers) (VirtualFileNode vf) = PhysicalFileNode vf layers
 applyOneRscMapping _ _ = PhysicalFileNodeE Nothing
 
 -- | Binding a 'VirtualResourceTree'
@@ -315,16 +315,15 @@ applyMappingsToResourceTree (ResourceTreeAndMappings tree mappings) =
 -- ** Transforming a physical resource tree to a data access tree (ie. a tree
 -- where each node is just a function that pulls or writes the relevant data)
 
-data TaskConstructionError =
-  TaskConstructionError String
-  deriving (Show)
-instance Exception TaskConstructionError
+-- data TaskConstructionError =
+--   TaskConstructionError String
+--   deriving (Show)
+-- instance Exception TaskConstructionError
 
--- | Transform a file node with physical locations in node with a data access
--- function to run
-resolveDataAccess :: (MonadThrow m') => PhysicalFileNode m -> m' (DataAccessNode m)
-resolveDataAccess (PhysicalFileNode vf) = DataAccessNode run
-  where
-    layers = vf ^. vfileStateData . _1
-    run input = 
-resolveDataAccess _ = DataAccessNodeE $ First Nothing
+-- -- | Transform a file node with physical locations in node with a data access
+-- -- function to run
+-- resolveDataAccess :: (MonadThrow m') => PhysicalFileNode m -> m' (DataAccessNode m)
+-- resolveDataAccess (PhysicalFileNode vf layers) = DataAccessNode run
+--   where
+--     run input = 
+-- resolveDataAccess _ = DataAccessNodeE $ First Nothing
