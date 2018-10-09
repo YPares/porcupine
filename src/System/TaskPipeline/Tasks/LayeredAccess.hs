@@ -17,6 +17,7 @@ module System.TaskPipeline.Tasks.LayeredAccess
   ( loadData
   , writeData
   , accessVirtualFile
+  , accessVirtualFile'
   , getLocsMappedTo
   , unsafeRunIOTask
   ) where
@@ -27,7 +28,6 @@ import           Control.Lens
 import           Control.Monad.IO.Class
 import qualified Data.HashMap.Strict                as HM
 import           Data.Locations
-import           Data.Locations.SerializationMethod
 import           Data.Monoid                        (First (..))
 import           Data.Typeable
 import           Katip
@@ -64,13 +64,13 @@ virtualFileToPipelineResource vf
   | otherwise           = (init p, fname)
   where
     p = vfilePath vf
-    s = vfileSerials vf
-    extension = case serialDefaultExt s of
+    s = _vfileSerials vf
+    extension = case _serialDefaultExt s of
       First (Just ext) -> associatedFileType ext
       First Nothing    -> LocDefault
-    fname = file (last p) $ case vfileRecOfOptions vf of
+    fname = file (last p) $ case vf ^? vfileRecOfOptions of
       Just r -> PRscOptions r
-      Nothing -> PRscVirtualFile $ WithDefaultUsage (vfileUsedByDefault vf) extension
+      Nothing -> PRscVirtualFile $ WithDefaultUsage (isVFileUsedByDefault vf) extension
 
 -- | Writes some data to all the locations bound to a 'VirtualFile' if this
 -- 'VirtualFile' has writers, then reads some data over several layers from it
@@ -92,7 +92,7 @@ accessVirtualFile vfile =
         PRscVirtualFile l -> mconcat <$>
           mapM (access input) (l^..locLayers)
         PRscOptions (RecOfOptions newDocRec) ->
-          case serialReaderFromConfig $ serialReaders $ vfileSerials vfile of
+          case _serialReaderFromConfig $ _serialReaders $ _vfileSerials vfile of
             First Nothing -> err vfile "this path doesn't accept options"
             First (Just (ReadFromConfig _ convert)) ->
               case cast newDocRec of
@@ -101,8 +101,8 @@ accessVirtualFile vfile =
         _ -> err vfile "unsupported pipeline resource to load. SHOULD NOT HAPPEN."
   where
     (path, fname) = virtualFileToPipelineResource vfile
-    writers = indexPureSerialsByFileType $ vfileSerials vfile
-    readers = indexPureDeserialsByFileType $ vfileSerials vfile
+    writers = indexPureSerialsByFileType $ _vfileSerials vfile
+    readers = indexPureDeserialsByFileType $ _vfileSerials vfile
     access input (locWithoutExt, ser) = do
       let loc = addExtToLocIfMissing locWithoutExt ser
       case HM.lookup ser writers of
@@ -120,10 +120,10 @@ accessVirtualFile vfile =
 -- | When building the pipeline, stores into the location tree the way to read
 -- or write the required resource. When running the pipeline, it is handed the
 -- function to actually access the data.
--- accessVirtualFile'
---   :: (LocationMonad m, KatipContext m, Typeable a, Typeable b, Monoid b)
---   => VirtualFile a b
---   -> ATask' m a b
+accessVirtualFile'
+  :: (LocationMonad m, KatipContext m, Typeable a, Typeable b, Monoid b)
+  => VirtualFile a b
+  -> ATask m (ResourceTreeNode m) a b
 accessVirtualFile' vfile =
   liftToATask path (Identity fname) $
     \input (Identity mbAction) -> case mbAction of
