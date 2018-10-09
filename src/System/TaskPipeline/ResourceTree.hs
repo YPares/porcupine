@@ -8,6 +8,46 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
+-- | This file describes the ResourceTree API. The ResourceTree is central to
+-- every pipeline that runs. It is aggregated from each subtask composing the
+-- pipeline, and can from that point exist in several states:
+--
+-- - Virtual: it contains only VirtualFiles. It is the state of the ResourceTree
+--   that is used by the tasks to declare their requirements, and by the configuration
+--   manager to write the default tree and mappings and read back the conf
+-- - Physical: once configuration and mappings to physical files have been read,
+--   each node is attached its corresponding physical locations. The locations for
+--   the node which have no explicit mappings in the configuration are derived from the
+--   nodes higher in the hierarchy (this implies that the only mandatory mapping is the
+--   root of the tree). Physical resource trees are used to check that each virtual file
+--   is compatible with the physical locations bound to it.
+-- - DataAccess: once every location has been checked, we can replace the VirtualFiles in
+--   the resource tree by the action that actually writes or reads the data from the
+--   physical locations each VirtualFile has been bound to.
+--
+-- The VirtualFiles of a resource tree in the Virtual state, when written to the
+-- configuration file, are divided into 2 sections: "data" and
+-- "locations". "data" is a tree of the json objects corresponding to the
+-- VirtualFiles that have default data which can be represented as 'Value's
+-- (keeping the structure of the resource tree). "locations" contains a flat
+-- json object of all the other nodes, mapped in a "/virtual/path:
+-- physical_paths" fashion.
+--
+-- Indeed, each node can be mapped to _several_ physical paths, which we call
+-- _layers_. We require everything that is read from a VirtualFile to be a
+-- Monoid, so that we can combine the content of each layer into one value. This
+-- Monoid should be right-biased (ie. in the expression @a <> b@, @b@ overwrites
+-- the contents of @a@).
+--
+-- Some rules are applied when transitionning from Physical to DataAccess:
+--
+-- - if a physical location has an extension that is not recognized by the
+--   VirtualFile it is bound to, the process fails
+-- - if a VirtualFile has at the same time physical locations bound AND embedded data,
+--   then the embedded data is considered to be the _rightmost_ layer (ie. the one
+--   overriding all the other ones), so that the data of this VirtualFile can be
+--   easily overriden by just changing the config file.
+
 module System.TaskPipeline.ResourceTree where
 
 import Control.Lens
@@ -133,7 +173,9 @@ rscTreeToMappings
 rscTreeToMappings tree = mappingsFromLocTree <$> over filteredLocsInTree rmOpts tree
   where
     rmOpts n@(VirtualFileNode vfile)
-      | Just VFForCLIOptions <- intent = Nothing
+      | Just VFForCLIOptions <- intent = Nothing  -- Nodes with default data are
+                                                  -- by default not put in the
+                                                  -- mappings
       where intent = vfileDescIntent $ getVirtualFileDescription vfile
     rmOpts n = Just n
 
@@ -166,12 +208,18 @@ embeddedDataTreeToJSONFields thisPath (LocationTree mbOpts sub) =
     sub' = HM.fromList $
       concat $ map (\(k,v) -> embeddedDataTreeToJSONFields (_ltpiName k) v) $ HM.toList sub
 
+
+-- ** ResourceTreeAndMappings: join a virtual resource tree with the locations it
+-- should be mapped to
+
 -- | A 'VirtualResourceTree' associated with the mapping that should be applied
--- to it.
+-- to it. This is the way to serialize and deserialize a resource tree
 data ResourceTreeAndMappings m =
   ResourceTreeAndMappings (VirtualResourceTree m)
                           (Either Loc (LocationMappings FileExt))
 
+-- ResourceTreeAndMappings is only 'ToJSON' and not 'FromJSON' because we need
+-- more context to deserialize it. It is done by rscTreeConfigurationReader
 instance ToJSON (ResourceTreeAndMappings m) where
   toJSON (ResourceTreeAndMappings tree mappings) = Object $
     (case rscTreeToMappings tree of
@@ -192,32 +240,7 @@ instance ToJSON (ResourceTreeAndMappings m) where
         MbLocWithExt loc ext
       nodeExt (MbLocWithExt loc _) = MbLocWithExt loc Nothing
 
--- | Transform a virtual file node in file node with physical locations
-applyOneRscMapping :: Maybe (LocLayers (Maybe FileExt)) -> VirtualFileNode m -> PhysicalFileNode m
-applyOneRscMapping (Just layers) (VirtualFileNode vf) = PhysicalFileNode $ vf & vfileStateData %~ (layers,)
-applyOneRscMapping _ _ = PhysicalFileNodeE Nothing
-
-applyMappingsToResourceTree :: ResourceTreeAndMappings m -> PhysicalResourceTree m
-applyMappingsToResourceTree (ResourceTreeAndMappings tree mappings) =
-  applyMappings applyOneRscMapping m' tree
-  where
-    m' = case mappings of
-           Right m -> m
-           Left rootLoc -> mappingRootOnly rootLoc Nothing
-
--- data TaskConstructionError =
---   TaskConstructionError String
---   deriving (Show)
--- instance Exception TaskConstructionError
-
--- -- | Transform a file node with physical locations in node with a data access
--- -- function to run
--- resolveNodeDataAccess :: (MonadThrow m') => PhysicalFileNode m -> m' (DataAccessNode m)
--- resolveNodeDataAccess (PhysicalFileNode vf) = DataAccessNode run
---   where
---     layers = vf ^. vfileStateData . _1
---     run input = 
--- resolveNodeDataAccess _ = DataAccessNodeE $ First Nothing
+-- ** Reading virtual resource trees from the input
 
 type VirtualResourceTreeWithSourcedOpts m =
   LocationTree (VirtualFileNode m, Maybe (RecOfOptions SourcedDocField))
@@ -253,7 +276,8 @@ rscTreeConfigurationReader defTree =
                    ++ "' not found in the config file")
 
     integrateAesonCfg
-      :: Value -> (LocationTreePath, (VirtualFileNode m, Maybe (RecOfOptions SourcedDocField)))
+      :: Value
+      -> (LocationTreePath, (VirtualFileNode m, Maybe (RecOfOptions SourcedDocField)))
       -> Either String (VirtualFileNode m)
     integrateAesonCfg aesonCfg (LTP path, node) = do
       case node of
@@ -268,5 +292,39 @@ rscTreeConfigurationReader defTree =
       where
         go [] v = return v
         go (p:ps) (Object (HM.lookup (_ltpiName p) -> Just v)) = go ps v
-        go _ _ = Left $ "rscTreeBasedCLIOverriding: " ++
+        go _ _ = Left $ "rscTreeConfigurationReader: " ++
           (T.unpack $ toTextRepr $ LTP path) ++ " doesn't match any path in the Yaml config"
+
+-- ** Transforming a virtual resource tree to a physical resource tree (ie. a
+-- tree with physical locations attached)
+
+-- | Transform a virtual file node in file node with physical locations
+applyOneRscMapping :: Maybe (LocLayers (Maybe FileExt)) -> VirtualFileNode m -> PhysicalFileNode m
+applyOneRscMapping (Just layers) (VirtualFileNode vf) = PhysicalFileNode $ vf & vfileStateData %~ (layers,)
+applyOneRscMapping _ _ = PhysicalFileNodeE Nothing
+
+-- | Binding a 'VirtualResourceTree'
+applyMappingsToResourceTree :: ResourceTreeAndMappings m -> PhysicalResourceTree m
+applyMappingsToResourceTree (ResourceTreeAndMappings tree mappings) =
+  applyMappings applyOneRscMapping m' tree
+  where
+    m' = case mappings of
+           Right m -> m
+           Left rootLoc -> mappingRootOnly rootLoc Nothing
+
+-- ** Transforming a physical resource tree to a data access tree (ie. a tree
+-- where each node is just a function that pulls or writes the relevant data)
+
+-- data TaskConstructionError =
+--   TaskConstructionError String
+--   deriving (Show)
+-- instance Exception TaskConstructionError
+
+-- -- | Transform a file node with physical locations in node with a data access
+-- -- function to run
+-- resolveDataAccess :: (MonadThrow m') => PhysicalFileNode m -> m' (DataAccessNode m)
+-- resolveDataAccess (PhysicalFileNode vf) = DataAccessNode run
+--   where
+--     layers = vf ^. vfileStateData . _1
+--     run input = 
+-- resolveDataAccess _ = DataAccessNodeE $ First Nothing
