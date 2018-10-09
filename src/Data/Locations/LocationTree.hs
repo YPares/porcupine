@@ -28,7 +28,7 @@ module Data.Locations.LocationTree
   -- * Functions
   , locTreeNodeTag, locTreeSubfolders
   , inLocTree
-  , allSubLocTrees
+  , allSubLocTrees, traversedTreeWithPath
   , atSubfolder, atSubfolderRec
   , filteredLocsInTree
   , subtractPathFromTree
@@ -184,8 +184,17 @@ allSubLocTrees
   :: Traversal (LocationTree a) (LocationTree b)
                (LocationTreePath, LocationTree a) b
 allSubLocTrees f = go []
-  where go ps n@(LocationTree _ sub) = LocationTree <$>
-              f (LTP $ reverse ps, n)
+  where go ps n@(LocationTree _ sub) = LocationTree
+          <$> f (LTP $ reverse ps, n)
+          <*> itraverse (\p n' -> go (p:ps) n') sub
+
+-- | Traverse all the nodes, indexed by their 'LocationTreePath'
+traversedTreeWithPath
+  :: Traversal (LocationTree a) (LocationTree b)
+               (LocationTreePath, a) b
+traversedTreeWithPath f = go []
+  where go ps (LocationTree n sub) = LocationTree
+          <$> f (LTP $ reverse ps, n)
           <*> itraverse (\p n' -> go (p:ps) n') sub
 
 -- | Remove a path from a 'BareLocationTree', for instance to indicate that the

@@ -215,7 +215,7 @@ vfileRecOfOptions f vf = case mbopts of
       vf & vfileSerials . serialReaders . serialReaderFromConfig . _first . _Just %~ changeVal r
 
     changeVal r (ReadFromConfig _ fromDocRec) = case cast r of
-      Nothing -> error "vfileRecOfOptions: record files aren't compatible"
+      Nothing -> error "vfileRecOfOptions: record fields aren't compatible"
       Just r' -> ReadFromConfig (Just $ fromDocRec r') fromDocRec
 
 -- | If the file has a defaut value that can be converted to and from docrecords
