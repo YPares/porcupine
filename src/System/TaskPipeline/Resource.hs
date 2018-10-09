@@ -266,10 +266,9 @@ rscTreeBasedCLIOverriding (ResourceTreeAndMappings defTree _) = CLIOverriding{..
       -> LocationTree (PipelineResource_ SourcedDocField WithDefaultUsage)
       -> ([String], Either String ResourceTreeAndMappings)
     overrideCfgFromYamlFile aesonCfg optsTree =
-      ([], do
-          ResourceTreeAndMappings
-            <$> traverseOf allSubLocTrees integrateAesonCfg optsTree
-            <*> (Right <$> getMappings))
+      ([], ResourceTreeAndMappings
+           <$> traverseOf allSubLocTrees integrateAesonCfg optsTree
+           <*> (Right <$> getMappings))
       where
         getMappings = case aesonCfg of
           A.Object (HM.lookup mappingsYamlSection -> Just m) -> parseJSONEither m

@@ -2,6 +2,7 @@
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 
 module Data.Locations.VirtualFile
   ( LocationTreePathItem
@@ -181,27 +182,43 @@ unusedByDefault = vfileStateData . _2 . vfileMD_UsedByDefault .~ False
 documentedFile :: T.Text -> VirtualFile a b -> VirtualFile a b
 documentedFile doc = vfileStateData . _2 . vfileMD_Documentation .~ First (Just doc)
 
+
+-- * Compatibility layer with the doc records of options used by the
+-- command-line parser
+
 -- | Contains any set of options that should be exposed via the CLI
 data RecOfOptions field where
   RecOfOptions :: (Typeable rs, RecordUsableWithCLI rs) => Rec field rs -> RecOfOptions field
 
 type DocRecOfOptions = RecOfOptions DocField
 
--- | If the file has a defaut value that can be converted to and from docrecords
--- (so that it can be read from config file AND command-line), we convert it.
-vfileRecOfOptions :: VirtualFile_ d a b -> Maybe DocRecOfOptions
-vfileRecOfOptions vf = case mbopts of
-  Just (Refl, WriteToConfigFn convert, defVal) -> Just $ RecOfOptions $ convert defVal
-  _ -> Nothing
-  where
-    s = _vfileSerials vf
-    First mbopts = (,,) <$> _vfileBidirProof vf
-                        <*> _serialWriterToConfig (_serialWriters s)
-                        <*> (_serialReaderFromConfig (_serialReaders s) >>= First . _readFromConfigValue)
+_first :: Lens (First a) (First b) (Maybe a) (Maybe b)
+_first = lens (\(First x) -> x) (\(First _) x' -> First x')
 
--- vfileSetValueFromConfig :: VirtualFile_ d a b -> 
+-- | If the file has a defaut value that can be converted to and from docrecords
+-- (so that it can be read from config file AND command-line), we traverse to
+-- it.
+vfileRecOfOptions :: forall d a b. Traversal' (VirtualFile_ d a b) DocRecOfOptions
+vfileRecOfOptions f vf = case mbopts of
+  Just (r@Refl, WriteToConfigFn convert, defVal) ->
+    rebuild r <$> f (RecOfOptions $ convert defVal)
+  _ -> pure vf
+  where
+    serials = _vfileSerials vf
+    First mbopts = (,,)
+      <$> _vfileBidirProof vf
+      <*> _serialWriterToConfig (_serialWriters serials)
+      <*> (_serialReaderFromConfig (_serialReaders serials) >>= First . _readFromConfigValue)
+
+    rebuild :: (a :~: b) -> DocRecOfOptions -> VirtualFile_ d a b
+    rebuild Refl (RecOfOptions r) =
+      vf & vfileSerials . serialReaders . serialReaderFromConfig . _first . _Just %~ changeVal r
+
+    changeVal r (ReadFromConfig _ fromDocRec) = case cast r of
+      Nothing -> error "vfileRecOfOptions: record files aren't compatible"
+      Just r' -> ReadFromConfig (Just $ fromDocRec r') fromDocRec
 
 -- | If the file has a defaut value that can be converted to and from docrecords
 -- (so that it can be read from config file AND command-line), we convert it.
 vfileDefaultAesonValue :: VirtualFile_ d a b -> Maybe Value
-vfileDefaultAesonValue = fmap (\(RecOfOptions r) -> toJSON r) . vfileRecOfOptions
+vfileDefaultAesonValue vf = fmap (\(RecOfOptions r) -> toJSON r) $ vf ^? vfileRecOfOptions

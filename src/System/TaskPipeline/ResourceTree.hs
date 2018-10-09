@@ -5,7 +5,7 @@
 {-# LANGUAGE ViewPatterns #-}
 {-# LANGUAGE DeriveFunctor #-}
 {-# LANGUAGE TupleSections #-}
-{-# LANGUAGE RecordWildCards #-}
+{-# LANGUAGE FlexibleContexts #-}
 
 module System.TaskPipeline.ResourceTree where
 
@@ -160,7 +160,7 @@ embeddedDataTreeToJSONFields thisPath (LocationTree mbOpts sub) =
   [(thisPath, Object $ opts' <> sub')]
   where
     opts' = case mbOpts of
-      (VirtualFileNode (vfileDefaultAesonValue -> Just o)) -> HM.singleton "_data" o
+      (VirtualFileNode (vfileDefaultAesonValue -> Just (Object o))) -> o
       _ -> mempty
     sub' = HM.fromList $
       concat $ map (\(k,v) -> embeddedDataTreeToJSONFields (_ltpiName k) v) $ HM.toList sub
@@ -177,12 +177,11 @@ instance ToJSON (ResourceTreeAndMappings m) where
        Just m ->
          HM.singleton mappingsSection $ toJSON' $ case mappings of
            Right m'     -> m'
-           Left rootLoc -> mappingRootOnly rootLoc (Just "") <> fmap nodeExt m
-    ) <> (
-    case rscTreeToEmbeddedDataTree tree of
+           Left rootLoc -> mappingRootOnly rootLoc (Just "") <> fmap nodeExt m)
+    <>
+    (case rscTreeToEmbeddedDataTree tree of
       Just t  -> HM.fromList $ embeddedDataTreeToJSONFields embeddedDataSection t
-      Nothing -> HM.empty
-    )
+      Nothing -> HM.empty)
     where
       toJSON' :: LocationMappings FileExt -> Value
       toJSON' = toJSON
@@ -219,22 +218,55 @@ applyMappingsToResourceTree (ResourceTreeAndMappings tree mappings) =
 --     run input = 
 -- resolveNodeDataAccess _ = DataAccessNodeE $ First Nothing
 
+type VirtualResourceTreeWithOpts m f =
+  LocationTree (VirtualFileNode m, Maybe (RecOfOptions f))
+
 rscTreeConfigurationReader
   :: VirtualResourceTree m
-  -> CLIOverriding (ResourceTreeAndMappings m) (LocationTree (VirtualFileNode m, Maybe (RecOfOptions SourcedDocField)))
-rscTreeConfigurationReader defTree = CLIOverriding{..}
+  -> CLIOverriding (ResourceTreeAndMappings m) (VirtualResourceTreeWithOpts m SourcedDocField)
+rscTreeConfigurationReader defTree =
+  CLIOverriding overridesParser_ nullOverrides_ overrideCfgFromYamlFile_
   where
-    overridesParser = traverseOf (traversed . _2 . _Just) parseOptions treeWithOpts
+    overridesParser_ = traverseOf (traversed . _2 . _Just) parseOptions $
+                       fmap nodeAndRecOfOptions defTree
     nodeAndRecOfOptions :: VirtualFileNode m -> (VirtualFileNode m, Maybe DocRecOfOptions)
     nodeAndRecOfOptions n@(VirtualFileNode vf) = (n, vfileRecOfOptions vf)
     nodeAndRecOfOptions n = (n, Nothing)
-    treeWithOpts = fmap nodeAndRecOfOptions defTree
     parseOptions :: RecOfOptions DocField -> Parser (RecOfOptions SourcedDocField)
     parseOptions (RecOfOptions r) = RecOfOptions <$>
       parseRecFromCLI (tagWithDefaultSource r)
 
-    nullOverrides = allOf (traversed . _2 . _Just) nullRec
+    nullOverrides_ = allOf (traversed . _2 . _Just) nullRec
     nullRec (RecOfOptions RNil) = True
     nullRec _ = False
     
-    overrideCfgFromYamlFile = undefined
+    overrideCfgFromYamlFile_ aesonCfg optsTree =
+      ([], ResourceTreeAndMappings
+           <$> traverseOf allSubLocTrees (integrateAesonCfg aesonCfg) optsTree
+           <*> case aesonCfg of
+                 Object (HM.lookup mappingsSection -> Just m) ->
+                   Right <$> parseJSONEither m  -- mappings is an Either field
+                                                -- in ResourceTreeAndMappings
+                 _ -> Left $
+                   "Section '" ++ T.unpack mappingsSection
+                   ++ "' not found in the config file")
+
+    integrateAesonCfg
+      :: Value -> (LocationTreePath, VirtualResourceTreeWithOpts m SourcedDocField)
+      -> Either String (VirtualResourceTreeWithOpts m DocField)
+    integrateAesonCfg aesonCfg ( path
+                               , subtree@(LocationTree{_locTreeNodeTag=node}) ) =
+      case node of
+        (VirtualFileNode (serialReaderFromConfig.serialReaders.vfileSerials -> First (Just )
+                         , Just (RecOfOptions recFromCLI) ) -> do
+          v <- findInAesonVal (embeddedDataSection : map _ltpiName path) aesonCfg
+          recFromYaml <- tagWithYamlSource <$> parseJSONEither v
+          serialReaders $ vfileSerials vf
+          return $ RecOfOptions $ rmTags $ rzipWith chooseHighestPriority recFromYaml recFromCLI
+        (vfnode, _) -> Right subtree{_locTreeNodeTag=vfnode}
+    findInAesonVal path@(LTP path') v = go path' v
+      where
+        go [] v = return v
+        go (p:ps) (Object (HM.lookup p -> Just v)) = go ps v
+        go _ _ = Left $ "rscTreeBasedCLIOverriding: " ++
+          (T.unpack $ toTextRepr path) ++ " doesn't match any path in the Yaml config"
