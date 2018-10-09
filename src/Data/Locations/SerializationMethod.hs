@@ -56,29 +56,28 @@ newtype ReadFromLocFn a =
   ReadFromLocFn (forall m. (LocationMonad m, MonadThrow m) => Loc -> m a)
   deriving (Functor)
 
-data ReadFromConfig a = forall rs. (Typeable rs) => ReadFromConfig
-  { _readFromConfigValue      :: Maybe a
-    -- ^ Either the default value or the value we actually read from the
-    -- configuration.
-  , _readFromConfigFromDocRec :: DocRec rs -> a
-    -- ^ How to read a value from the configuration
-  }
-deriving instance Functor ReadFromConfig
-
-makeLenses ''ReadFromConfig
+-- | A function to read @a@ from a 'DocRec'
+data ReadFromConfigFn a = forall rs. (Typeable rs) => ReadFromConfigFn (DocRec rs -> a)
+deriving instance Functor ReadFromConfigFn
 
 -- | A file extension
 type FileExt = T.Text
 
--- | Here, "serial" is short for "serialization method". 'SerialReaders'
--- describes the different ways a serial can be used to deserialize (read) data.
+-- | Here, "serial" is short for "serialization method". 'SerialReaders' is the
+-- **covariant** part of 'SerialsFor'. It describes the different ways a serial
+-- can be used to obtain data.
 data SerialReaders a = SerialReaders
   { _serialReadersFromIntermediary :: HM.HashMap TypeRep (FromIntermediaryFn a)
        -- ^ How to read data from an intermediate type (like 'A.Value' or
        -- 'T.Text') that should be directly read from the pipeline's
        -- configuration
-  , _serialReaderFromConfig        :: First (ReadFromConfig a)
-       -- ^ How to read data from the CLI and merge it with
+  , _serialReaderFromConfig        :: First (ReadFromConfigFn a)
+    -- ^ How to read data from the CLI. It can be seen as a special kind of
+    -- reader FromIntermediary.
+  , _serialReaderEmbeddedValue     :: First a
+      -- ^ Simply read from an embedded value. Depending on when this field is
+      -- accessed, it can correspond to a default value or the value we read
+      -- from the configuration.
   , _serialReadersFromInputFile    :: HM.HashMap FileExt (ReadFromLocFn a)
        -- ^ How to read data from an external file or data storage.
   }
@@ -87,10 +86,10 @@ data SerialReaders a = SerialReaders
 makeLenses ''SerialReaders
 
 instance Semigroup (SerialReaders a) where
-  SerialReaders i c f <> SerialReaders i' c' f' =
-    SerialReaders (HM.unionWith const i i') (c<>c') (HM.unionWith const f f')
+  SerialReaders i c v f <> SerialReaders i' c' v' f' =
+    SerialReaders (HM.unionWith const i i') (c<>c') (v<>v') (HM.unionWith const f f')
 instance Monoid (SerialReaders a) where
-  mempty = SerialReaders mempty mempty mempty
+  mempty = SerialReaders mempty mempty mempty mempty
 
 -- | How to turn an @a@ into some identified type @i@, which is meant to a
 -- general purpose intermediate representation, like 'A.Value' or even 'T.Text'.
@@ -104,7 +103,7 @@ singletonToIntermediaryFn f = HM.singleton (typeOf $ f undefined) (ToIntermediar
 newtype WriteToLocFn a =
   WriteToLocFn (forall m. (LocationMonad m, MonadThrow m) => a -> Loc -> m ())
 
--- | The contravariant part of 'ReadFromConfig'. Permits to write default values
+-- | The contravariant part of 'ReadFromConfigFn'. Permits to write default values
 -- of the input config
 data WriteToConfigFn a = forall rs. (Typeable rs, RecordUsableWithCLI rs)
                       => WriteToConfigFn (a -> DocRec rs)
@@ -224,7 +223,8 @@ instance SerializesWith (DocRecSerial a) a where
     { _serialWriterToConfig = First $ Just $ WriteToConfigFn f }
 instance DeserializesWith (DocRecSerial a) a where
   getSerialReaders (DocRecSerial d _ f) = mempty
-    { _serialReaderFromConfig = First $ Just $ ReadFromConfig (Just d) f }
+    { _serialReaderEmbeddedValue = First $ Just d
+    , _serialReaderFromConfig = First $ Just $ ReadFromConfigFn f }
 
 -- -- | A very simple deserial that deserializing nothing and just returns a default
 -- -- value.

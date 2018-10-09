@@ -315,16 +315,16 @@ applyMappingsToResourceTree (ResourceTreeAndMappings tree mappings) =
 -- ** Transforming a physical resource tree to a data access tree (ie. a tree
 -- where each node is just a function that pulls or writes the relevant data)
 
--- data TaskConstructionError =
---   TaskConstructionError String
---   deriving (Show)
--- instance Exception TaskConstructionError
+data TaskConstructionError =
+  TaskConstructionError String
+  deriving (Show)
+instance Exception TaskConstructionError
 
--- -- | Transform a file node with physical locations in node with a data access
--- -- function to run
--- resolveDataAccess :: (MonadThrow m') => PhysicalFileNode m -> m' (DataAccessNode m)
--- resolveDataAccess (PhysicalFileNode vf) = DataAccessNode run
---   where
---     layers = vf ^. vfileStateData . _1
---     run input = 
--- resolveDataAccess _ = DataAccessNodeE $ First Nothing
+-- | Transform a file node with physical locations in node with a data access
+-- function to run
+resolveDataAccess :: (MonadThrow m') => PhysicalFileNode m -> m' (DataAccessNode m)
+resolveDataAccess (PhysicalFileNode vf) = DataAccessNode run
+  where
+    layers = vf ^. vfileStateData . _1
+    run input = 
+resolveDataAccess _ = DataAccessNodeE $ First Nothing

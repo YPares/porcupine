@@ -13,6 +13,7 @@ module Data.Locations.VirtualFile
   , VirtualFileIntent(..), VirtualFileDescription(..)
   , DocRecOfOptions, RecOfOptions(..)
   , vfileStateData, vfileBidirProof, vfileSerials
+  , vfileEmbeddedValue
   , isVFileUsedByDefault, vfilePath
   , dataSource, dataSink, bidirVirtualFile
   , makeSink, makeSource
@@ -91,12 +92,12 @@ data VirtualFileDescription = VirtualFileDescription
 -- ResourceTree.
 getVirtualFileDescription :: VirtualFile_ d a b -> VirtualFileDescription
 getVirtualFileDescription (VirtualFile _ bidir (SerialsFor (SerialWriters toI toC toE)
-                                                           (SerialReaders fromI fromC fromE)
+                                                           (SerialReaders fromI fromC fromV fromE)
                                                            prefExt)) =
   VirtualFileDescription intent readableFromConfig writableInOutput exts
   where
     intent
-      | First (Just _) <- fromC, First (Just _) <- toC = Just VFForCLIOptions
+      | First (Just _) <- fromC, First (Just _) <- fromV, First (Just _) <- toC = Just VFForCLIOptions
       | HM.null fromE && HM.null toE = Nothing
       | HM.null fromE = Just VFForWriting
       | HM.null toE = Just VFForReading
@@ -183,6 +184,11 @@ documentedFile :: T.Text -> VirtualFile a b -> VirtualFile a b
 documentedFile doc = vfileStateData . _2 . vfileMD_Documentation .~ First (Just doc)
 
 
+-- | If the 'VirtualFile' has an embedded value, traverses to it
+vfileEmbeddedValue :: Traversal' (VirtualFile_ d a b) b
+vfileEmbeddedValue = vfileSerials . serialReaders . serialReaderEmbeddedValue . traversed
+
+
 -- * Compatibility layer with the doc records of options used by the
 -- command-line parser
 
@@ -192,31 +198,30 @@ data RecOfOptions field where
 
 type DocRecOfOptions = RecOfOptions DocField
 
-_first :: Lens (First a) (First b) (Maybe a) (Maybe b)
-_first = lens (\(First x) -> x) (\(First _) x' -> First x')
-
 -- | If the file has a defaut value that can be converted to and from docrecords
 -- (so that it can be read from config file AND command-line), we traverse to
--- it.
+-- it. Setting it changes the value embedded in the file to reflect the new
+-- record of options. BEWARE not to change the fields when setting the new doc
+-- record.
 vfileRecOfOptions :: forall d a b. Traversal' (VirtualFile_ d a b) DocRecOfOptions
 vfileRecOfOptions f vf = case mbopts of
-  Just (r@Refl, WriteToConfigFn convert, defVal) ->
-    rebuild r <$> f (RecOfOptions $ convert defVal)
+  Just (Refl, WriteToConfigFn convert, defVal, convertBack) ->
+    rebuild Refl convertBack <$> f (RecOfOptions $ convert defVal)
   _ -> pure vf
   where
     serials = _vfileSerials vf
-    First mbopts = (,,)
+    First mbopts = (,,,)
       <$> _vfileBidirProof vf
       <*> _serialWriterToConfig (_serialWriters serials)
-      <*> (_serialReaderFromConfig (_serialReaders serials) >>= First . _readFromConfigValue)
+      <*> _serialReaderEmbeddedValue (_serialReaders serials)
+      <*> _serialReaderFromConfig (_serialReaders serials)
 
-    rebuild :: (a :~: b) -> DocRecOfOptions -> VirtualFile_ d a b
-    rebuild Refl (RecOfOptions r) =
-      vf & vfileSerials . serialReaders . serialReaderFromConfig . _first . _Just %~ changeVal r
-
-    changeVal r (ReadFromConfig _ fromDocRec) = case cast r of
-      Nothing -> error "vfileRecOfOptions: record fields aren't compatible"
-      Just r' -> ReadFromConfig (Just $ fromDocRec r') fromDocRec
+    rebuild :: (a :~: b) -> ReadFromConfigFn b -> DocRecOfOptions -> VirtualFile_ d a b
+    rebuild Refl (ReadFromConfigFn convertBack) (RecOfOptions r) =
+      let newVal = case cast r of
+            Nothing -> error "vfileRecOfOptions: record fields aren't compatible"
+            Just r' -> convertBack r'
+      in vf & vfileEmbeddedValue .~ newVal
 
 -- | If the file has a defaut value that can be converted to and from docrecords
 -- (so that it can be read from config file AND command-line), we convert it.

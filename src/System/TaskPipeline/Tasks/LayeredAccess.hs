@@ -94,7 +94,7 @@ accessVirtualFile vfile =
         PRscOptions (RecOfOptions newDocRec) ->
           case _serialReaderFromConfig $ _serialReaders $ _vfileSerials vfile of
             First Nothing -> err vfile "this path doesn't accept options"
-            First (Just (ReadFromConfig _ convert)) ->
+            First (Just (ReadFromConfigFn convert)) ->
               case cast newDocRec of
                 Nothing -> err vfile "the DocRec received isn't of the expected type"
                 Just newDocRec' -> return $ convert newDocRec'
