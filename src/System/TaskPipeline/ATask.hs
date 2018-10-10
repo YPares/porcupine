@@ -1,5 +1,6 @@
 {-# LANGUAGE ConstraintKinds            #-}
 {-# LANGUAGE DataKinds                  #-}
+{-# LANGUAGE DeriveFunctor              #-}
 {-# LANGUAGE FlexibleContexts           #-}
 {-# LANGUAGE GADTs                      #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
@@ -17,7 +18,7 @@
 module System.TaskPipeline.ATask
   ( module Control.Category
   , module Control.Arrow
-  , MonadThrow(..), TaskRunError(..)
+  , MonadThrow(..)
   , ATask(..)
   , RscAccess(..)
   , RscAccessTree
@@ -28,7 +29,8 @@ module System.TaskPipeline.ATask
   , liftToATask
   , ataskInSubtree
   , voidTask
-  , getTaskErrorPrefix, throwWithPrefix
+  , addContextToTask
+  , addNamespaceToTask
   ) where
 
 import           Prelude                hiding (id, (.))
@@ -43,13 +45,14 @@ import           Control.Monad.Catch
 import           Control.Monad.IO.Class
 import qualified Data.Foldable          as F
 import           Data.Locations
-import qualified Data.Text              as T
+import           Data.String            (IsString (..))
 import           Katip
 import           System.Clock
 
 
 -- | Monoid that tracks the number of times a resource has been accessed.
 data RscAccess a = RscAccess Int a
+  deriving Functor
 
 -- | A lens to the data contained in 'RscAccess'
 rscAccessed :: Lens (RscAccess a) (RscAccess b) a b
@@ -73,8 +76,7 @@ type RscAccessTree n = LocationTree (RscAccess n)
 data ATask m n a b = ATask
   { aTaskResourceTree :: LocationTree (n WithDefaultUsage)
     -- ^ The tree of all resources required by task. When two tasks are
-    -- sequenced, their resource tree are merged. When @n@ is
-    -- 'PipelineResource', this LocationTree is an 'UnboundResourceTree'.
+    -- sequenced, their resource tree are merged.
   , aTaskPerform      :: (a, RscAccessTree (n LocLayers)) -> m (b, RscAccessTree (n LocLayers))
   -- ^ The action performed by the task. It is passed the final tree containing
   -- the actual resources bound to their definitive value, and should update
@@ -133,13 +135,6 @@ instance (Applicative m, IsTaskResource n) => Applicative (ATask m n a) where
     where
       combine (fn1', tt1) (b, tt2) = (fn1' b, tt1 <> tt2)
 
--- | An error when running a pipeline of tasks
-newtype TaskRunError = TaskRunError String
-  deriving (Show)
-
-instance Exception TaskRunError where
-  displayException (TaskRunError s) = s
-
 -- | Catches an error happening in a task. Leaves the tree intact if an error
 -- occured.
 tryATask
@@ -152,10 +147,10 @@ tryATask (ATask reqs fn) = ATask reqs $ \i@(_, tree) -> do
 
 -- | Fails the whole pipeline if an exception occured, or just continues as
 -- normal
-throwATask :: (Exception e, MonadThrow m, IsTaskResource n) => ATask m n (Either e b) b
+throwATask :: (Exception e, KatipContext m, MonadThrow m, IsTaskResource n) => ATask m n (Either e b) b
 throwATask = ATask mempty $ \(i, tree) -> do
   case i of
-    Left e  -> throwM e
+    Left e  -> throwWithPrefix $ displayException e
     Right r -> return (r, tree)
 
 -- This orphan instance is necessary so clockATask may work over an 'Either
@@ -173,18 +168,6 @@ clockATask (ATask reqs fn) = ATask reqs $ \i -> do
     output' <- evaluate $ force output
     end     <- getTime Realtime
     return ((output', diffTimeSpec end start), tree')
-
-getTaskErrorPrefix :: (KatipContext m) => m String
-getTaskErrorPrefix = do
-  Namespace ns <- getKatipNamespace
-  case ns of
-    [] -> return ""
-    _  -> return $ T.unpack $ T.intercalate "." ns <> ": "
-
-throwWithPrefix :: (KatipContext m, MonadThrow m) => String -> m a
-throwWithPrefix msg = do
-  prefix <- getTaskErrorPrefix
-  throwM $ TaskRunError $ prefix ++ msg
 
 -- | Wraps in a task a function that needs to access some items present in a
 -- subfolder of the 'LocationTree' and mark these accesses as done. This is the
@@ -234,3 +217,20 @@ ataskInSubtree path (ATask tree fn) = ATask tree' fn'
       (o, t') <- fn (i, t^.atSubfolderRec path)
       return (o, t & atSubfolderRec path .~ t')
 
+-- | Adds some context that will be used at logging time. See 'katipAddContext'
+addContextToTask
+  :: (KatipContext m, LogItem i)
+  => i              -- ^ The context
+  -> ATask m n a b  -- ^ The task to wrap
+  -> ATask m n a b
+addContextToTask item (ATask tree fn) =
+  ATask tree $ katipAddContext item . fn
+
+-- | Adds a namespace to the task. See 'katipAddNamespace'
+addNamespaceToTask
+  :: (KatipContext m)
+  => String        -- ^ The namespace. (Is IsString instance)
+  -> ATask m n a b -- ^ The task to wrap
+  -> ATask m n a b
+addNamespaceToTask ns (ATask tree fn) =
+  ATask tree $ katipAddNamespace (fromString ns) . fn

@@ -1,75 +1,78 @@
-{-# LANGUAGE TypeOperators #-}
-{-# LANGUAGE TemplateHaskell #-}
-{-# LANGUAGE GADTs #-}
-{-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE FlexibleContexts    #-}
+{-# LANGUAGE GADTs               #-}
+{-# LANGUAGE Rank2Types          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE Rank2Types #-}
+{-# LANGUAGE TemplateHaskell     #-}
+{-# LANGUAGE TypeOperators       #-}
 
 module Data.Locations.VirtualFile
   ( LocationTreePathItem
   , module Data.Locations.SerializationMethod
   , Profunctor(..)
-  , VirtualFile_(..), VFMetadata(..)
-  , VirtualFile, BidirVirtualFile, DataSource, DataSink
+  , VirtualFile(..)
+  , BidirVirtualFile, DataSource, DataSink
   , VirtualFileIntent(..), VirtualFileDescription(..)
   , DocRecOfOptions, RecOfOptions(..)
-  , vfileStateData, vfileBidirProof, vfileSerials
+  , vfileBidirProof, vfileSerials
   , vfileAsBidir, vfileAsBidirE
   , vfileEmbeddedValue, vfileIntermediaryValue, vfileAesonValue
-  , isVFileUsedByDefault, vfilePath
+  , vfilePath, showVFilePath
   , dataSource, dataSink, bidirVirtualFile, ensureBidirFile
   , makeSink, makeSource
   , documentedFile, unusedByDefault
-  , removeVFilePath
   , getVirtualFileDescription
   , vfileRecOfOptions
   ) where
 
 import           Control.Lens
+import           Data.Aeson                         (Value, toJSON)
+import           Data.DocRecord
+import           Data.DocRecord.OptParse            (RecordUsableWithCLI)
+import           Data.Functor.Compose
+import qualified Data.HashMap.Strict                as HM
+import qualified Data.HashSet                       as HS
 import           Data.Locations.LocationTree
+import           Data.Locations.Mappings            (HasDefaultMappingRule (..))
+import           Data.Locations.RepetitionKeys
 import           Data.Locations.SerializationMethod
-import Data.Aeson (Value, toJSON)
-import Data.DocRecord
-import Data.DocRecord.OptParse (RecordUsableWithCLI)
 import           Data.Monoid                        (First (..))
 import           Data.Profunctor                    (Profunctor (..))
+import           Data.Representable
+import qualified Data.Semigroup                     as Semigroup
 import qualified Data.Text                          as T
-import Data.Typeable
+import           Data.Type.Equality
+import           Data.Typeable
 import           Data.Void
-import Data.Type.Equality
-import qualified Data.HashMap.Strict as HM
-import qualified Data.HashSet as HS
-import Data.Locations.Mappings (HasDefaultMappingRule(..))
-import Data.Functor.Compose
 
 
--- * The general 'VirtualFile_' type
+-- * The general 'VirtualFile' type
 
 -- | A virtual file in the location tree to which we can write @a@ and from
 -- which we can read @b@.
-data VirtualFile_ d a b = VirtualFile
-  { _vfileStateData :: d
-  , _vfileBidirProof :: First (a :~: b)
+data VirtualFile a b = VirtualFile
+  { _vfilePath :: [LocationTreePathItem]
+  , _vfileUsedByDefault :: Bool
+  , _vfileDocumentation :: Maybe T.Text
+  , _vfileBidirProof :: Maybe (a :~: b)
                     -- Temporary, necessary until we can do away with docrec
                     -- conversion in the writer part of SerialsFor
   , _vfileSerials    :: SerialsFor a b }
 
-makeLenses ''VirtualFile_
+makeLenses ''VirtualFile
 
-instance (HasDefaultMappingRule d) => HasDefaultMappingRule (VirtualFile_ d a b) where
-  isMappedByDefault = isMappedByDefault . _vfileStateData
+instance HasDefaultMappingRule (VirtualFile a b) where
+  isMappedByDefault = _vfileUsedByDefault
 
-instance Semigroup d => Semigroup (VirtualFile_ d a b) where
-  VirtualFile d b s <> VirtualFile d' b' s' =
-    VirtualFile (d<>d') (b<>b') (s<>s')
-instance Monoid d => Monoid (VirtualFile_ d a b) where
-  mempty = VirtualFile mempty mempty mempty
+-- For now, given the requirement of ATask, VirtualFile has to be a Monoid
+-- because a Resource Tree also has to.
+instance Semigroup (VirtualFile a b) where
+  VirtualFile p u d b s <> VirtualFile _ _ _ _ s' =
+    VirtualFile p u d b (s<>s')
+instance Monoid (VirtualFile a b) where
+  mempty = VirtualFile [] False Nothing Nothing mempty
 
-fn :: First a
-fn = First Nothing
-
-instance Profunctor (VirtualFile_ d) where
-  dimap f g (VirtualFile d _ s) = VirtualFile d fn $ dimap f g s
+instance Profunctor VirtualFile where
+  dimap f g (VirtualFile p u d _ s) = VirtualFile p u d Nothing $ dimap f g s
 
 
 -- * Obtaining a description of how the 'VirtualFile' should be used
@@ -82,7 +85,7 @@ data VirtualFileIntent =
 -- | Gives the purpose of the 'VirtualFile'. Used to document the pipeline and check
 -- mappings to physical files.
 data VirtualFileDescription = VirtualFileDescription
-  { vfileDescIntent :: Maybe VirtualFileIntent
+  { vfileDescIntent             :: Maybe VirtualFileIntent
                         -- ^ How is the 'VirtualFile' meant to be used
   , vfileDescEmbeddableInConfig :: Bool
                         -- ^ True if the data can be read directly from the
@@ -98,61 +101,40 @@ data VirtualFileDescription = VirtualFileDescription
 
 -- | Gives a 'VirtualFileDescription'. To be used on files stored in the
 -- ResourceTree.
-getVirtualFileDescription :: VirtualFile_ d a b -> VirtualFileDescription
-getVirtualFileDescription (VirtualFile _ bidir (SerialsFor (SerialWriters toI toC toE)
-                                                           (SerialReaders fromI fromC fromV fromE)
-                                                           prefExt)) =
+getVirtualFileDescription :: VirtualFile a b -> VirtualFileDescription
+getVirtualFileDescription vf =
   VirtualFileDescription intent readableFromConfig writableInOutput exts
   where
+    (SerialsFor
+      (SerialWriters toI toC toE)
+      (SerialReaders fromI fromC fromV fromE)
+      prefExt) = _vfileSerials vf
     intent
       | First (Just _) <- fromC, First (Just _) <- fromV, First (Just _) <- toC = Just VFForCLIOptions
       | HM.null fromE && HM.null toE = Nothing
       | HM.null fromE = Just VFForWriting
       | HM.null toE = Just VFForReading
-      | First (Just _) <- bidir = Just VFForCaching
+      | (Just _) <- _vfileBidirProof vf = Just VFForCaching
       | otherwise = Just VFForRW
     otherExts = HS.fromList $ HM.keys toE <> HM.keys fromE
     exts = case prefExt of
              First (Just e) -> e:(HS.toList $ HS.delete e otherExts)
-             _ -> HS.toList otherExts
+             _              -> HS.toList otherExts
     typeOfAesonVal = typeOf (undefined :: Value)
     readableFromConfig = typeOfAesonVal `HM.member` fromI
     writableInOutput = typeOfAesonVal `HM.member` toI
 
-
--- * The more specific 'VirtualFile' type (a 'VirtualFile_' with metadata)
-
-data VFMetadata = VFMetadata
-  { _vfileMD_UsedByDefault :: Bool
-  , _vfileMD_Documentation :: First T.Text }
-
-instance HasDefaultMappingRule VFMetadata where
-  isMappedByDefault = _vfileMD_UsedByDefault
-
-makeLenses ''VFMetadata
-
-instance Semigroup VFMetadata where
-  VFMetadata u d <> VFMetadata u' d' = VFMetadata (u && u') (d<>d')
-
--- | A 'VirtualFile', as declared by an application.
-type VirtualFile = VirtualFile_ ([LocationTreePathItem], VFMetadata)
-
-removeVFilePath :: VirtualFile a b -> VirtualFile_ VFMetadata a b
-removeVFilePath vf = vf & vfileStateData %~ view _2
-
-vfilePath :: VirtualFile a b -> [LocationTreePathItem]
-vfilePath = view (vfileStateData . _1)
-
-isVFileUsedByDefault :: VirtualFile a b -> Bool
-isVFileUsedByDefault = view (vfileStateData . _2 . vfileMD_UsedByDefault)
+-- | Just for logs and error messages
+showVFilePath :: VirtualFile a b -> String
+showVFilePath = T.unpack . toTextRepr .  LTP . _vfilePath
 
 -- | Indicates that the file should be mapped to 'null' by default
 unusedByDefault :: VirtualFile a b -> VirtualFile a b
-unusedByDefault = vfileStateData . _2 . vfileMD_UsedByDefault .~ False
+unusedByDefault = vfileUsedByDefault .~ False
 
 -- | Gives a documentation to the 'VirtualFile'
 documentedFile :: T.Text -> VirtualFile a b -> VirtualFile a b
-documentedFile doc = vfileStateData . _2 . vfileMD_Documentation .~ First (Just doc)
+documentedFile doc = vfileDocumentation .~ Just doc
 
 
 -- * Creating VirtualFiles and convertings between its different subtypes (bidir
@@ -171,8 +153,7 @@ type DataSink a = VirtualFile a ()
 -- the data. You should prefer 'dataSink' and 'dataSource' for clarity when the
 -- file is meant to be readonly or writeonly.
 virtualFile :: [LocationTreePathItem] -> Maybe (a :~: b) -> SerialsFor a b -> VirtualFile a b
-virtualFile path refl sers =
-  VirtualFile (path, VFMetadata True fn) (First refl) sers
+virtualFile path refl sers = VirtualFile path True Nothing refl sers
 
 -- | Creates a virtual file from its virtual path and ways to deserialize the
 -- data.
@@ -191,16 +172,16 @@ bidirVirtualFile path sers = virtualFile path (Just Refl) sers
 -- | If a file has been transformed via Profunctor methods (dimap, rmap, rmap),
 -- even if it remained bidirectional this proof it is has been lost. Thus we
 -- have to embed it again.
-ensureBidirFile :: VirtualFile_ d a a -> VirtualFile_ d a a
-ensureBidirFile vf = vf{_vfileBidirProof=First $ Just Refl}
+ensureBidirFile :: VirtualFile a a -> VirtualFile a a
+ensureBidirFile vf = vf{_vfileBidirProof=Just Refl}
 
 makeSink :: VirtualFile a b -> DataSink a
 makeSink vf = vf{_vfileSerials=eraseDeserials $ _vfileSerials vf
-                ,_vfileBidirProof=fn}
+                ,_vfileBidirProof=Nothing}
 
 makeSource :: VirtualFile a b -> DataSource b
 makeSource vf = vf{_vfileSerials=eraseSerials $ _vfileSerials vf
-                  ,_vfileBidirProof=fn}
+                  ,_vfileBidirProof=Nothing}
 
 
 -- * Traversals to the content of the VirtualFile, when it already embeds some
@@ -208,28 +189,28 @@ makeSource vf = vf{_vfileSerials=eraseSerials $ _vfileSerials vf
 
 -- | If we have the internal proof that a VirtualFile is actually bidirectional,
 -- we convert it.
-vfileAsBidir :: Traversal' (VirtualFile_ d a b) (VirtualFile_ d a a)
+vfileAsBidir :: Traversal' (VirtualFile a b) (VirtualFile a a)
 vfileAsBidir f vf = case _vfileBidirProof vf of
-  First (Just Refl) -> f vf
-  First Nothing     -> pure vf
+  Just Refl -> f vf
+  Nothing   -> pure vf
 
 -- | Like 'vfileAsBidir', but can be composed with other traversals that can
 -- fail, like 'vfileIntermediaryValue'
-vfileAsBidirE :: Traversal' (Either s (VirtualFile_ d a b)) (Either s (VirtualFile_ d a a))
+vfileAsBidirE :: Traversal' (Either s (VirtualFile a b)) (Either s (VirtualFile a a))
 vfileAsBidirE _ (Left s) = pure (Left s)
 vfileAsBidirE f (Right vf) = case _vfileBidirProof vf of
-  First (Just Refl) -> f (Right vf)
-  First Nothing     -> pure (Right vf)
+  Just Refl -> f (Right vf)
+  Nothing   -> pure (Right vf)
 
 -- | If the 'VirtualFile' has an embedded value, traverses to it.
-vfileEmbeddedValue :: Traversal' (VirtualFile_ d a b) b
+vfileEmbeddedValue :: Traversal' (VirtualFile a b) b
 vfileEmbeddedValue = vfileSerials . serialReaders . serialReaderEmbeddedValue . traversed
 
 -- | If the 'VirtualFile' has an embedded value and converters to and from a
 -- type @c@, we traverse to a value of this type. The conversion can fail
 vfileIntermediaryValue
   :: forall a c d. (Typeable c)
-  => Traversal' (Either String (VirtualFile_ d a a)) c
+  => Traversal' (Either String (VirtualFile a a)) c
 vfileIntermediaryValue _ (Left s) = pure (Left s)
 vfileIntermediaryValue f (Right vf) = case convertFns of
   Just (ToIntermediaryFn toI, FromIntermediaryFn fromI) ->
@@ -255,7 +236,7 @@ vfileIntermediaryValue f (Right vf) = case convertFns of
 -- instances. because the virtual file serials may contain a way to convert it
 -- to and from a type that has these instances. So it isn't the same as calling
 -- 'vfileEmbeddedValue' and converting the traversed value.
-vfileAesonValue :: Traversal' (Either String (VirtualFile_ d a a)) Value
+vfileAesonValue :: Traversal' (Either String (VirtualFile a a)) Value
 vfileAesonValue = vfileIntermediaryValue
 
 
@@ -273,7 +254,7 @@ type DocRecOfOptions = RecOfOptions DocField
 -- command-line), we traverse to it. Setting it changes the value embedded in
 -- the file to reflect the new record of options. BEWARE not to change the
 -- fields when setting the new doc record.
-vfileRecOfOptions :: forall d a. Traversal' (VirtualFile_ d a a) DocRecOfOptions
+vfileRecOfOptions :: forall d a. Traversal' (VirtualFile a a) DocRecOfOptions
 vfileRecOfOptions f vf = case mbopts of
   Just (WriteToConfigFn convert, defVal, convertBack) ->
     rebuild convertBack <$> f (RecOfOptions $ convert defVal)
@@ -285,7 +266,7 @@ vfileRecOfOptions f vf = case mbopts of
       <*> _serialReaderEmbeddedValue (_serialReaders serials)
       <*> _serialReaderFromConfig (_serialReaders serials)
 
-    rebuild :: ReadFromConfigFn a -> DocRecOfOptions -> VirtualFile_ d a a
+    rebuild :: ReadFromConfigFn a -> DocRecOfOptions -> VirtualFile a a
     rebuild (ReadFromConfigFn convertBack) (RecOfOptions r) =
       let newVal = case cast r of
             Nothing -> error "vfileRecOfOptions: record fields aren't compatible"

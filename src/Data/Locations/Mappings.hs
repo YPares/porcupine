@@ -5,12 +5,12 @@
 {-# LANGUAGE DeriveTraversable          #-}
 {-# LANGUAGE FlexibleContexts           #-}
 {-# LANGUAGE FlexibleInstances          #-}
+{-# LANGUAGE FunctionalDependencies     #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE MultiParamTypeClasses      #-}
 {-# LANGUAGE OverloadedStrings          #-}
 {-# LANGUAGE TupleSections              #-}
 {-# LANGUAGE ViewPatterns               #-}
-{-# LANGUAGE MultiParamTypeClasses #-}
-{-# LANGUAGE FunctionalDependencies #-}
 {-# OPTIONS_GHC -Wall #-}
 
 module Data.Locations.Mappings
@@ -86,6 +86,9 @@ allLocsInMappings (LocationMappings_ m) =
 class HasDefaultMappingRule a where
   isMappedByDefault :: a -> Bool  -- ^ False if the resource by default should
                                   -- be mapped to 'null'
+
+instance (HasDefaultMappingRule a) => HasDefaultMappingRule (a, b) where
+  isMappedByDefault = isMappedByDefault . fst
 
 -- | Pre-fills the mappings from the context of a 'LocationTree', with extra
 -- metadata saying whether each node should be explicitely mapped or unmapped.
@@ -225,7 +228,7 @@ insertMappings (LocationMappings_ m) tree = foldl' go initTree $ HM.toList m
 
 -- | For each location in the tree, gives it a final, physical location or
 -- just put Nothing if it isn't mapped
-propagateMappings :: (Maybe (LocLayers (Maybe n')) -> n -> n'')
+propagateMappings :: (Maybe (LocLayers (Maybe n')) -> n -> Bool -> n'')
                   -> LocationTree (n, Mapping (MbLocWithExt n'))
                   -> LocationTree n''
 propagateMappings f tree = propagateMappings' Nothing tree
@@ -234,13 +237,13 @@ propagateMappings f tree = propagateMappings' Nothing tree
     -- ignoring every submapping that might exist:
     propagateMappings' _ t@(LocationTree (_, Unmapped) _) =
       t & traversed %~ unmap
-      where unmap (n, _) = f Nothing n
+      where unmap (n, _) = f Nothing n True
     -- if a folder is mapped, we propagate the mapping downwards:
     propagateMappings' inheritedLayers (LocationTree (thisNode, MappedTo theseMappings) thisSub) =
       LocationTree thisNode' $ imap recur thisSub
       where
         theseLayers = applyMappingsToLayers inheritedLayers theseMappings
-        thisNode' = f theseLayers thisNode
+        thisNode' = f theseLayers thisNode (not $ null theseMappings)
         recur fname subtree = propagateMappings' sublayers subtree
           where
             sublayers =
@@ -267,9 +270,13 @@ applyMappingsToLayers inheritedLayers tm = layers
            sortBy (compare `on` fst) (justFmts' ++ pathsAndFmts)
 
 -- | Transform a tree to one where unmapped nodes have been changed to 'mempty'
--- and mapped nodes have been associated to their physical 'Loc'. @n'@ is often
--- some file type or metadata that's required in the mapping.
-applyMappings :: (Maybe (LocLayers (Maybe n')) -> n -> n'')
+-- and mapped nodes have been associated to their physical 'Loc'. A function is
+-- applied to ask each node to integrate its final mappings, with a Bool to tell
+-- whether whether the mapping for a node was explicit (True) or not (False),
+-- ie. if it was explicitely declared in the config file or if it was derived
+-- from the mapping of a parent folder. @n'@ is often some file type or metadata
+-- that's required in the mapping.
+applyMappings :: (Maybe (LocLayers (Maybe n')) -> n -> Bool -> n'')
                                    -- ^ Add physical locations (if they exist) to a node
               -> LocationMappings n'  -- ^ Mappings to apply
               -> LocationTree n       -- ^ Original tree

@@ -1,6 +1,7 @@
 {-# LANGUAGE DataKinds                 #-}
 {-# LANGUAGE DefaultSignatures         #-}
 {-# LANGUAGE DeriveAnyClass            #-}
+{-# LANGUAGE DeriveFunctor             #-}
 {-# LANGUAGE DeriveGeneric             #-}
 {-# LANGUAGE ExistentialQuantification #-}
 {-# LANGUAGE FlexibleContexts          #-}
@@ -11,33 +12,27 @@
 {-# LANGUAGE OverloadedStrings         #-}
 {-# LANGUAGE Rank2Types                #-}
 {-# LANGUAGE ScopedTypeVariables       #-}
-{-# LANGUAGE TupleSections             #-}
-{-# LANGUAGE TemplateHaskell           #-}
-{-# LANGUAGE DeriveFunctor             #-}
 {-# LANGUAGE StandaloneDeriving        #-}
+{-# LANGUAGE TemplateHaskell           #-}
+{-# LANGUAGE TupleSections             #-}
 {-# OPTIONS_GHC -Wall #-}
 
 module Data.Locations.SerializationMethod where
 
-import           Control.Applicative
+import           Control.Lens
 import           Control.Monad.Catch
-import Control.Lens
-import           Data.Aeson                   as A
-import           Data.Binary
-import           Data.Default
+import           Data.Aeson                    as A
 import           Data.DocRecord
-import           Data.DocRecord.OptParse      (RecordUsableWithCLI)
-import           Data.Hashable
-import qualified Data.HashMap.Strict          as HM
-import           Data.Locations.Loc           as Loc
-import           Data.Locations.LocationMonad as Loc
-import           Data.Monoid                  (First (..))
-import           Data.Representable
-import qualified Data.Text                    as T
+import           Data.DocRecord.OptParse       (RecordUsableWithCLI)
+import qualified Data.HashMap.Strict           as HM
+import           Data.Locations.Loc            as Loc
+import           Data.Locations.LocationMonad  as Loc
+import           Data.Locations.RepetitionKeys
+import           Data.Monoid                   (First (..))
+import qualified Data.Text                     as T
 import           Data.Typeable
 import           Data.Void
-import           GHC.Generics
--- import qualified Options.Applicative          as O
+import           Katip
 
 
 -- | How to read an @a@ from some identified type @i@, which is meant to be a
@@ -46,19 +41,47 @@ data FromIntermediaryFn a =
   forall i. (Typeable i) => FromIntermediaryFn (i -> Either String a)
 deriving instance Functor FromIntermediaryFn
 
+instance Show (FromIntermediaryFn a) where
+  show _ = "<FromIntermediaryFn>"
+
 singletonFromIntermediaryFn
   :: forall i a. (Typeable i) => (i -> Either String a) -> HM.HashMap TypeRep (FromIntermediaryFn a)
 singletonFromIntermediaryFn f = HM.singleton argTypeRep (FromIntermediaryFn f)
   where argTypeRep = typeOf (undefined :: i)
 
 -- | How to read an @a@ from some file, in any 'LocationMonad'.
-newtype ReadFromLocFn a =
-  ReadFromLocFn (forall m. (LocationMonad m, MonadThrow m) => Loc -> m a)
+data ReadFromLoc a =
+  ReadFromLoc { _readFromLocRepetitionKeys :: [RepetitionKey]
+                , _readFromLocPerform        ::
+                    (forall m. (LocationMonad m, MonadThrow m, KatipContext m)
+                    => Loc -> RepetitionKeyValList -> m a)
+                }
   deriving (Functor)
+
+instance Show (ReadFromLoc a) where
+  show _ = "<ReadFromLoc>"
+
+makeLenses ''ReadFromLoc
+
+-- | Constructs a 'ReadFromLoc' that will not expect any repetition and log
+-- that it reads a file.
+simpleReadFromLoc
+  :: (forall m. (LocationMonad m, MonadThrow m) => Loc -> m a)
+  -> ReadFromLoc a
+simpleReadFromLoc f = ReadFromLoc [] $ \loc rkeys ->
+  katipAddContext (sl "locationAccessed" (show loc)) $ do
+    rkeys' <- terminateRKeyValList rkeys
+    let loc' = suffixLocWithRKeys rkeys' loc
+    r <- f loc'
+    logFM InfoS $ logStr $ "Successfully read file '" ++ show loc' ++ "'"
+    return r
 
 -- | A function to read @a@ from a 'DocRec'
 data ReadFromConfigFn a = forall rs. (Typeable rs) => ReadFromConfigFn (DocRec rs -> a)
 deriving instance Functor ReadFromConfigFn
+
+instance Show (ReadFromConfigFn a) where
+  show _ = "<ReadFromConfigFn>"
 
 -- | A file extension
 type FileExt = T.Text
@@ -78,10 +101,10 @@ data SerialReaders a = SerialReaders
       -- ^ Simply read from an embedded value. Depending on when this field is
       -- accessed, it can correspond to a default value or the value we read
       -- from the configuration.
-  , _serialReadersFromInputFile    :: HM.HashMap FileExt (ReadFromLocFn a)
+  , _serialReadersFromInputFile    :: HM.HashMap FileExt (ReadFromLoc a)
        -- ^ How to read data from an external file or data storage.
   }
-  deriving (Functor)
+  deriving (Functor, Show)
 
 makeLenses ''SerialReaders
 
@@ -96,17 +119,44 @@ instance Monoid (SerialReaders a) where
 data ToIntermediaryFn a =
   forall i. (Typeable i) => ToIntermediaryFn (a -> i)
 
+instance Show (ToIntermediaryFn a) where
+  show _ = "<ToIntermediaryFn>"
+
 singletonToIntermediaryFn :: (Typeable i) => (a -> i) -> HM.HashMap TypeRep (ToIntermediaryFn a)
 singletonToIntermediaryFn f = HM.singleton (typeOf $ f undefined) (ToIntermediaryFn f)
 
 -- | How to write an @a@ to some file, in any 'LocationMonad'.
-newtype WriteToLocFn a =
-  WriteToLocFn (forall m. (LocationMonad m, MonadThrow m) => a -> Loc -> m ())
+data WriteToLoc a = WriteToLoc
+  { _writeToLocRepetitionKeys :: [RepetitionKey]
+  , _writeToLocPerform ::
+      (forall m. (LocationMonad m, KatipContext m, MonadThrow m)
+      =>  a -> Loc -> RepetitionKeyValList -> m ())
+  }
+
+instance Show (WriteToLoc a) where
+  show (WriteToLoc rks _) = "<WriteToLoc, rep keys: " ++ show rks ++ ">"
+
+makeLenses ''WriteToLoc
+
+-- | Constructs a 'WriteToLoc' that will not expect any repetition and log
+-- that it writes a file.
+simpleWriteToLoc
+  :: (forall m. (LocationMonad m, MonadThrow m) => a -> Loc -> m ())
+  -> WriteToLoc a
+simpleWriteToLoc f = WriteToLoc [] $ \x loc rkeys ->
+  katipAddContext (sl "locationAccessed" (show loc)) $ do
+    rkeys' <- terminateRKeyValList rkeys
+    let loc' = suffixLocWithRKeys rkeys' loc
+    f x loc'
+    logFM InfoS $ logStr $ "Successfully wrote file '" ++ show loc' ++ "'"
 
 -- | The contravariant part of 'ReadFromConfigFn'. Permits to write default values
 -- of the input config
 data WriteToConfigFn a = forall rs. (Typeable rs, RecordUsableWithCLI rs)
                       => WriteToConfigFn (a -> DocRec rs)
+
+instance Show (WriteToConfigFn a) where
+  show _ = "<WriteToConfigFn>"
 
 -- | The writing part of a serial. 'SerialWriters' describes the different ways
 -- a serial can be used to serialize (write) data.
@@ -115,9 +165,10 @@ data SerialWriters a = SerialWriters
       -- ^ How to write the data to an intermediate type (like 'A.Value') that
       -- should be integrated to the stdout of the pipeline.
   , _serialWriterToConfig        :: First (WriteToConfigFn a)
-  , _serialWritersToOutputFile   :: HM.HashMap FileExt (WriteToLocFn a)
+  , _serialWritersToOutputFile   :: HM.HashMap FileExt (WriteToLoc a)
       -- ^ How to write the data to an external file or storage.
   }
+  deriving (Show)
 
 makeLenses ''SerialWriters
 
@@ -130,11 +181,12 @@ instance Monoid (SerialWriters a) where
 instance Contravariant SerialWriters where
   contramap f sw = SerialWriters
     { _serialWritersToIntermediary = fmap (\(ToIntermediaryFn f') -> ToIntermediaryFn $ f' . f)
-                                    (_serialWritersToIntermediary sw)
+                                     (_serialWritersToIntermediary sw)
     , _serialWriterToConfig = fmap (\(WriteToConfigFn f') -> WriteToConfigFn $ f' . f)
-                             (_serialWriterToConfig sw)
-    , _serialWritersToOutputFile = fmap (\(WriteToLocFn f') -> WriteToLocFn $ f' . f)
-                                  (_serialWritersToOutputFile sw)
+                              (_serialWriterToConfig sw)
+    , _serialWritersToOutputFile = fmap (\(WriteToLoc rk f') ->
+                                           WriteToLoc rk $ f' . f)
+                                   (_serialWritersToOutputFile sw)
     }
 
 -- | Links a serialization method to a prefered file extension, if this is
@@ -164,15 +216,21 @@ instance SerializationMethod (JSONSerial a) where
 
 instance (ToJSON a) => SerializesWith (JSONSerial a) a where
   getSerialWriters _ = mempty
-    { _serialWritersToIntermediary = singletonToIntermediaryFn A.encode
-    , _serialWritersToOutputFile   = HM.singleton "json" $ WriteToLocFn write
+    { _serialWritersToIntermediary = singletonToIntermediaryFn A.toJSON
+    , _serialWritersToOutputFile   = HM.singleton "json" $ simpleWriteToLoc write
     } where
     write x loc = Loc.writeLazyByte loc $ A.encode x
 
+parseJSONEither :: (A.FromJSON t) => A.Value -> Either String t
+parseJSONEither x = case A.fromJSON x of
+  A.Success s -> Right s
+  A.Error r   -> Left r
+{-# INLINE parseJSONEither #-}
+
 instance (FromJSON a) => DeserializesWith (JSONSerial a) a where
   getSerialReaders _ = mempty
-    { _serialReadersFromIntermediary = singletonFromIntermediaryFn A.eitherDecode
-    , _serialReadersFromInputFile    = HM.singleton "json" $ ReadFromLocFn readFn
+    { _serialReadersFromIntermediary = singletonFromIntermediaryFn parseJSONEither
+    , _serialReadersFromInputFile    = HM.singleton "json" $ simpleReadFromLoc readFn
     } where
     readFn loc = Loc.readLazyByte loc >>= withReadError >>= decodeWithLoc loc
     withReadError (Right x)  = return x
@@ -194,18 +252,18 @@ instance SerializationMethod PlainTextSerial where
 instance SerializesWith PlainTextSerial T.Text where
   getSerialWriters (PlainTextSerial exts) = mempty
     { _serialWritersToIntermediary =
-        singletonToIntermediaryFn id <> singletonToIntermediaryFn A.encode
+        singletonToIntermediaryFn id <> singletonToIntermediaryFn toJSON
         -- A text can be written to a raw string or a String field in a JSON
         -- output
     , _serialWritersToOutputFile = HM.fromList $ map (,writeFn) exts
     } where
-    writeFn = WriteToLocFn $ \x loc -> writeText loc x
+    writeFn = simpleWriteToLoc $ \x loc -> writeText loc x
 
 instance DeserializesWith PlainTextSerial T.Text where
   getSerialReaders (PlainTextSerial exts) = mempty
     { _serialReadersFromIntermediary =
-        singletonFromIntermediaryFn Right <> singletonFromIntermediaryFn A.eitherDecode
-    , _serialReadersFromInputFile = HM.fromList $ map (,ReadFromLocFn readFromLoc) exts
+        singletonFromIntermediaryFn Right <> singletonFromIntermediaryFn parseJSONEither
+    , _serialReadersFromInputFile = HM.fromList $ map (,simpleReadFromLoc readFromLoc) exts
     } where
     readFromLoc loc = do
       res <- readText loc
@@ -246,7 +304,7 @@ instance SerializationMethod (CustomPureSerial a) where
   getSerialDefaultExt (CustomPureSerial exts _) = Just $ head exts
 instance SerializesWith (CustomPureSerial a) a where
   getSerialWriters (CustomPureSerial exts f) = mempty
-    { _serialWritersToOutputFile = HM.fromList $ map (,WriteToLocFn f) exts
+    { _serialWritersToOutputFile = HM.fromList $ map (,simpleWriteToLoc f) exts
     }
 
 -- | A DeserializationMethod that's meant to be used just for one
@@ -261,7 +319,7 @@ instance SerializationMethod (CustomPureDeserial a) where
   getSerialDefaultExt (CustomPureDeserial exts _) = Just $ head exts
 instance DeserializesWith (CustomPureDeserial a) a where
   getSerialReaders (CustomPureDeserial exts f) = mempty
-    { _serialReadersFromInputFile = HM.fromList $ map (,ReadFromLocFn f) exts }
+    { _serialReadersFromInputFile = HM.fromList $ map (,simpleReadFromLoc f) exts }
 
 
 -- | Can serialize @a@ and deserialize @b@.
@@ -269,6 +327,7 @@ data SerialsFor a b = SerialsFor
   { _serialWriters    :: SerialWriters a
   , _serialReaders    :: SerialReaders b
   , _serialDefaultExt :: First FileExt }
+  deriving (Show)
 
 makeLenses ''SerialsFor
 
@@ -322,12 +381,7 @@ customPureSerial
   :: [FileExt]   -- ^ The file extensions associated to this SerializationMethod
   -> (forall m. (LocationMonad m) => a -> Loc -> m ())
   -> PureSerials a
-customPureSerial exts f =
-  case mapM fromTextRepr exts of
-    Nothing ->
-      error $ "customPureSerial: some of " ++ show (map T.unpack exts) ++ " isn't associated with any SerialMethod"
-    Just fts ->
-      somePureSerial $ CustomPureSerial fts f
+customPureSerial exts f = somePureSerial $ CustomPureSerial exts f
 
 -- | Builds a custom SerializationMethod (ie. which cannot be used for
 -- deserialization) which is just meant to be used for one datatype.
@@ -335,65 +389,13 @@ customPureDeserial
   :: [FileExt]   -- ^ The file extensions associated to this SerializationMethod
   -> (forall m. (LocationMonad m) => Loc -> m a)
   -> PureDeserials a
-customPureDeserial exts f =
-  case mapM fromTextRepr exts of
-    Nothing ->
-      error $ "customPureDeserial: some of " ++ show (map T.unpack exts) ++ " isn't associated with any SerialMethod"
-    Just fts ->
-      somePureDeserial $ CustomPureDeserial fts f
+customPureDeserial exts f = somePureDeserial $ CustomPureDeserial exts f
 
--- -- | To be used when the file is mapped to null. Won't read anything, will just
--- -- return the default value.
--- defaultValueDeserial :: a -> PureDeserials a
--- defaultValueDeserial = somePureDeserial . DefaultValueDeserial
-
-
-
-
--- * DEPRECATED:
-
--- | Some locs will allow several serialization methods to be used, but often we
--- will just LocDefault (JSON for local files and S3 objects). They have some
--- priority order.
---
--- Currently, this type is used mostly for defining file extensions, and should
--- be removed in the future. See the newest 'SerializationMethod' class that
--- handles the serialization/deserialization code per se.
-data SerialMethod =
-  LocDefault | JSON | CSV | Markdown | PDF | Unusable | NullMapping
-  deriving (Eq, Ord, Show, Read, Generic, Hashable, ToJSON, Binary)
-
-instance Default SerialMethod where
-  def = LocDefault
-
-instance Semigroup SerialMethod where
-  a <> b = min a b
-instance Monoid SerialMethod where
-  mempty = LocDefault
-
-instance Representable SerialMethod where
-  toTextRepr LocDefault = ""
-  toTextRepr Markdown   = "md"
-  toTextRepr s          = T.toLower . T.pack . show $ s
-  fromTextRepr x = case T.toLower x of
-    ""     -> pure LocDefault
-    "json" -> pure JSON
-    "csv"  -> pure CSV
-    "md"   -> pure Markdown
-    "pdf"  -> pure PDF
-    _      -> empty
-
-indexPureSerialsByFileType :: SerialsFor a b -> HM.HashMap SerialMethod (WriteToLocFn a)
-indexPureSerialsByFileType (SerialsFor sers _ _) =
-  HM.fromList $ map (\(k,v) -> (associatedFileType k,v)) $ HM.toList $
-  _serialWritersToOutputFile sers
-
-indexPureDeserialsByFileType :: SerialsFor a b -> HM.HashMap SerialMethod (ReadFromLocFn b)
-indexPureDeserialsByFileType (SerialsFor _ desers _) =
-  HM.fromList $ map (\(k,v) -> (associatedFileType k,v)) $ HM.toList $
-  _serialReadersFromInputFile desers
-
-associatedFileType :: FileExt -> SerialMethod
-associatedFileType x = case fromTextRepr x of
-  Nothing -> error $ "No SerialMethod associated to: " ++ T.unpack x
-  Just r  -> r
+-- | Traverses to the repetition keys stored in the access functions of a
+-- 'SerialsFor'
+serialsRepetitionKeys :: Traversal' (SerialsFor a b) [RepetitionKey]
+serialsRepetitionKeys f (SerialsFor writers readers ext) =
+  rebuild <$> (serialWritersToOutputFile . traversed . writeToLocRepetitionKeys) f writers
+          <*> (serialReadersFromInputFile . traversed . readFromLocRepetitionKeys) f readers
+  where
+    rebuild w r = SerialsFor w r ext

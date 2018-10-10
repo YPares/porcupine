@@ -16,7 +16,7 @@ import           Control.Monad.Catch
 import           Control.Monad.IO.Class
 import           Data.Locations
 import           Data.Maybe
-import           Katip                      hiding (logMsg)
+import           Katip
 import           System.Exit
 import           System.TaskPipeline.CLI
 import           System.TaskPipeline.Logger (defaultLoggerScribeParams,
@@ -29,7 +29,7 @@ import           System.TaskPipeline.Tasks
 -- sequentially with '(>>>)' (or '(.)'), or in parallel with '(***)'.
 type PipelineTask i o =
      forall m. (KatipContext m, LocationMonad m, MonadIO m)
-  => ATask m (ResourceTreeNode m) i o
+  => PTask m i o
   -- MonadIO constraint is meant to be temporary (that's needed for the
   -- pipelines who do time tracking for instance, but that shouldn't be done
   -- like that).
@@ -77,18 +77,18 @@ runPipelineTask_ name cliUsage atask =
 --   FullConfig s r -> FullConfig s r
 
 getTaskTree
-  :: ATask (KatipContextT LocalM) (ResourceTreeNode (KatipContextT LocalM)) i o
+  :: PTask (KatipContextT LocalM) i o
   -> VirtualResourceTree (KatipContextT LocalM)
 getTaskTree (ATask t _) = t
 
 -- | Runs the required 'PipelineCommand' on an 'ATask'
 runPipelineCommandOnATask
-  :: (LocationMonad m, KatipContext m)
-  => ATask m (ResourceTreeNode m) i o
+  :: (LocationMonad m, KatipContext m, MonadIO m)
+  => PTask m i o
   -> i
   -> PipelineCommand o --, RscAccessTree (ResourceTreeNode m))
   -> PhysicalResourceTree m
-  -> m o --, RscAccessTree BoundPipelineResource)
+  -> m o --, RscAccessTree (PhysicalTreeNode m)
 runPipelineCommandOnATask (ATask origTree taskFn) input cmd boundTree =
   -- origTree is the bare tree straight from the pipeline. boundTree is origTree
   -- after configuration, with embedded data and mappings updated
@@ -97,7 +97,7 @@ runPipelineCommandOnATask (ATask origTree taskFn) input cmd boundTree =
       dataTree <- traverse resolveDataAccess boundTree
       fst <$> taskFn (input, fmap (RscAccess 0) dataTree)
     ShowLocTree mode -> do
-      logMsg $ case mode of
+      liftIO $ putStrLn $ case mode of
         NoMappings   -> prettyLocTree origTree
         FullMappings -> prettyLocTree boundTree
       return mempty

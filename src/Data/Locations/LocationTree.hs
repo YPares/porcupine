@@ -11,7 +11,6 @@
 {-# LANGUAGE TupleSections        #-}
 {-# LANGUAGE TypeOperators        #-}
 {-# LANGUAGE TypeSynonymInstances #-}
-{-# LANGUAGE ViewPatterns         #-}
 {-# OPTIONS_GHC -Wall #-}
 {-# LANGUAGE DataKinds            #-}
 {-# OPTIONS_GHC -fno-warn-type-defaults #-}
@@ -21,9 +20,9 @@
 module Data.Locations.LocationTree
   (
   -- * Types
-    LocationTree(..), BareLocationTree
+    LocationTree(..)
   , LocationTreePathItem(..), LocationTreePath(..)
-  , SerialMethod(..), LTPIAndSubtree(..)
+  , LTPIAndSubtree(..)
   , (:||)(..), _Unprioritized, _Prioritized
   -- * Functions
   , locTreeNodeTag, locTreeSubfolders
@@ -32,11 +31,10 @@ module Data.Locations.LocationTree
   , atSubfolder, atSubfolderRec
   , filteredLocsInTree
   , subtractPathFromTree
-  , serialMethodAccepted
   , singLTP
   , showLTPIName
   , ltpiName
-  , locItemWithExt, addExtToLocIfMissing, addExtToLocIfMissing'
+  , addExtToLocIfMissing
   , locNode, folderNode, fileEmpty, file
   , splitLocTree, joinLocTrees
   , locTreeToDataTree
@@ -53,7 +51,6 @@ import           Data.Hashable
 import qualified Data.HashMap.Strict                as HM
 import           Data.List
 import           Data.Locations.Loc
-import           Data.Locations.SerializationMethod
 import           Data.Maybe
 import           Data.Representable
 import           Data.String
@@ -88,10 +85,6 @@ data LocationTree a = LocationTree
                   -- ^ The content of the node. Is empty for a terminal file.
   }
   deriving (Eq, Show, Functor, Foldable, Traversable)
-
--- | A 'LocationTree' without any mountings (just a prefered serial method),
--- waiting for them to be configured by the user.
-type BareLocationTree = LocationTree SerialMethod
 
 instance (Monoid a) => Monoid (LocationTree a) where
   mempty = LocationTree mempty mempty
@@ -202,18 +195,8 @@ traversedTreeWithPath f = go []
 -- because that part of the configuration will be hardcoded. Useful for examples
 -- and simple projects, to be able to test that we never read something that is not
 -- needed.
-subtractPathFromTree :: BareLocationTree -> LocationTreePath -> BareLocationTree
+subtractPathFromTree :: LocationTree a -> LocationTreePath -> LocationTree a
 subtractPathFromTree tree path = tree & inLocTree path .~ Nothing
-
--- | Tells whether a physical 'Loc' accepts to use some 'SerialMethod'
-serialMethodAccepted :: Loc -> SerialMethod -> Bool
-serialMethodAccepted _           LocDefault = True
-  -- Every loc has some suitable default, so this is always accepted
-serialMethodAccepted LocalFile{} CSV        = True
-serialMethodAccepted LocalFile{} JSON       = True
-serialMethodAccepted S3Obj{}     CSV        = True
-serialMethodAccepted S3Obj{}     JSON       = True
-serialMethodAccepted _           _          = False
 
 -- | Just a tuple-like type. An entry for the map of contents at some path in a
 -- 'LocationTree'
@@ -238,24 +221,15 @@ file :: LocationTreePathItem
       -> LTPIAndSubtree a
 file i a = i :/ LocationTree a mempty
 
-instance IsString (LTPIAndSubtree ()) where
+instance (Monoid a) => IsString (LTPIAndSubtree a) where
   fromString = fileEmpty . fromString
 
--- | Get the filename with extension that we are supposed to find at some path
--- under the 'LocationTree'
-locItemWithExt :: LTPIAndSubtree SerialMethod -> String
-locItemWithExt (ltpi :/ n) =
-  T.unpack $ _ltpiName ltpi <> "." <> toTextRepr (_locTreeNodeTag n)
-
-addExtToLocIfMissing :: Loc -> SerialMethod -> Loc
-addExtToLocIfMissing loc ser = addExtToLocIfMissing' loc $ toTextRepr ser
-
-addExtToLocIfMissing' :: Loc -> T.Text -> Loc
-addExtToLocIfMissing' loc ext | T.null (loc^.locExt) =
+addExtToLocIfMissing :: Loc -> T.Text -> Loc
+addExtToLocIfMissing loc ext | T.null (loc^.locExt) =
   if T.null ext
      then loc
      else loc & locExt .~ ext
-addExtToLocIfMissing' loc _ = loc
+addExtToLocIfMissing loc _ = loc
 
 -- | Like Either, but equipped with a Monoid instance that would prioritize Right over Left
 data a :|| b = Unprioritized a | Prioritized b

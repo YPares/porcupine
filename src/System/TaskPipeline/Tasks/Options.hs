@@ -32,7 +32,7 @@ getOptions
   -> ATask m (ResourceTreeNode m) () (DocRec rs)  -- ^ An ATask that returns the new
                                               -- options values, overriden by
                                               -- the user
-getOptions path defOpts = arr (const defOpts') >>> accessVirtualFile' vfile >>> arr post
+getOptions path defOpts = arr (const defOpts') >>> accessVirtualFile vfile >>> arr post
   where
     defOpts' = Last $ Just defOpts
     post (Last Nothing)  = defOpts
