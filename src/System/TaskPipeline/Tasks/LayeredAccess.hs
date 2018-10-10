@@ -68,7 +68,7 @@ virtualFileToPipelineResource vf
     extension = case _serialDefaultExt s of
       First (Just ext) -> associatedFileType ext
       First Nothing    -> LocDefault
-    fname = file (last p) $ case vf ^? vfileRecOfOptions of
+    fname = file (last p) $ case vf ^? vfileAsBidir . vfileRecOfOptions of
       Just r -> PRscOptions r
       Nothing -> PRscVirtualFile $ WithDefaultUsage (isVFileUsedByDefault vf) extension
 

@@ -205,7 +205,8 @@ embeddedDataTreeToJSONFields thisPath (LocationTree mbOpts sub) =
   [(thisPath, Object $ opts' <> sub')]
   where
     opts' = case mbOpts of
-      (VirtualFileNode (vfileDefaultAesonValue -> Just (Object o))) -> o
+      VirtualFileNode vf -> case vf ^? vfileAsBidir . vfileAesonValue of
+        Just (Object o) -> o
       _ -> mempty
     sub' = HM.fromList $
       concat $ map (\(k,v) -> embeddedDataTreeToJSONFields (_ltpiName k) v) $ HM.toList sub
@@ -244,19 +245,20 @@ instance ToJSON (ResourceTreeAndMappings m) where
 
 -- ** Reading virtual resource trees from the input
 
-type VirtualResourceTreeWithSourcedOpts m =
-  LocationTree (VirtualFileNode m, Maybe (RecOfOptions SourcedDocField))
-
+-- | Reads the data from the input config file. Constructs the parser for the
+-- command-line arguments. Combines both results to create the
+-- 'VirtualResourceTree' (and its mappings) the pipeline should run on.
 rscTreeConfigurationReader
   :: forall m. VirtualResourceTree m
-  -> CLIOverriding (ResourceTreeAndMappings m) (VirtualResourceTreeWithSourcedOpts m)
+  -> CLIOverriding (ResourceTreeAndMappings m)
+                   (LocationTree (VirtualFileNode m, Maybe (RecOfOptions SourcedDocField)))
 rscTreeConfigurationReader defTree =
   CLIOverriding overridesParser_ nullOverrides_ overrideCfgFromYamlFile_
   where
     overridesParser_ = traverseOf (traversed . _2 . _Just) parseOptions $
                        fmap nodeAndRecOfOptions defTree
     nodeAndRecOfOptions :: VirtualFileNode m -> (VirtualFileNode m, Maybe DocRecOfOptions)
-    nodeAndRecOfOptions n@(VirtualFileNode vf) = (n, vf ^? vfileRecOfOptions)
+    nodeAndRecOfOptions n@(VirtualFileNode vf) = (n, vf ^? vfileAsBidir . vfileRecOfOptions)
     nodeAndRecOfOptions n = (n, Nothing)
     parseOptions :: RecOfOptions DocField -> Parser (RecOfOptions SourcedDocField)
     parseOptions (RecOfOptions r) = RecOfOptions <$>
@@ -287,7 +289,7 @@ rscTreeConfigurationReader defTree =
           v <- findInAesonVal (LTPI embeddedDataSection : path) aesonCfg
           recFromYaml <- tagWithYamlSource <$> parseJSONEither v
           let newOpts = RecOfOptions $ rmTags $ rzipWith chooseHighestPriority recFromYaml recFromCLI
-          return $ VirtualFileNode $ vf & vfileRecOfOptions .~ newOpts
+          return $ VirtualFileNode $ vf & vfileAsBidir . vfileRecOfOptions .~ newOpts
         (vfnode, _) -> return vfnode
     
     findInAesonVal path v = go path v

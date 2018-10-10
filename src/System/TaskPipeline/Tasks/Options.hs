@@ -37,5 +37,7 @@ getOptions path defOpts = arr (const defOpts') >>> accessVirtualFile vfile >>> a
     defOpts' = Last $ Just defOpts
     post (Last Nothing)  = defOpts
     post (Last (Just x)) = x
-    vfile = bidirVirtualFile path $ someBidirSerial $
-      DocRecSerial defOpts' post (Last . Just)
+    vfile = bidirVirtualFile path $
+      someBidirSerial (DocRecSerial defOpts' post (Last . Just))
+      <>
+      someBidirSerial JSONSerial
