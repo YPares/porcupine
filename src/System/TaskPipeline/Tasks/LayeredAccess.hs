@@ -128,21 +128,16 @@ accessVirtualFile' vfile =
   liftToATask path (Identity fname) $
     \input (Identity mbAction) -> case mbAction of
       DataAccessNode action -> do
-        (res, accessesDone) <- case cast input of
+        res <- case cast input of
           Just input' -> action input'
           Nothing -> err vfile "input types don't match"
-        mapM_ logAccess accessesDone
         case cast res of
           Just res' -> return res'
           Nothing -> err vfile "output types don't match"
       _ -> err vfile "no action available for access"
   where
     path = init $ vfilePath vfile
-    fname = file (last $ vfilePath vfile) $ VirtualFileNode $ removeVFilePath vfile
-    logAccess (DidReadLoc l) =
-      logFM InfoS $ logStr $ "Successfully read file '" ++ l ++ "'"
-    logAccess (DidWriteLoc l) =
-      logFM InfoS $ logStr $ "Successfully wrote file '" ++ l ++ "'"
+    fname = file (last $ vfilePath vfile) $ VirtualFileNode $ removeVFilePath vfile      
 
 err :: (KatipContext m, MonadThrow m) => VirtualFile a1 b -> String -> m a2
 err vfile s = throwWithPrefix $ "accessVirtualFile: " ++ show (vfilePath vfile) ++ ": " ++ s

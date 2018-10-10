@@ -67,6 +67,7 @@ import Data.DocRecord
 import Data.DocRecord.OptParse
 import           System.TaskPipeline.CLI.Overriding
 import Options.Applicative
+import Katip
 
 
 -- * API for manipulating resource tree _nodes_
@@ -81,13 +82,10 @@ instance Semigroup SomeVirtualFile where
     Just vf'' -> SomeVirtualFile $ vf <> vf''
     Nothing -> error "Two differently typed VirtualFiles are at the same location"
 
--- | Information about the access just done, for logging purposes
-data DataAccessDone = DidReadLoc String | DidWriteLoc String
-
 -- | The internal part of a 'DataAccessNode, closing over the type params of the
 -- access function
 data SomeDataAccess m where
-  SomeDataAccess :: (Typeable a, Typeable b) => (a -> m (b, [DataAccessDone])) -> SomeDataAccess m
+  SomeDataAccess :: (Typeable a, Typeable b) => (a -> m b) -> SomeDataAccess m
 
 -- These aliases are for compatibility with ATask. Will be removed in the future
 -- when ATask is modified.
@@ -341,17 +339,23 @@ instance Exception TaskConstructionError
 -- | Transform a file node with physical locations in node with a data access
 -- function to run. Matches the location (esp. file extensions) to writers
 -- available in the 'VirtualFile'.
-resolveDataAccess :: forall m m'. (LocationMonad m, MonadThrow m') => PhysicalFileNode m -> m' (DataAccessNode m)
+resolveDataAccess
+  :: forall m m'. (LocationMonad m, KatipContext m, MonadThrow m')
+  => PhysicalFileNode m -> m' (DataAccessNode m)
 resolveDataAccess (PhysicalFileNode vf (toListOf locLayers -> layers)) = do
   writeLocs <- findFunctions writers
   readLocs <- findFunctions readers
   return $ DataAccessNode $ \input -> do
-    forM_ writeLocs $ \(WriteToLocFn f, loc) ->
+    forM_ writeLocs $ \(WriteToLocFn f, loc) -> do      
       f input loc
-    layersRes <- mconcat <$> mapM (\(ReadFromLocFn f, loc) -> f loc) readLocs
+      logFM InfoS $ logStr $ "Successfully wrote file '" ++ show loc ++ "'"
+    layersRes <- mconcat <$> forM readLocs(\(ReadFromLocFn f, loc) -> do
+      r <- f loc
+      logFM InfoS $ logStr $ "Successfully read file '" ++ show loc ++ "'"
+      return r)
     return $ case vf ^? vfileEmbeddedValue of
-      Just v -> (layersRes <> v, [])
-      Nothing -> (layersRes, [])
+      Just v -> layersRes <> v
+      Nothing -> layersRes
   where
     readers = vf ^. vfileSerials . serialReaders . serialReadersFromInputFile
     writers = vf ^. vfileSerials . serialWriters . serialWritersToOutputFile
