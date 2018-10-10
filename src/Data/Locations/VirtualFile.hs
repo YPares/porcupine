@@ -3,6 +3,7 @@
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE Rank2Types #-}
 
 module Data.Locations.VirtualFile
   ( LocationTreePathItem
@@ -13,7 +14,7 @@ module Data.Locations.VirtualFile
   , VirtualFileIntent(..), VirtualFileDescription(..)
   , DocRecOfOptions, RecOfOptions(..)
   , vfileStateData, vfileBidirProof, vfileSerials
-  , vfileAsBidir
+  , vfileAsBidir, vfileAsBidirE
   , vfileEmbeddedValue, vfileIntermediaryValue, vfileAesonValue
   , isVFileUsedByDefault, vfilePath
   , dataSource, dataSink, bidirVirtualFile, ensureBidirFile
@@ -39,6 +40,7 @@ import Data.Type.Equality
 import qualified Data.HashMap.Strict as HM
 import qualified Data.HashSet as HS
 import Data.Locations.Mappings (HasDefaultMappingRule(..))
+import Data.Functor.Compose
 
 
 -- * The general 'VirtualFile_' type
@@ -211,14 +213,25 @@ vfileAsBidir f vf = case _vfileBidirProof vf of
   First (Just Refl) -> f vf
   First Nothing     -> pure vf
 
+-- | Like 'vfileAsBidir', but can be composed with other traversals that can
+-- fail, like 'vfileIntermediaryValue'
+vfileAsBidirE :: Traversal' (Either s (VirtualFile_ d a b)) (Either s (VirtualFile_ d a a))
+vfileAsBidirE _ (Left s) = pure (Left s)
+vfileAsBidirE f (Right vf) = case _vfileBidirProof vf of
+  First (Just Refl) -> f (Right vf)
+  First Nothing     -> pure (Right vf)
+
 -- | If the 'VirtualFile' has an embedded value, traverses to it.
 vfileEmbeddedValue :: Traversal' (VirtualFile_ d a b) b
 vfileEmbeddedValue = vfileSerials . serialReaders . serialReaderEmbeddedValue . traversed
 
 -- | If the 'VirtualFile' has an embedded value and converters to and from a
--- type @c@, we traverse to a value of this type.
-vfileIntermediaryValue :: forall a c d. (Typeable c) => Traversal' (VirtualFile_ d a a) c
-vfileIntermediaryValue f vf = case convertFns of
+-- type @c@, we traverse to a value of this type. The conversion can fail
+vfileIntermediaryValue
+  :: forall a c d. (Typeable c)
+  => Traversal' (Either String (VirtualFile_ d a a)) c
+vfileIntermediaryValue _ (Left s) = pure (Left s)
+vfileIntermediaryValue f (Right vf) = case convertFns of
   Just (ToIntermediaryFn toI, FromIntermediaryFn fromI) ->
     let processVal v = case cast (toI v) of
           Nothing -> error $ "vfileIntermediaryValue: Impossible to cast the value to type "
@@ -227,11 +240,9 @@ vfileIntermediaryValue f vf = case convertFns of
         back i' = case cast i' of
           Nothing -> error $ "vfileIntermediaryValue: Impossible to cast back the value from type "
             ++ show resTypeRep ++ ", however a conversion function was declared in the readers"
-          Just i'' -> case fromI i'' of
-            Left s -> error $ "vfileIntermediaryValue: " ++ s
-            Right x -> x
-    in vfileEmbeddedValue processVal vf
-  Nothing -> pure vf
+          Just i'' -> fromI i''
+    in getCompose $ vfileEmbeddedValue (Compose . processVal) vf
+  Nothing -> pure (Right vf)
   where
     resTypeRep = typeOf (undefined :: c)
     serials = _vfileSerials vf
@@ -244,7 +255,7 @@ vfileIntermediaryValue f vf = case convertFns of
 -- instances. because the virtual file serials may contain a way to convert it
 -- to and from a type that has these instances. So it isn't the same as calling
 -- 'vfileEmbeddedValue' and converting the traversed value.
-vfileAesonValue :: Traversal' (VirtualFile_ d a a) Value
+vfileAesonValue :: Traversal' (Either String (VirtualFile_ d a a)) Value
 vfileAesonValue = vfileIntermediaryValue
 
 
@@ -257,8 +268,8 @@ data RecOfOptions field where
 
 type DocRecOfOptions = RecOfOptions DocField
 
--- | If the file is bidirectional and has a defaut value that can be converted
--- to and from docrecords (so that it can be read from config file AND
+-- | If the file is bidirectional and has an embedded value that can be
+-- converted to and from DocRecords (so that it can be read from config file AND
 -- command-line), we traverse to it. Setting it changes the value embedded in
 -- the file to reflect the new record of options. BEWARE not to change the
 -- fields when setting the new doc record.

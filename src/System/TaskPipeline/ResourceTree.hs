@@ -205,7 +205,7 @@ embeddedDataTreeToJSONFields thisPath (LocationTree mbOpts sub) =
   [(thisPath, Object $ opts' <> sub')]
   where
     opts' = case mbOpts of
-      VirtualFileNode vf -> case vf ^? vfileAsBidir . vfileAesonValue of
+      VirtualFileNode vf -> case Right vf ^? vfileAsBidirE . vfileAesonValue of
         Just (Object o) -> o
       _ -> mempty
     sub' = HM.fromList $
@@ -283,14 +283,28 @@ rscTreeConfigurationReader defTree =
       :: Value
       -> (LocationTreePath, (VirtualFileNode m, Maybe (RecOfOptions SourcedDocField)))
       -> Either String (VirtualFileNode m)
-    integrateAesonCfg aesonCfg (LTP path, node) = do
-      case node of
-        (VirtualFileNode vf, Just (RecOfOptions recFromCLI)) -> do
-          v <- findInAesonVal (LTPI embeddedDataSection : path) aesonCfg
-          recFromYaml <- tagWithYamlSource <$> parseJSONEither v
-          let newOpts = RecOfOptions $ rmTags $ rzipWith chooseHighestPriority recFromYaml recFromCLI
-          return $ VirtualFileNode $ vf & vfileAsBidir . vfileRecOfOptions .~ newOpts
-        (vfnode, _) -> return vfnode
+    integrateAesonCfg aesonCfg (LTP path, (node@(VirtualFileNode vf), mbRecFromCLI)) =
+      let mbAesonValInCfg = findInAesonVal (LTPI embeddedDataSection : path) aesonCfg
+      in case mbAesonValInCfg of
+          Right v -> case mbRecFromCLI of
+            Just (RecOfOptions recFromCLI) -> do
+              -- YAML: yes, CLI: yes
+              recFromYaml <- tagWithYamlSource <$> parseJSONEither v
+                -- We merge the two configurations:
+              let newOpts = RecOfOptions $ rmTags $ rzipWith chooseHighestPriority recFromYaml recFromCLI
+              return $ VirtualFileNode $ vf & vfileAsBidir . vfileRecOfOptions .~ newOpts
+            Nothing ->
+              -- YAML: yes, CLI: no
+              VirtualFileNode <$> (Right vf & vfileAsBidirE . vfileAesonValue .~ v)
+          Left _ -> case mbRecFromCLI of
+            Just (RecOfOptions recFromCLI) ->
+              -- YAML: no, CLI: yes
+              return $ VirtualFileNode $
+                vf & vfileAsBidir . vfileRecOfOptions .~ RecOfOptions (rmTags recFromCLI)
+            Nothing ->
+              -- YAML: no, CLI: no
+              return node
+    integrateAesonCfg _ (_, (node, _)) = return node
     
     findInAesonVal path v = go path v
       where
