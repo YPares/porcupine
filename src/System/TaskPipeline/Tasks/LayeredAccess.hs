@@ -42,21 +42,21 @@ import           System.TaskPipeline.ResourceTree
 --
 -- See 'accessVirtualFile'.
 loadData
-  :: (LocationMonad m, KatipContext m, Monoid a)
+  :: (LocationMonad m, KatipContext m, Monoid a, Typeable a)
   => VirtualFile ignored a -- ^ A 'DataSource'
-  -> ATask m PipelineResource () a  -- ^ The resulting task
+  -> ATask m (ResourceTreeNode m) () a  -- ^ The resulting task
 loadData vf = arr (const $ error "THIS IS VOID")  -- Won't be evaluated
-          >>> (accessVirtualFile $ makeSource vf)
+          >>> (accessVirtualFile' $ makeSource vf)
 
 -- | Uses only the write part of a 'VirtualFile'. It is therefore considered as
 -- a pure 'DataSink'.
 --
 -- See 'accessVirtualFile'
 writeData
-  :: (LocationMonad m, KatipContext m)
+  :: (LocationMonad m, KatipContext m, Typeable a)
   => VirtualFile a ignored  -- ^ A 'DataSink'
-  -> ATask m PipelineResource a ()
-writeData = accessVirtualFile . makeSink
+  -> ATask m (ResourceTreeNode m) a ()
+writeData = accessVirtualFile' . makeSink
 
 virtualFileToPipelineResource :: VirtualFile a b -> ([LocationTreePathItem], LTPIAndSubtree UnboundPipelineResource)
 virtualFileToPipelineResource vf

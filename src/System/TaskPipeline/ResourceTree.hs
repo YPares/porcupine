@@ -247,10 +247,11 @@ instance ToJSON (ResourceTreeAndMappings m) where
 -- command-line arguments. Combines both results to create the
 -- 'VirtualResourceTree' (and its mappings) the pipeline should run on.
 rscTreeConfigurationReader
-  :: forall m. VirtualResourceTree m
+  :: forall m.
+     (ResourceTreeAndMappings m)
   -> CLIOverriding (ResourceTreeAndMappings m)
                    (LocationTree (VirtualFileNode m, Maybe (RecOfOptions SourcedDocField)))
-rscTreeConfigurationReader defTree =
+rscTreeConfigurationReader (ResourceTreeAndMappings defTree _) =
   CLIOverriding overridesParser_ nullOverrides_ overrideCfgFromYamlFile_
   where
     overridesParser_ = traverseOf (traversed . _2 . _Just) parseOptions $
@@ -315,12 +316,12 @@ rscTreeConfigurationReader defTree =
 -- tree with physical locations attached)
 
 -- | Transform a virtual file node in file node with physical locations
-applyOneRscMapping :: Maybe (LocLayers (Maybe FileExt)) -> VirtualFileNode m -> PhysicalFileNode m
+applyOneRscMapping :: Maybe (LocLayers (Maybe FileExt)) -> VirtualFileNode m -> PhysicalFileNode m'
 applyOneRscMapping (Just layers) (VirtualFileNode vf) = PhysicalFileNode vf layers
 applyOneRscMapping _ _ = PhysicalFileNodeE Nothing
 
 -- | Binding a 'VirtualResourceTree'
-applyMappingsToResourceTree :: ResourceTreeAndMappings m -> PhysicalResourceTree m
+applyMappingsToResourceTree :: ResourceTreeAndMappings m -> PhysicalResourceTree m'
 applyMappingsToResourceTree (ResourceTreeAndMappings tree mappings) =
   applyMappings applyOneRscMapping m' tree
   where
@@ -340,8 +341,8 @@ instance Exception TaskConstructionError
 -- function to run. Matches the location (esp. file extensions) to writers
 -- available in the 'VirtualFile'.
 resolveDataAccess
-  :: forall m m'. (LocationMonad m, KatipContext m, MonadThrow m')
-  => PhysicalFileNode m -> m' (DataAccessNode m)
+  :: forall m m' m''. (LocationMonad m, KatipContext m, MonadThrow m')
+  => PhysicalFileNode m'' -> m' (DataAccessNode m)
 resolveDataAccess (PhysicalFileNode vf (toListOf locLayers -> layers)) = do
   writeLocs <- findFunctions writers
   readLocs <- findFunctions readers
