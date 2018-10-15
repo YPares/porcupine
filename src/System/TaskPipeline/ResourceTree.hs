@@ -98,7 +98,7 @@ data ResourceTreeNode m state where
     :: Maybe (SomeVirtualFile)
     -> ResourceTreeNode m InVirtualState  -- ^ State used when building the task pipeline
   PhysicalFileNodeE
-    :: Maybe (SomeVirtualFile, [(Loc, Maybe FileExt)])
+    :: Maybe (SomeVirtualFile, [(Loc, FileExt)])
     -> ResourceTreeNode m InPhysicalState -- ^ State used for inspecting resource mappings
   DataAccessNodeE
     :: First (SomeDataAccess m, [Loc])
@@ -145,10 +145,8 @@ instance Show (PhysicalFileNode m) where
   show (PhysicalFileNode vf layers) =
     T.unpack (mconcat
               (intersperse " << "
-               (map locToText layers)))
+               (map (toTextRepr . fst) layers)))
     ++ " - " ++ show (getVirtualFileDescription vf)
-    where
-      locToText (loc, mbext) = toTextRepr $ addExtToLocIfMissing loc (fromMaybe "" mbext)
   show _ = "null"
 
 
@@ -234,7 +232,7 @@ instance ToJSON (ResourceTreeAndMappings m) where
        Just m ->
          HM.singleton mappingsSection $ toJSON' $ case mappings of
            Right m'     -> m'
-           Left rootLoc -> mappingRootOnly rootLoc (Just "") <> fmap nodeExt m
+           Left rootLoc -> mappingRootOnly rootLoc Nothing <> fmap nodeExt m
        Nothing -> HM.empty)
     <>
     (case rscTreeToEmbeddedDataTree tree of
@@ -324,14 +322,23 @@ rscTreeConfigurationReader (ResourceTreeAndMappings defTree _) =
 -- ** Transforming a virtual resource tree to a physical resource tree (ie. a
 -- tree with physical locations attached)
 
--- | Transform a virtual file node in file node with physical locations
+-- | Transform a virtual file node in file node with definite physical
+-- locations.
 applyOneRscMapping :: Maybe (LocLayers (Maybe FileExt)) -> VirtualFileNode m -> Bool -> PhysicalFileNode m'
 applyOneRscMapping mbLayers (VirtualFileNode vf) mappingIsExplicit = PhysicalFileNode vf layers
   where
+    defExt = _serialDefaultExt $ _vfileSerials vf
     intent = vfileDescIntent $ getVirtualFileDescription vf
     layers | not mappingIsExplicit, Just VFForCLIOptions <- intent = []
-           | otherwise = case mbLayers of Just l  -> toListOf locLayers l
-                                          Nothing -> []
+             -- Options usually present in the config file need an _explicit_
+             -- mapping to be present in the config file, if we want them to be
+             -- read from external files instead
+           | otherwise = case mbLayers of
+               Nothing -> []
+               Just l  -> map resolveExt $ toListOf locLayers l
+    resolveExt (loc, mbExt) = case First mbExt <> defExt of
+      First (Just ext) -> (addExtToLocIfMissing loc ext, ext)
+      First Nothing    -> (loc, "")
 applyOneRscMapping _ _ _ = PhysicalFileNodeE Nothing
 
 -- | Binding a 'VirtualResourceTree'
@@ -361,10 +368,7 @@ resolveDataAccess
 resolveDataAccess (PhysicalFileNode vf layers) = do
   writeLocs <- findFunctions writers
   readLocs <- findFunctions readers
-  let layers' = map (\(loc, fromMaybe "" -> ext) -> addExtToLocIfMissing loc ext) layers
-      -- Layers are stored in the DataAccessNode only for use cases that need to
-      -- call 'getLocsMappedTo'
-  return $ DataAccessNode layers' $ \repetKeyMap input -> do
+  return $ DataAccessNode (map fst layers) $ \repetKeyMap input -> do
     forM_ writeLocs $ \(WriteToLoc rkeys f, loc) ->
       f input loc $ fillRKeyValList (fmap (,Nothing) rkeys) repetKeyMap
     layersRes <- mconcat <$> forM readLocs (\(ReadFromLoc rkeys f, loc) ->
@@ -379,13 +383,11 @@ resolveDataAccess (PhysicalFileNode vf layers) = do
     findFunctions hm | HM.null hm = return []
                      | otherwise  = mapM findFunction layers
       where
-        findFunction (loc, fromMaybe "" -> ext) = case HM.lookup ext hm of
-          Just f -> return (f, loc')
+        findFunction (loc, ext) = case HM.lookup ext hm of
+          Just f -> return (f, loc)
           -- TODO: add VirtualFile path to error
           Nothing -> throwM $ TaskConstructionError $
-            show loc' ++ " is bound to a VirtualFile that doesn't support " ++ T.unpack ext
-            ++ " files. Accepted file extensions here are: " ++
+            show loc ++ " is bound to a VirtualFile that doesn't support extension '" ++ T.unpack ext
+            ++ "'. Accepted file extensions here are: " ++
             mconcat (intersperse "," (map T.unpack $ HM.keys hm)) ++ "."
-          where
-            loc' = addExtToLocIfMissing loc ext
 resolveDataAccess _ = return $ DataAccessNodeE $ First Nothing
