@@ -15,7 +15,6 @@
 
 module Data.Locations.Mappings
   ( LocationMappings
-  , WithDefaultUsage(..)
   , HasDefaultMappingRule(..)
   , LocLayers(..)
   , MbLocWithExt(..)
@@ -181,13 +180,6 @@ parseSerMethList (Array fmts) = concat <$>
   mapM parseSerMethList (toListOf traversed fmts)
 parseSerMethList _            = fail
   "Format must be a string, a null or an array of strings"
-
--- | Just packs a value with a Bool indicating whether by default, this value
--- should be used or not.
-data WithDefaultUsage a = WithDefaultUsage Bool a
-
-instance HasDefaultMappingRule (WithDefaultUsage a) where
-  isMappedByDefault (WithDefaultUsage b _) = b
 
 
 -- | This type is used to indicate that a location in a 'LocationTree' is mapped

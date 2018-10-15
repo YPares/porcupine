@@ -85,61 +85,47 @@ instance Semigroup SomeVirtualFile where
 data SomeDataAccess m where
   SomeDataAccess :: (Typeable a, Typeable b) => (RepetitionKeyMap -> a -> m b) -> SomeDataAccess m
 
-data InVirtualState
-data InPhysicalState
-data InDataAccessState
-
--- | Each node of the 'ResourceTree' can be in 3 possible states
-data ResourceTreeNode m state where
-  VirtualFileNodeE
-    :: Maybe (SomeVirtualFile)
-    -> ResourceTreeNode m InVirtualState  -- ^ State used when building the task pipeline
-  PhysicalFileNodeE
-    :: Maybe (SomeVirtualFile, [(Loc, FileExt)])
-    -> ResourceTreeNode m InPhysicalState -- ^ State used for inspecting resource mappings
-  DataAccessNodeE
-    :: First (SomeDataAccess m, [Loc])
-                                 -- Data access function isn't a semigroup,
-                                 -- hence the use of First here instead of
-                                 -- Maybe.
-    -> ResourceTreeNode m InDataAccessState -- ^ State used when running the
-                                            -- task pipeline The list of locs is
-                                            -- kept only for compatibility
-                                            -- reasons with 'getLocsMappedTo'
 
 -- | The nodes of the ResourceTree, before mapping each 'VirtualFiles' to
 -- physical locations
-type VirtualFileNode m = ResourceTreeNode m InVirtualState
-pattern VirtualFileNode x = VirtualFileNodeE (Just (SomeVirtualFile x))
+data VirtualFileNode = MbVirtualFileNode (Maybe SomeVirtualFile)
+-- | A non-empty 'VirtualFileNode'
+pattern VirtualFileNode x = MbVirtualFileNode (Just (SomeVirtualFile x))
 
 -- | The nodes of the ResourceTree, after mapping each 'VirtualFiles' to
 -- physical locations
-type PhysicalFileNode m = ResourceTreeNode m InPhysicalState
-pattern PhysicalFileNode x l = PhysicalFileNodeE (Just (SomeVirtualFile x, l))
+data PhysicalFileNode = MbPhysicalFileNode (Maybe (SomeVirtualFile, [(Loc, FileExt)]))
+-- | A non-empty 'PhysicalFileNode'
+pattern PhysicalFileNode l x = MbPhysicalFileNode (Just (SomeVirtualFile x, l))
 
 -- | The nodes of the LocationTree after the 'VirtualFiles' have been resolved
 -- to physical paths, and data possibly extracted from these paths
-type DataAccessNode m = ResourceTreeNode m InDataAccessState
-pattern DataAccessNode l x = DataAccessNodeE (First (Just (SomeDataAccess x, l)))
+data DataAccessNode m = MbDataAccessNode (First (SomeDataAccess m, [Loc]))
+  -- Data access function isn't a semigroup, hence the use of First here instead
+  -- of Maybe.
+-- | A non-empty 'DataAccessNode'
+pattern DataAccessNode l x = MbDataAccessNode (First (Just (SomeDataAccess x, l)))
 
-instance Semigroup (VirtualFileNode m) where
-  VirtualFileNodeE vf <> VirtualFileNodeE vf' = VirtualFileNodeE $ vf <> vf'
-instance Monoid (VirtualFileNode m) where
-  mempty = VirtualFileNodeE mempty
+
+instance Semigroup VirtualFileNode where
+  MbVirtualFileNode vf <> MbVirtualFileNode vf' = MbVirtualFileNode $ vf <> vf'
+instance Monoid VirtualFileNode where
+  mempty = MbVirtualFileNode mempty
 -- TODO: It is dubious that composing DataAccessNodes is really needed in the
 -- end. Find a way to remove that.
 instance Semigroup (DataAccessNode m) where
-  DataAccessNodeE f <> DataAccessNodeE f' = DataAccessNodeE $ f <> f'
+  MbDataAccessNode f <> MbDataAccessNode f' = MbDataAccessNode $ f <> f'
 instance Monoid (DataAccessNode m) where
-  mempty = DataAccessNodeE mempty
+  mempty = MbDataAccessNode mempty
 
-instance Show (VirtualFileNode m) where
+instance Show VirtualFileNode where
   show (VirtualFileNode vf) = "VirtualFileNode with " ++ show (getVirtualFileDescription vf)
   show _                    = ""
   -- TODO: Cleaner Show
   -- TODO: Display read/written types here, since they're already Typeable
-instance Show (PhysicalFileNode m) where
-  show (PhysicalFileNode vf layers) =
+
+instance Show PhysicalFileNode where
+  show (PhysicalFileNode layers vf) =
     T.unpack (mconcat
               (intersperse " << "
                (map (toTextRepr . fst) layers)))
@@ -150,16 +136,16 @@ instance Show (PhysicalFileNode m) where
 -- * API for manipulating resource trees globally
 
 -- | The tree manipulated by tasks during their construction
-type VirtualResourceTree m = LocationTree (VirtualFileNode m)
+type VirtualResourceTree = LocationTree VirtualFileNode
 
 -- | The tree manipulated when checking if each location is bound to something
 -- legit
-type PhysicalResourceTree m = LocationTree (PhysicalFileNode m)
+type PhysicalResourceTree = LocationTree PhysicalFileNode
 
 -- | The tree manipulated by tasks when they actually run
 type DataResourceTree m = LocationTree (DataAccessNode m)
 
-instance HasDefaultMappingRule (VirtualFileNode m) where
+instance HasDefaultMappingRule VirtualFileNode where
   isMappedByDefault (VirtualFileNode vf) = isMappedByDefault vf
   isMappedByDefault _                    = True
                         -- Intermediary levels (folders, where there is no
@@ -168,8 +154,8 @@ instance HasDefaultMappingRule (VirtualFileNode m) where
 -- | Filters the tree to get only the nodes that don't have data and can be
 -- mapped to external files
 rscTreeToMappings
-  :: VirtualResourceTree m
-  -> Maybe (LocationMappings (VirtualFileNode m))
+  :: VirtualResourceTree
+  -> Maybe (LocationMappings VirtualFileNode)
 rscTreeToMappings tree = mappingsFromLocTree <$> over filteredLocsInTree rmOpts tree
   where
     rmOpts (VirtualFileNode vfile)
@@ -181,8 +167,8 @@ rscTreeToMappings tree = mappingsFromLocTree <$> over filteredLocsInTree rmOpts 
 
 -- | Filters the tree to get only the nodes than can be embedded in the config file
 rscTreeToEmbeddedDataTree
-  :: VirtualResourceTree m
-  -> Maybe (VirtualResourceTree m)
+  :: VirtualResourceTree
+  -> Maybe VirtualResourceTree
 rscTreeToEmbeddedDataTree = over filteredLocsInTree keepOpts
   where
     keepOpts n@(VirtualFileNode vfile)
@@ -198,7 +184,7 @@ mappingsSection :: T.Text
 mappingsSection = "locations"
 
 embeddedDataTreeToJSONFields
-  :: T.Text -> VirtualResourceTree m -> [(T.Text, Value)]
+  :: T.Text -> VirtualResourceTree -> [(T.Text, Value)]
 embeddedDataTreeToJSONFields thisPath (LocationTree mbOpts sub) =
   [(thisPath, Object $ opts' <> sub')]
   where
@@ -217,13 +203,13 @@ embeddedDataTreeToJSONFields thisPath (LocationTree mbOpts sub) =
 
 -- | A 'VirtualResourceTree' associated with the mapping that should be applied
 -- to it. This is the way to serialize and deserialize a resource tree
-data ResourceTreeAndMappings m =
-  ResourceTreeAndMappings (VirtualResourceTree m)
+data ResourceTreeAndMappings =
+  ResourceTreeAndMappings VirtualResourceTree
                           (Either Loc (LocationMappings FileExt))
 
 -- ResourceTreeAndMappings is only 'ToJSON' and not 'FromJSON' because we need
 -- more context to deserialize it. It is done by rscTreeConfigurationReader
-instance ToJSON (ResourceTreeAndMappings m) where
+instance ToJSON ResourceTreeAndMappings where
   toJSON (ResourceTreeAndMappings tree mappings) = Object $
     (case rscTreeToMappings tree of
        Just m ->
@@ -238,7 +224,8 @@ instance ToJSON (ResourceTreeAndMappings m) where
     where
       toJSON' :: LocationMappings FileExt -> Value
       toJSON' = toJSON
-      nodeExt :: MbLocWithExt (VirtualFileNode m) -> MbLocWithExt FileExt
+
+      nodeExt :: MbLocWithExt VirtualFileNode -> MbLocWithExt FileExt
       nodeExt (MbLocWithExt loc (Just (VirtualFileNode
                                        (_serialDefaultExt . _vfileSerials -> First ext)))) =
         MbLocWithExt loc ext
@@ -250,16 +237,15 @@ instance ToJSON (ResourceTreeAndMappings m) where
 -- command-line arguments. Combines both results to create the
 -- 'VirtualResourceTree' (and its mappings) the pipeline should run on.
 rscTreeConfigurationReader
-  :: forall m.
-     (ResourceTreeAndMappings m)
-  -> CLIOverriding (ResourceTreeAndMappings m)
-                   (LocationTree (VirtualFileNode m, Maybe (RecOfOptions SourcedDocField)))
+  :: ResourceTreeAndMappings
+  -> CLIOverriding ResourceTreeAndMappings
+                   (LocationTree (VirtualFileNode, Maybe (RecOfOptions SourcedDocField)))
 rscTreeConfigurationReader (ResourceTreeAndMappings defTree _) =
   CLIOverriding overridesParser_ nullOverrides_ overrideCfgFromYamlFile_
   where
     overridesParser_ = traverseOf (traversed . _2 . _Just) parseOptions $
                        fmap nodeAndRecOfOptions defTree
-    nodeAndRecOfOptions :: VirtualFileNode m -> (VirtualFileNode m, Maybe DocRecOfOptions)
+    nodeAndRecOfOptions :: VirtualFileNode -> (VirtualFileNode, Maybe DocRecOfOptions)
     nodeAndRecOfOptions n@(VirtualFileNode vf) = (n, vf ^? vfileAsBidir . vfileRecOfOptions)
     nodeAndRecOfOptions n = (n, Nothing)
     parseOptions :: RecOfOptions DocField -> Parser (RecOfOptions SourcedDocField)
@@ -283,8 +269,8 @@ rscTreeConfigurationReader (ResourceTreeAndMappings defTree _) =
 
     integrateAesonCfg
       :: Value
-      -> (LocationTreePath, (VirtualFileNode m, Maybe (RecOfOptions SourcedDocField)))
-      -> Either String (VirtualFileNode m)
+      -> (LocationTreePath, (VirtualFileNode, Maybe (RecOfOptions SourcedDocField)))
+      -> Either String VirtualFileNode
     integrateAesonCfg aesonCfg (LTP path, (node@(VirtualFileNode vf), mbRecFromCLI)) =
       let mbAesonValInCfg = findInAesonVal (LTPI embeddedDataSection : path) aesonCfg
       in case mbAesonValInCfg of
@@ -321,8 +307,8 @@ rscTreeConfigurationReader (ResourceTreeAndMappings defTree _) =
 
 -- | Transform a virtual file node in file node with definite physical
 -- locations.
-applyOneRscMapping :: Maybe (LocLayers (Maybe FileExt)) -> VirtualFileNode m -> Bool -> PhysicalFileNode m'
-applyOneRscMapping mbLayers (VirtualFileNode vf) mappingIsExplicit = PhysicalFileNode vf layers
+applyOneRscMapping :: Maybe (LocLayers (Maybe FileExt)) -> VirtualFileNode -> Bool -> PhysicalFileNode
+applyOneRscMapping mbLayers (VirtualFileNode vf) mappingIsExplicit = PhysicalFileNode layers vf
   where
     defExt = _serialDefaultExt $ _vfileSerials vf
     intent = vfileDescIntent $ getVirtualFileDescription vf
@@ -336,10 +322,10 @@ applyOneRscMapping mbLayers (VirtualFileNode vf) mappingIsExplicit = PhysicalFil
     resolveExt (loc, mbExt) = case First mbExt <> defExt of
       First (Just ext) -> (addExtToLocIfMissing loc ext, ext)
       First Nothing    -> (loc, "")
-applyOneRscMapping _ _ _ = PhysicalFileNodeE Nothing
+applyOneRscMapping _ _ _ = MbPhysicalFileNode Nothing
 
 -- | Binding a 'VirtualResourceTree'
-applyMappingsToResourceTree :: ResourceTreeAndMappings m -> PhysicalResourceTree m'
+applyMappingsToResourceTree :: ResourceTreeAndMappings -> PhysicalResourceTree
 applyMappingsToResourceTree (ResourceTreeAndMappings tree mappings) =
   applyMappings applyOneRscMapping m' tree
   where
@@ -359,10 +345,10 @@ instance Exception TaskConstructionError
 -- function to run. Matches the location (esp. file extensions) to writers
 -- available in the 'VirtualFile'.
 resolveDataAccess
-  :: forall m m' m''. (LocationMonad m, KatipContext m, MonadThrow m')
-  => PhysicalFileNode m''
+  :: forall m m'. (LocationMonad m, KatipContext m, MonadThrow m')
+  => PhysicalFileNode
   -> m' (DataAccessNode m)
-resolveDataAccess (PhysicalFileNode vf layers) = do
+resolveDataAccess (PhysicalFileNode layers vf) = do
   writeLocs <- findFunctions writers
   readLocs <- findFunctions readers
   return $ DataAccessNode (map fst layers) $ \repetKeyMap input -> do
@@ -376,6 +362,7 @@ resolveDataAccess (PhysicalFileNode vf layers) = do
   where
     readers = vf ^. vfileSerials . serialReaders . serialReadersFromInputFile
     writers = vf ^. vfileSerials . serialWriters . serialWritersToOutputFile
+
     findFunctions :: HM.HashMap FileExt v -> m' [(v, Loc)]
     findFunctions hm | HM.null hm = return []
                      | otherwise  = mapM findFunction layers
@@ -387,4 +374,4 @@ resolveDataAccess (PhysicalFileNode vf layers) = do
             show loc ++ " is bound to a VirtualFile that doesn't support extension '" ++ T.unpack ext
             ++ "'. Accepted file extensions here are: " ++
             mconcat (intersperse "," (map T.unpack $ HM.keys hm)) ++ "."
-resolveDataAccess _ = return $ DataAccessNodeE $ First Nothing
+resolveDataAccess _ = return $ MbDataAccessNode $ First Nothing

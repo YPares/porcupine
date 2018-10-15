@@ -78,7 +78,7 @@ runPipelineTask_ name cliUsage ptask =
 
 getTaskTree
   :: PTask (KatipContextT LocalM) i o
-  -> VirtualResourceTree (KatipContextT LocalM)
+  -> VirtualResourceTree
 getTaskTree (PTask t _) = t
 
 -- | Runs the required 'PipelineCommand' on an 'PTask'
@@ -87,7 +87,7 @@ runPipelineCommandOnPTask
   => PTask m i o
   -> i
   -> PipelineCommand o --, RscAccessTree (ResourceTreeNode m))
-  -> PhysicalResourceTree m
+  -> PhysicalResourceTree
   -> m o --, RscAccessTree (PhysicalTreeNode m)
 runPipelineCommandOnPTask (PTask origTree taskFn) input cmd boundTree =
   -- origTree is the bare tree straight from the pipeline. boundTree is origTree
@@ -107,9 +107,9 @@ runPipelineCommandOnPTask (PTask origTree taskFn) input cmd boundTree =
 bindResourceTreeAndRun
   :: String   -- ^ Program name (often model name)
   -> PipelineConfigMethod r -- ^ How to get CLI args from ModelOpts
-  -> VirtualResourceTree m' -- ^ The tree to look for DocRecOfoptions in
+  -> VirtualResourceTree    -- ^ The tree to look for DocRecOfoptions in
   -> (forall m. (KatipContext m, LocationMonad m, MonadIO m)
-      => PipelineCommand r -> PhysicalResourceTree m -> m r)
+      => PipelineCommand r -> PhysicalResourceTree -> m r)
              -- ^ What to do with the model
   -> IO r
 bindResourceTreeAndRun _ (NoConfig root) tree f =

@@ -32,19 +32,19 @@ module System.TaskPipeline.PTask
   , addNamespaceToTask
   ) where
 
-import           Prelude                hiding (id, (.))
+import           Prelude                          hiding (id, (.))
 
 import           Control.Arrow
 import           Control.Category
-import           Control.DeepSeq        (NFData (..), force)
-import           Control.Exception      (evaluate)
+import           Control.DeepSeq                  (NFData (..), force)
+import           Control.Exception                (evaluate)
 import           Control.Lens
 import           Control.Monad
 import           Control.Monad.Catch
 import           Control.Monad.IO.Class
-import qualified Data.Foldable          as F
+import qualified Data.Foldable                    as F
 import           Data.Locations
-import           Data.String            (IsString (..))
+import           Data.String                      (IsString (..))
 import           Katip
 import           System.Clock
 import           System.TaskPipeline.ResourceTree
@@ -174,7 +174,7 @@ clockPTask (PTask reqs fn) = PTask reqs $ \i -> do
 liftToPTask
   :: (LocationMonad m, KatipContext m, Traversable t)
   => [LocationTreePathItem]  -- ^ Path to subfolder in 'LocationTree'
-  -> t (LTPIAndSubtree (VirtualFileNode m))    -- ^ Items of interest in the subfolder
+  -> t (LTPIAndSubtree VirtualFileNode)    -- ^ Items of interest in the subfolder
   -> (i -> t (DataAccessNode m) -> m o)       -- ^ What to run with these items
   -> PTask m i o           -- ^ The resulting PTask
 liftToPTask path filesToAccess writeFn = PTask tree runAccess
