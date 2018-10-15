@@ -61,7 +61,7 @@ makeLenses ''VirtualFile
 instance HasDefaultMappingRule (VirtualFile a b) where
   isMappedByDefault = _vfileUsedByDefault
 
--- For now, given the requirement of ATask, VirtualFile has to be a Monoid
+-- For now, given the requirement of PTask, VirtualFile has to be a Monoid
 -- because a Resource Tree also has to.
 instance Semigroup (VirtualFile a b) where
   VirtualFile p u d b s <> VirtualFile _ _ _ _ s' =

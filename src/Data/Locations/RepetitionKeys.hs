@@ -15,7 +15,7 @@ import qualified System.FilePath             as P
 
 
 -- | Some 'VirtualFile's can be accessed in tasks that will be part of a
--- 'repeatATask' loop: it means these files should "occur" several times (for
+-- 'repeatPTask' loop: it means these files should "occur" several times (for
 -- instance "file-0.json", "file-1.json" etc.). Each time, their location should
 -- be altered (eg. suffixed) by the content of a value associated to some
 -- key(s), so that we don't repeatedly read or overwrite the same file.

@@ -24,7 +24,7 @@ import           Katip
 import           Prelude                                 hiding ((.))
 import           Streaming                               (Of (..), Stream)
 import qualified Streaming.Prelude                       as S
-import           System.TaskPipeline.ATask
+import           System.TaskPipeline.PTask
 import           System.TaskPipeline.ResourceTree
 import           System.TaskPipeline.Tasks.LayeredAccess
 
@@ -45,22 +45,22 @@ instance LogItem TaskRepetitionContext where
 
 -- * Type aliases for tasks over streams
 
--- | An ATask mapping a action over a Stream, transforming @a@'s into
+-- | An PTask mapping a action over a Stream, transforming @a@'s into
 -- @b@'s. Each element in the stream should be associated to an identifier.
 type STask m i a b r =
-  ATask m
+  PTask m
         (Stream (Of (i, a)) m r)
         (Stream (Of (i, b)) m r)
 
--- | An 'ATask' that consumes an Input Stream and just returns its result.
+-- | An 'PTask' that consumes an Input Stream and just returns its result.
 type ISTask m i a r =
-  ATask m
+  PTask m
         (Stream (Of (i, a)) m r)
         r
 
--- | An 'ATask' that emits an Output Stream.
+-- | An 'PTask' that emits an Output Stream.
 type OSTask m i a b =
-  ATask m
+  PTask m
         a
         (Stream (Of (i, b)) m ())
 
@@ -87,13 +87,13 @@ mappingOverStream
   -> Maybe Verbosity               -- ^ The minimal vebosity level at which to
                                    -- display the logger context. (Nothing if we
                                    -- don't want to add context)
-  -> ATask m a b                   -- ^ The base task X to repeat
+  -> PTask m a b                   -- ^ The base task X to repeat
   -> STask m i a b r               -- ^ A task that will repeat X it for each
                                    -- input. Each input is associated to a
                                    -- identifier that will be appended to
                                    -- every Loc mapped to every leaf in the
                                    -- LocationTree given to X.
-mappingOverStream repetitionKey mbVerb (ATask reqTree perform) = ATask reqTree' perform'
+mappingOverStream repetitionKey mbVerb (PTask reqTree perform) = PTask reqTree' perform'
   where
     reqTree' = fmap addKeyToVirtualFile reqTree
 
@@ -142,7 +142,7 @@ mappingOverStream_
   :: (KatipContext m, Show i)
   => RepetitionKey
   -> Maybe Verbosity
-  -> ATask m a b
+  -> PTask m a b
   -> ISTask m i a r
 mappingOverStream_ k v t =
   mappingOverStream k v t >>> runStreamTask
@@ -186,25 +186,25 @@ repeatedlyLoadData' rkey vf =
 
 -- | Runs the input stream, forgets all its elements and just returns its result
 runStreamTask :: (Monad m)
-              => ATask m
+              => PTask m
                        (Stream (Of t) m r)
                        r
-runStreamTask = unsafeLiftToATask S.effects
+runStreamTask = unsafeLiftToPTask S.effects
 
--- | An 'ATask' converting a list to a stream
+-- | An 'PTask' converting a list to a stream
 listToStreamTask :: (Monad m)
-                 => ATask m
+                 => PTask m
                           [t]
                           (Stream (Of t) m ())
 listToStreamTask = arr S.each
 
--- | An 'ATask' converting an input stream to a list. WARNING: It can cause
+-- | An 'PTask' converting an input stream to a list. WARNING: It can cause
 -- space leaks if the list is too big, as the output list will be eagerly
 -- evaluated. This function is provided only for compatibility with existing
 -- tasks expecting lists. Please consider switching to processing streams
 -- directly. See 'S.toList' for more details.
 streamToListTask :: (Monad m)
-                 => ATask m
+                 => PTask m
                           (Stream (Of t) m r)
                           [t]
-streamToListTask = unsafeLiftToATask (S.toList_ . fmap (const ()))
+streamToListTask = unsafeLiftToPTask (S.toList_ . fmap (const ()))

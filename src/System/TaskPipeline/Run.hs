@@ -8,7 +8,7 @@ module System.TaskPipeline.Run
   , PipelineTask
   , runPipelineTask
   , runPipelineTask_
-  , runPipelineCommandOnATask
+  , runPipelineCommandOnPTask
   ) where
 
 import           Control.Monad
@@ -34,7 +34,7 @@ type PipelineTask i o =
   -- pipelines who do time tracking for instance, but that shouldn't be done
   -- like that).
 
--- | Runs an 'ATask' according to some 'PipelineConfigMethod' and with an input
+-- | Runs an 'PTask' according to some 'PipelineConfigMethod' and with an input
 -- @i@. In principle, it should be directly called by your @main@ function. It
 -- exits with @ExitFailure 1@ when the 'PipelineTask' raises an uncatched
 -- exception.
@@ -46,14 +46,14 @@ runPipelineTask
   -> i                 -- ^ The pipeline task input
   -> IO o -- , RscAccessTree (ResourceTreeNode m))
                        -- ^ The pipeline task output and the final LocationTree
-runPipelineTask progName cliUsage atask input = do
+runPipelineTask progName cliUsage ptask input = do
   let -- cliUsage' = pipelineConfigMethodChangeResult cliUsage
-      tree = getTaskTree atask
-        -- We temporarily instanciate atask so we can get the tree (which
+      tree = getTaskTree ptask
+        -- We temporarily instanciate ptask so we can get the tree (which
         -- doesn't depend anyway on the monad). That's just to make GHC happy.
   catch
     (bindResourceTreeAndRun progName cliUsage tree $
-      runPipelineCommandOnATask atask input)
+      runPipelineCommandOnPTask ptask input)
     (\(SomeException e) -> do
         putStrLn $ displayException e
         exitWith $ ExitFailure 1)
@@ -65,9 +65,9 @@ runPipelineTask_
   -> PipelineConfigMethod o
   -> PipelineTask () o
   -> IO o
-runPipelineTask_ name cliUsage atask =
+runPipelineTask_ name cliUsage ptask =
   -- fst <$>
-  runPipelineTask name cliUsage atask ()
+  runPipelineTask name cliUsage ptask ()
 
 -- pipelineConfigMethodChangeResult
 --   :: PipelineConfigMethod o
@@ -79,17 +79,17 @@ runPipelineTask_ name cliUsage atask =
 getTaskTree
   :: PTask (KatipContextT LocalM) i o
   -> VirtualResourceTree (KatipContextT LocalM)
-getTaskTree (ATask t _) = t
+getTaskTree (PTask t _) = t
 
--- | Runs the required 'PipelineCommand' on an 'ATask'
-runPipelineCommandOnATask
+-- | Runs the required 'PipelineCommand' on an 'PTask'
+runPipelineCommandOnPTask
   :: (LocationMonad m, KatipContext m)
   => PTask m i o
   -> i
   -> PipelineCommand o --, RscAccessTree (ResourceTreeNode m))
   -> PhysicalResourceTree m
   -> m o --, RscAccessTree (PhysicalTreeNode m)
-runPipelineCommandOnATask (ATask origTree taskFn) input cmd boundTree =
+runPipelineCommandOnPTask (PTask origTree taskFn) input cmd boundTree =
   -- origTree is the bare tree straight from the pipeline. boundTree is origTree
   -- after configuration, with embedded data and mappings updated
   case cmd of

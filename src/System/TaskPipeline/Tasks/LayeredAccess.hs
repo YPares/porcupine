@@ -28,7 +28,7 @@ import           Control.Lens
 import           Control.Monad.IO.Class
 import           Data.Locations
 import           Data.Typeable
-import           System.TaskPipeline.ATask
+import           System.TaskPipeline.PTask
 import           System.TaskPipeline.ResourceTree
 
 
@@ -40,7 +40,7 @@ import           System.TaskPipeline.ResourceTree
 loadData
   :: (LocationMonad m, KatipContext m, Monoid a, Typeable a)
   => VirtualFile ignored a -- ^ A 'DataSource'
-  -> ATask m () a  -- ^ The resulting task
+  -> PTask m () a  -- ^ The resulting task
 loadData vf = arr (const $ error "loadData: THIS IS VOID")  -- Won't be evaluated
           >>> (accessVirtualFile $ makeSource vf)
 
@@ -51,7 +51,7 @@ loadData vf = arr (const $ error "loadData: THIS IS VOID")  -- Won't be evaluate
 writeData
   :: (LocationMonad m, KatipContext m, Typeable a)
   => VirtualFile a ignored  -- ^ A 'DataSink'
-  -> ATask m a ()
+  -> PTask m a ()
 writeData = accessVirtualFile . makeSink
 
 -- | When building the pipeline, stores into the location tree the way to read
@@ -60,9 +60,9 @@ writeData = accessVirtualFile . makeSink
 accessVirtualFile
   :: (LocationMonad m, KatipContext m, Typeable a, Typeable b, Monoid b)
   => VirtualFile a b
-  -> ATask m a b
+  -> PTask m a b
 accessVirtualFile vfile =
-  liftToATask path (Identity fname) $
+  liftToPTask path (Identity fname) $
     \input (Identity mbAction) -> case mbAction of
       DataAccessNode _ action -> do
         res <- case cast input of
@@ -83,8 +83,8 @@ err vfile s = throwWithPrefix $ "accessVirtualFile (" ++ showVFilePath vfile ++ 
 -- expose this path as a requirement (hence the result list may be empty, as no
 -- mapping might exist). SHOULD NOT BE USED UNLESS loadDataTask/writeDataTask
 -- cannot do what you want.
-getLocsMappedTo :: (Monad m) => [LocationTreePathItem] -> ATask m () [Loc]
-getLocsMappedTo path = ATask mempty (\(_,tree) -> return (getLocs tree, tree))
+getLocsMappedTo :: (Monad m) => [LocationTreePathItem] -> PTask m () [Loc]
+getLocsMappedTo path = PTask mempty (\(_,tree) -> return (getLocs tree, tree))
   where
     getLocs tree =
       case tree ^? (atSubfolderRec path . locTreeNodeTag . rscAccessed) of
@@ -95,5 +95,5 @@ getLocsMappedTo path = ATask mempty (\(_,tree) -> return (getLocs tree, tree))
 unsafeRunIOTask
   :: (LocationMonad m)
   => (i -> IO o)
-  -> ATask m i o
-unsafeRunIOTask f = unsafeLiftToATask (liftIO . f)
+  -> PTask m i o
+unsafeRunIOTask f = unsafeLiftToPTask (liftIO . f)
