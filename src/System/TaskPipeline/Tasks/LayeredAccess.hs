@@ -40,7 +40,7 @@ import           System.TaskPipeline.ResourceTree
 loadData
   :: (LocationMonad m, KatipContext m, Monoid a, Typeable a)
   => VirtualFile ignored a -- ^ A 'DataSource'
-  -> ATask m (ResourceTreeNode m) () a  -- ^ The resulting task
+  -> ATask m () a  -- ^ The resulting task
 loadData vf = arr (const $ error "loadData: THIS IS VOID")  -- Won't be evaluated
           >>> (accessVirtualFile $ makeSource vf)
 
@@ -51,7 +51,7 @@ loadData vf = arr (const $ error "loadData: THIS IS VOID")  -- Won't be evaluate
 writeData
   :: (LocationMonad m, KatipContext m, Typeable a)
   => VirtualFile a ignored  -- ^ A 'DataSink'
-  -> ATask m (ResourceTreeNode m) a ()
+  -> ATask m a ()
 writeData = accessVirtualFile . makeSink
 
 -- | When building the pipeline, stores into the location tree the way to read
@@ -60,7 +60,7 @@ writeData = accessVirtualFile . makeSink
 accessVirtualFile
   :: (LocationMonad m, KatipContext m, Typeable a, Typeable b, Monoid b)
   => VirtualFile a b
-  -> ATask m (ResourceTreeNode m) a b
+  -> ATask m a b
 accessVirtualFile vfile =
   liftToATask path (Identity fname) $
     \input (Identity mbAction) -> case mbAction of
@@ -83,7 +83,7 @@ err vfile s = throwWithPrefix $ "accessVirtualFile (" ++ showVFilePath vfile ++ 
 -- expose this path as a requirement (hence the result list may be empty, as no
 -- mapping might exist). SHOULD NOT BE USED UNLESS loadDataTask/writeDataTask
 -- cannot do what you want.
-getLocsMappedTo :: (Monad m) => [LocationTreePathItem] -> ATask m (ResourceTreeNode m) () [Loc]
+getLocsMappedTo :: (Monad m) => [LocationTreePathItem] -> ATask m () [Loc]
 getLocsMappedTo path = ATask mempty (\(_,tree) -> return (getLocs tree, tree))
   where
     getLocs tree =
@@ -93,7 +93,7 @@ getLocsMappedTo path = ATask mempty (\(_,tree) -> return (getLocs tree, tree))
 
 -- | Runs an IO action. IT MUST NOT BE PERFORMING READS OR WRITES.
 unsafeRunIOTask
-  :: (LocationMonad m, IsTaskResource n)
+  :: (LocationMonad m)
   => (i -> IO o)
-  -> ATask m n i o
+  -> ATask m i o
 unsafeRunIOTask f = unsafeLiftToATask (liftIO . f)

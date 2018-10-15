@@ -60,7 +60,6 @@ import           Data.DocRecord.OptParse
 import qualified Data.HashMap.Strict                as HM
 import           Data.List                          (intersperse)
 import           Data.Locations
-import           Data.Maybe
 import           Data.Monoid                        (First (..))
 import           Data.Representable
 import qualified Data.Text                          as T
@@ -86,11 +85,9 @@ instance Semigroup SomeVirtualFile where
 data SomeDataAccess m where
   SomeDataAccess :: (Typeable a, Typeable b) => (RepetitionKeyMap -> a -> m b) -> SomeDataAccess m
 
--- These aliases are for compatibility with ATask. Will be removed in the future
--- when ATask is modified.
-type InVirtualState = WithDefaultUsage
-data InPhysicalState a
-type InDataAccessState = LocLayers
+data InVirtualState
+data InPhysicalState
+data InDataAccessState
 
 -- | Each node of the 'ResourceTree' can be in 3 possible states
 data ResourceTreeNode m state where

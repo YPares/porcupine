@@ -22,7 +22,6 @@ module System.TaskPipeline.ATask
   , ATask(..)
   , RscAccess(..)
   , RscAccessTree
-  , IsTaskResource
   , rscAccessed
   , tryATask, throwATask, clockATask
   , unsafeLiftToATask
@@ -48,6 +47,7 @@ import           Data.Locations
 import           Data.String            (IsString (..))
 import           Katip
 import           System.Clock
+import           System.TaskPipeline.ResourceTree
 
 
 -- | Monoid that tracks the number of times a resource has been accessed.
@@ -73,34 +73,31 @@ type RscAccessTree n = LocationTree (RscAccess n)
 -- | A Task than turns @a@ into @b@. It runs in some monad @m@ so can access
 -- locations described in a 'LocationTree' with nodes of type @n@. @n@ is some
 -- type of resource required by the task.
-data ATask m n a b = ATask
-  { aTaskResourceTree :: LocationTree (n WithDefaultUsage)
+data ATask m a b = ATask
+  { aTaskResourceTree :: LocationTree (VirtualFileNode m)
     -- ^ The tree of all resources required by task. When two tasks are
     -- sequenced, their resource tree are merged.
-  , aTaskPerform      :: (a, RscAccessTree (n LocLayers)) -> m (b, RscAccessTree (n LocLayers))
+  , aTaskPerform      :: (a, RscAccessTree (DataAccessNode m)) -> m (b, RscAccessTree (DataAccessNode m))
   -- ^ The action performed by the task. It is passed the final tree containing
   -- the actual resources bound to their definitive value, and should update
   -- this tree.
   }
 
--- | The type used within a task for the resources must be a Monoid
-type IsTaskResource n = (Monoid (n WithDefaultUsage), Monoid (n LocLayers))
-
 -- | a tasks that discards its inputs and returns ()
-voidTask :: (Monad m, Monoid (n WithDefaultUsage), Monoid (n LocLayers)) => ATask m n a ()
+voidTask :: (Monad m) => ATask m a ()
 voidTask = arr (const ())
 
 -- | Turn an action into a ATask. BEWARE! The resulting 'ATask' will have NO
 -- requirements, so if the action uses files or resources, they won't appear in
 -- the LocationTree.
-unsafeLiftToATask :: (Functor m, IsTaskResource n) => (a -> m b) -> ATask m n a b
+unsafeLiftToATask :: (Functor m) => (a -> m b) -> ATask m a b
 unsafeLiftToATask f = ATask mempty (\(a,t) -> (,t) <$> f a)
 
-instance (Monad m, IsTaskResource n) => Category (ATask m n) where
+instance (Monad m) => Category (ATask m) where
   id = ATask mempty pure
   ATask t2 fn2 . ATask t1 fn1 = ATask (t1 <> t2) (fn1 >=> fn2)
 
-instance (Monad m, IsTaskResource n) => Arrow (ATask m n) where
+instance (Monad m) => Arrow (ATask m) where
   arr f = ATask mempty $ \(a,tt) -> pure (f a,tt)
   -- We implement (***) instead of first so that (***) won't use (.) which is
   -- sequential, while (***) must be parallel
@@ -115,7 +112,7 @@ instance (Monad m, IsTaskResource n) => Arrow (ATask m n) where
 -- Task pipelines should be the most statically inspectable as possible,
 -- and if/else and cases go against that.
 --
--- instance (Monad m, IsTaskResource n) => ArrowChoice (ATask m n)
+-- instance (Monad m) => ArrowChoice (ATask m)
 --   where
 --     left :: ATask m n b c -> ATask m n (Either b d) (Either c d)
 --     left (ATask tree perf) = ATask tree f
@@ -125,10 +122,10 @@ instance (Monad m, IsTaskResource n) => Arrow (ATask m n) where
 --                                   return (Left b, rscTree')
 --         f (Right r, rscTree) = return (Right r, rscTree)
 
-instance (Functor m) => Functor (ATask m n a) where
+instance (Functor m) => Functor (ATask m a) where
   fmap f (ATask tree fn) = ATask tree (fmap (\(a,tt) -> (f a,tt)) . fn)
 
-instance (Applicative m, IsTaskResource n) => Applicative (ATask m n a) where
+instance (Applicative m) => Applicative (ATask m a) where
   pure a = ATask mempty $ \(_,tt) -> pure (a, tt)
   ATask t1 fn1 <*> ATask t2 fn2 = ATask (t1 <> t2) $
     \i -> combine <$> fn1 i <*> fn2 i
@@ -138,7 +135,7 @@ instance (Applicative m, IsTaskResource n) => Applicative (ATask m n a) where
 -- | Catches an error happening in a task. Leaves the tree intact if an error
 -- occured.
 tryATask
-  :: (Exception e, MonadCatch m) => ATask m n a b -> ATask m n a (Either e b)
+  :: (Exception e, MonadCatch m) => ATask m a b -> ATask m a (Either e b)
 tryATask (ATask reqs fn) = ATask reqs $ \i@(_, tree) -> do
   res <- try $ fn i
   return $ case res of
@@ -147,7 +144,7 @@ tryATask (ATask reqs fn) = ATask reqs $ \i@(_, tree) -> do
 
 -- | Fails the whole pipeline if an exception occured, or just continues as
 -- normal
-throwATask :: (Exception e, KatipContext m, MonadThrow m, IsTaskResource n) => ATask m n (Either e b) b
+throwATask :: (Exception e, KatipContext m, MonadThrow m) => ATask m (Either e b) b
 throwATask = ATask mempty $ \(i, tree) -> do
   case i of
     Left e  -> throwWithPrefix $ displayException e
@@ -160,7 +157,7 @@ instance NFData SomeException where
 
 -- | Measures the time taken by an 'ATask'
 clockATask
-  :: (NFData b, MonadIO m) => ATask m n a b -> ATask m n a (b, TimeSpec)
+  :: (NFData b, MonadIO m) => ATask m a b -> ATask m a (b, TimeSpec)
 clockATask (ATask reqs fn) = ATask reqs $ \i -> do
   start <- liftIO $ getTime Realtime
   (output, tree') <- fn i
@@ -173,11 +170,11 @@ clockATask (ATask reqs fn) = ATask reqs $ \i -> do
 -- subfolder of the 'LocationTree' and mark these accesses as done. This is the
 -- main way to create an ATask
 liftToATask
-  :: (LocationMonad m, KatipContext m, Traversable t, IsTaskResource n)
+  :: (LocationMonad m, KatipContext m, Traversable t)
   => [LocationTreePathItem]  -- ^ Path to subfolder in 'LocationTree'
-  -> t (LTPIAndSubtree (n WithDefaultUsage))    -- ^ Items of interest in the subfolder
-  -> (i -> t (n LocLayers) -> m o)       -- ^ What to run with these items
-  -> ATask m n i o           -- ^ The resulting ATask
+  -> t (LTPIAndSubtree (VirtualFileNode m))    -- ^ Items of interest in the subfolder
+  -> (i -> t (DataAccessNode m) -> m o)       -- ^ What to run with these items
+  -> ATask m i o           -- ^ The resulting ATask
 liftToATask path filesToAccess writeFn = ATask tree runAccess
   where
     tree = foldr (\pathItem subtree -> folderNode [ pathItem :/ subtree ])
@@ -208,8 +205,8 @@ liftToATask path filesToAccess writeFn = ATask tree runAccess
 -- add an extra level at the root of the tree with the model name. See the
 -- Simple example in simwork-projects).
 ataskInSubtree
-  :: (IsTaskResource n, Monad m)
-  => [LocationTreePathItem] -> ATask m n a b -> ATask m n a b
+  :: (Monad m)
+  => [LocationTreePathItem] -> ATask m a b -> ATask m a b
 ataskInSubtree path (ATask tree fn) = ATask tree' fn'
   where
     tree' = foldr (\pathItem rest -> folderNode [pathItem :/ rest]) tree path
@@ -221,8 +218,8 @@ ataskInSubtree path (ATask tree fn) = ATask tree' fn'
 addContextToTask
   :: (KatipContext m, LogItem i)
   => i              -- ^ The context
-  -> ATask m n a b  -- ^ The task to wrap
-  -> ATask m n a b
+  -> ATask m a b  -- ^ The task to wrap
+  -> ATask m a b
 addContextToTask item (ATask tree fn) =
   ATask tree $ katipAddContext item . fn
 
@@ -230,7 +227,7 @@ addContextToTask item (ATask tree fn) =
 addNamespaceToTask
   :: (KatipContext m)
   => String        -- ^ The namespace. (Is IsString instance)
-  -> ATask m n a b -- ^ The task to wrap
-  -> ATask m n a b
+  -> ATask m a b -- ^ The task to wrap
+  -> ATask m a b
 addNamespaceToTask ns (ATask tree fn) =
   ATask tree $ katipAddNamespace (fromString ns) . fn

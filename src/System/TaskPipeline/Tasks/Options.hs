@@ -18,7 +18,6 @@ import           Data.Monoid                             (Last (..))
 import           Data.Typeable
 import           Katip
 import           System.TaskPipeline.ATask
-import           System.TaskPipeline.ResourceTree
 import           System.TaskPipeline.Tasks.LayeredAccess
 
 
@@ -29,7 +28,7 @@ getOptions
   => [LocationTreePathItem]  -- ^ The path for the options in the LocationTree
   -> DocRec rs               -- ^ The DocRec containing the fields with their
                              -- docs and default values
-  -> ATask m (ResourceTreeNode m) () (DocRec rs)  -- ^ An ATask that returns the new
+  -> ATask m () (DocRec rs)  -- ^ An ATask that returns the new
                                               -- options values, overriden by
                                               -- the user
 getOptions path defOpts = arr (const defOpts') >>> accessVirtualFile vfile >>> arr post

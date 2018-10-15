@@ -48,19 +48,19 @@ instance LogItem TaskRepetitionContext where
 -- | An ATask mapping a action over a Stream, transforming @a@'s into
 -- @b@'s. Each element in the stream should be associated to an identifier.
 type STask m i a b r =
-  ATask m (ResourceTreeNode m)
+  ATask m
         (Stream (Of (i, a)) m r)
         (Stream (Of (i, b)) m r)
 
 -- | An 'ATask' that consumes an Input Stream and just returns its result.
 type ISTask m i a r =
-  ATask m (ResourceTreeNode m)
+  ATask m
         (Stream (Of (i, a)) m r)
         r
 
 -- | An 'ATask' that emits an Output Stream.
 type OSTask m i a b =
-  ATask m (ResourceTreeNode m)
+  ATask m
         a
         (Stream (Of (i, b)) m ())
 
@@ -87,7 +87,7 @@ mappingOverStream
   -> Maybe Verbosity               -- ^ The minimal vebosity level at which to
                                    -- display the logger context. (Nothing if we
                                    -- don't want to add context)
-  -> ATask m (ResourceTreeNode m) a b  -- ^ The base task X to repeat
+  -> ATask m a b                   -- ^ The base task X to repeat
   -> STask m i a b r               -- ^ A task that will repeat X it for each
                                    -- input. Each input is associated to a
                                    -- identifier that will be appended to
@@ -142,7 +142,7 @@ mappingOverStream_
   :: (KatipContext m, Show i)
   => RepetitionKey
   -> Maybe Verbosity
-  -> ATask m (ResourceTreeNode m) a b
+  -> ATask m a b
   -> ISTask m i a r
 mappingOverStream_ k v t =
   mappingOverStream k v t >>> runStreamTask
@@ -186,14 +186,14 @@ repeatedlyLoadData' rkey vf =
 
 -- | Runs the input stream, forgets all its elements and just returns its result
 runStreamTask :: (Monad m)
-              => ATask m (ResourceTreeNode m)
+              => ATask m
                        (Stream (Of t) m r)
                        r
 runStreamTask = unsafeLiftToATask S.effects
 
 -- | An 'ATask' converting a list to a stream
 listToStreamTask :: (Monad m)
-                 => ATask m (ResourceTreeNode m)
+                 => ATask m
                           [t]
                           (Stream (Of t) m ())
 listToStreamTask = arr S.each
@@ -204,7 +204,7 @@ listToStreamTask = arr S.each
 -- tasks expecting lists. Please consider switching to processing streams
 -- directly. See 'S.toList' for more details.
 streamToListTask :: (Monad m)
-                 => ATask m (ResourceTreeNode m)
+                 => ATask m
                           (Stream (Of t) m r)
                           [t]
 streamToListTask = unsafeLiftToATask (S.toList_ . fmap (const ()))

@@ -15,5 +15,5 @@ import           System.TaskPipeline.Tasks.LayeredAccess
 import           System.TaskPipeline.Tasks.Options
 import           System.TaskPipeline.Tasks.Repetition
 
--- | An 'ATask' with the default kind of ResourceTree
-type PTask m = ATask m (ResourceTreeNode m)
+-- | An alias for 'ATask'
+type PTask m = ATask m
