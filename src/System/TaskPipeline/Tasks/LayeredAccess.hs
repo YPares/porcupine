@@ -26,6 +26,7 @@ import           Prelude                          hiding (id, (.))
 
 import           Control.Lens
 import           Control.Monad.IO.Class
+import qualified Data.HashMap.Strict                as HM
 import           Data.Locations
 import           Data.Typeable
 import           System.TaskPipeline.ATask

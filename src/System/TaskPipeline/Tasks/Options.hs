@@ -20,6 +20,7 @@ import           Katip
 import           System.TaskPipeline.ATask
 import           System.TaskPipeline.ResourceTree
 import           System.TaskPipeline.Tasks.LayeredAccess
+import           System.TaskPipeline.Tasks.LayeredAccess
 
 
 -- | Add a set of options (as a DocRec) to the 'LocationTree', in order to
