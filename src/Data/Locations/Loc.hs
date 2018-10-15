@@ -7,7 +7,6 @@
 {-# LANGUAGE TypeSynonymInstances #-}
 {-# OPTIONS_GHC -Wall #-}
 
--- | Abstraction layer around the filesystem for simwork's use
 module Data.Locations.Loc where
 
 import           Control.Applicative

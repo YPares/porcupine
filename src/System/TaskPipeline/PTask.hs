@@ -24,7 +24,7 @@ module System.TaskPipeline.PTask
   , RscAccessTree
   , rscAccessed
   , tryPTask, throwPTask, clockPTask
-  , unsafeLiftToPTask
+  , unsafeLiftToPTask, unsafeRunIOTask
   , liftToPTask
   , ptaskInSubtree
   , voidTask
@@ -92,6 +92,13 @@ voidTask = arr (const ())
 -- the LocationTree.
 unsafeLiftToPTask :: (Functor m) => (a -> m b) -> PTask m a b
 unsafeLiftToPTask f = PTask mempty (\(a,t) -> (,t) <$> f a)
+
+-- | Runs an IO action. IT MUST NOT BE PERFORMING READS OR WRITES.
+unsafeRunIOTask
+  :: (LocationMonad m)
+  => (i -> IO o)
+  -> PTask m i o
+unsafeRunIOTask f = unsafeLiftToPTask (liftIO . f)
 
 instance (Monad m) => Category (PTask m) where
   id = PTask mempty pure
@@ -200,12 +207,11 @@ liftToPTask path filesToAccess writeFn = PTask tree runAccess
           rscTree' = rscTree & atSubfolderRec path .~ subtree'
       return (output, rscTree')
 
--- | Makes the 'LocationTree' associated to the task deeper by adding extra
--- levels on top of it. This is to solve conflicts between tasks that have
+-- | Moves the 'LocationTree' associated to the task deeper in the final
+-- tree. This can be used to solve conflicts between tasks that have
 -- 'LocationTree's that are identical (for instance input files for a model if
 -- you want to solve several models, in which case you'd want for instance to
--- add an extra level at the root of the tree with the model name. See the
--- Simple example in simwork-projects).
+-- add an extra level at the root of the tree with the model name).
 ptaskInSubtree
   :: (Monad m)
   => [LocationTreePathItem] -> PTask m a b -> PTask m a b

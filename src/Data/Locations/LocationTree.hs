@@ -66,9 +66,8 @@ import           GHC.Generics        (Generic)
 -- (solving, exploration) will need its 'LocationTree', that can be obtained by
 -- composing the 'LocationTree's of the tasks it contains.
 --
--- In some project using simwork, the project's code will only use virtual
--- paths, and it won't know what actual physical location is behind that
--- path.
+-- In a project using pipeline-tools, the project's code will only use virtual
+-- paths, and it won't know what actual physical location is behind that path.
 --
 -- We could use a DocRecord to represent a LocationTree. Maybe we'll refactor it
 -- to use DocRecords in the future, but for now it was simpler to use a simple

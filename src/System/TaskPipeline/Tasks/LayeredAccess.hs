@@ -18,14 +18,12 @@ module System.TaskPipeline.Tasks.LayeredAccess
   , writeData
   , accessVirtualFile
   , getLocsMappedTo
-  , unsafeRunIOTask
   , Typeable
   ) where
 
 import           Prelude                          hiding (id, (.))
 
 import           Control.Lens
-import           Control.Monad.IO.Class
 import           Data.Locations
 import           Data.Typeable
 import           System.TaskPipeline.PTask
@@ -81,8 +79,8 @@ err vfile s = throwWithPrefix $ "accessVirtualFile (" ++ showVFilePath vfile ++ 
 
 -- | Returns the locs mapped to some path in the location tree. It *doesn't*
 -- expose this path as a requirement (hence the result list may be empty, as no
--- mapping might exist). SHOULD NOT BE USED UNLESS loadDataTask/writeDataTask
--- cannot do what you want.
+-- mapping might exist). SHOULD NOT BE USED UNLESS loadData/writeData cannot do
+-- what you want.
 getLocsMappedTo :: (Monad m) => [LocationTreePathItem] -> PTask m () [Loc]
 getLocsMappedTo path = PTask mempty (\(_,tree) -> return (getLocs tree, tree))
   where
@@ -91,9 +89,3 @@ getLocsMappedTo path = PTask mempty (\(_,tree) -> return (getLocs tree, tree))
         Just (DataAccessNode locs _) -> locs
         _                            -> []
 
--- | Runs an IO action. IT MUST NOT BE PERFORMING READS OR WRITES.
-unsafeRunIOTask
-  :: (LocationMonad m)
-  => (i -> IO o)
-  -> PTask m i o
-unsafeRunIOTask f = unsafeLiftToPTask (liftIO . f)
