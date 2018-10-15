@@ -9,9 +9,7 @@ module System.TaskPipeline.Tasks
   ) where
 
 import           Data.Locations.LogAndErrors
-import           Katip
 import           System.TaskPipeline.ATask
-import           System.TaskPipeline.Logger
 import           System.TaskPipeline.ResourceTree
 import           System.TaskPipeline.Tasks.LayeredAccess
 import           System.TaskPipeline.Tasks.Options

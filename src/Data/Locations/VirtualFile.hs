@@ -25,7 +25,7 @@ module Data.Locations.VirtualFile
   ) where
 
 import           Control.Lens
-import           Data.Aeson                         (Value, toJSON)
+import           Data.Aeson                         (Value)
 import           Data.DocRecord
 import           Data.DocRecord.OptParse            (RecordUsableWithCLI)
 import           Data.Functor.Compose
@@ -33,12 +33,10 @@ import qualified Data.HashMap.Strict                as HM
 import qualified Data.HashSet                       as HS
 import           Data.Locations.LocationTree
 import           Data.Locations.Mappings            (HasDefaultMappingRule (..))
-import           Data.Locations.RepetitionKeys
 import           Data.Locations.SerializationMethod
 import           Data.Monoid                        (First (..))
 import           Data.Profunctor                    (Profunctor (..))
 import           Data.Representable
-import qualified Data.Semigroup                     as Semigroup
 import qualified Data.Text                          as T
 import           Data.Type.Equality
 import           Data.Typeable
@@ -50,13 +48,13 @@ import           Data.Void
 -- | A virtual file in the location tree to which we can write @a@ and from
 -- which we can read @b@.
 data VirtualFile a b = VirtualFile
-  { _vfilePath :: [LocationTreePathItem]
+  { _vfilePath          :: [LocationTreePathItem]
   , _vfileUsedByDefault :: Bool
   , _vfileDocumentation :: Maybe T.Text
-  , _vfileBidirProof :: Maybe (a :~: b)
+  , _vfileBidirProof    :: Maybe (a :~: b)
                     -- Temporary, necessary until we can do away with docrec
                     -- conversion in the writer part of SerialsFor
-  , _vfileSerials    :: SerialsFor a b }
+  , _vfileSerials       :: SerialsFor a b }
 
 makeLenses ''VirtualFile
 
@@ -209,7 +207,7 @@ vfileEmbeddedValue = vfileSerials . serialReaders . serialReaderEmbeddedValue . 
 -- | If the 'VirtualFile' has an embedded value and converters to and from a
 -- type @c@, we traverse to a value of this type. The conversion can fail
 vfileIntermediaryValue
-  :: forall a c d. (Typeable c)
+  :: forall a c. (Typeable c)
   => Traversal' (Either String (VirtualFile a a)) c
 vfileIntermediaryValue _ (Left s) = pure (Left s)
 vfileIntermediaryValue f (Right vf) = case convertFns of
@@ -254,7 +252,7 @@ type DocRecOfOptions = RecOfOptions DocField
 -- command-line), we traverse to it. Setting it changes the value embedded in
 -- the file to reflect the new record of options. BEWARE not to change the
 -- fields when setting the new doc record.
-vfileRecOfOptions :: forall d a. Traversal' (VirtualFile a a) DocRecOfOptions
+vfileRecOfOptions :: forall a. Traversal' (VirtualFile a a) DocRecOfOptions
 vfileRecOfOptions f vf = case mbopts of
   Just (WriteToConfigFn convert, defVal, convertBack) ->
     rebuild convertBack <$> f (RecOfOptions $ convert defVal)

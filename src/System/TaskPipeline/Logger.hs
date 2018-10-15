@@ -10,12 +10,10 @@ module System.TaskPipeline.Logger
   , runLogger
   ) where
 
-import           Control.Monad.Catch       (MonadMask, bracket)
-import           Control.Monad.IO.Class    (MonadIO, liftIO)
-import           Data.String               (fromString)
+import           Control.Monad.Catch    (MonadMask, bracket)
+import           Control.Monad.IO.Class (MonadIO, liftIO)
 import           Katip
-import           System.IO                 (stdout)
-import           System.TaskPipeline.ATask (ATask (..))
+import           System.IO              (stdout)
 
 
 -- | Scribe parameters for Logger. Define a severity threshold and a verbosity level.

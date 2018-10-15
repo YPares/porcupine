@@ -44,19 +44,19 @@ module Data.Locations.LocationTree
 where
 
 import           Control.Applicative
-import           Control.Lens                       hiding ((<.>))
+import           Control.Lens        hiding ((<.>))
 import           Data.Aeson
 import           Data.Binary
 import           Data.Hashable
-import qualified Data.HashMap.Strict                as HM
+import qualified Data.HashMap.Strict as HM
 import           Data.List
 import           Data.Locations.Loc
 import           Data.Maybe
 import           Data.Representable
 import           Data.String
-import qualified Data.Text                          as T
-import qualified Data.Tree                          as DT
-import           GHC.Generics                       (Generic)
+import qualified Data.Text           as T
+import qualified Data.Tree           as DT
+import           GHC.Generics        (Generic)
 -- import Data.Tree.Pretty
 -- import Diagrams.TwoD.Layout.Tree
 

@@ -83,7 +83,7 @@ getTaskTree (ATask t _) = t
 
 -- | Runs the required 'PipelineCommand' on an 'ATask'
 runPipelineCommandOnATask
-  :: (LocationMonad m, KatipContext m, MonadIO m)
+  :: (LocationMonad m, KatipContext m)
   => PTask m i o
   -> i
   -> PipelineCommand o --, RscAccessTree (ResourceTreeNode m))

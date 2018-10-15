@@ -7,6 +7,7 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TupleSections       #-}
 {-# LANGUAGE ViewPatterns        #-}
+{-# OPTIONS_GHC -fno-warn-missing-pattern-synonym-signatures #-}
 
 -- | This file describes the ResourceTree API. The ResourceTree is central to
 -- every pipeline that runs. It is aggregated from each subtask composing the
@@ -64,7 +65,6 @@ import           Data.Monoid                        (First (..))
 import           Data.Representable
 import qualified Data.Text                          as T
 import           Data.Typeable
-import           Katip
 import           Options.Applicative
 import           System.TaskPipeline.CLI.Overriding
 
@@ -177,7 +177,7 @@ rscTreeToMappings
   -> Maybe (LocationMappings (VirtualFileNode m))
 rscTreeToMappings tree = mappingsFromLocTree <$> over filteredLocsInTree rmOpts tree
   where
-    rmOpts n@(VirtualFileNode vfile)
+    rmOpts (VirtualFileNode vfile)
       | Just VFForCLIOptions <- intent = Nothing  -- Nodes with default data are
                                                   -- by default not put in the
                                                   -- mappings
@@ -234,7 +234,8 @@ instance ToJSON (ResourceTreeAndMappings m) where
        Just m ->
          HM.singleton mappingsSection $ toJSON' $ case mappings of
            Right m'     -> m'
-           Left rootLoc -> mappingRootOnly rootLoc (Just "") <> fmap nodeExt m)
+           Left rootLoc -> mappingRootOnly rootLoc (Just "") <> fmap nodeExt m
+       Nothing -> HM.empty)
     <>
     (case rscTreeToEmbeddedDataTree tree of
       Just t  -> HM.fromList $ embeddedDataTreeToJSONFields embeddedDataSection t
@@ -313,7 +314,7 @@ rscTreeConfigurationReader (ResourceTreeAndMappings defTree _) =
               return node
     integrateAesonCfg _ (_, (node, _)) = return node
 
-    findInAesonVal path v = go path v
+    findInAesonVal path = go path
       where
         go [] v = return v
         go (p:ps) (Object (HM.lookup (_ltpiName p) -> Just v)) = go ps v

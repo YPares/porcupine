@@ -24,7 +24,6 @@ import           Katip
 import           Prelude                                 hiding ((.))
 import           Streaming                               (Of (..), Stream)
 import qualified Streaming.Prelude                       as S
-import qualified System.FilePath                         as P
 import           System.TaskPipeline.ATask
 import           System.TaskPipeline.ResourceTree
 import           System.TaskPipeline.Tasks.LayeredAccess

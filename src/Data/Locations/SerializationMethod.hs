@@ -53,7 +53,7 @@ singletonFromIntermediaryFn f = HM.singleton argTypeRep (FromIntermediaryFn f)
 data ReadFromLoc a =
   ReadFromLoc { _readFromLocRepetitionKeys :: [RepetitionKey]
                 , _readFromLocPerform        ::
-                    (forall m. (LocationMonad m, MonadThrow m, KatipContext m)
+                    (forall m. (LocationMonad m, KatipContext m)
                     => Loc -> RepetitionKeyValList -> m a)
                 }
   deriving (Functor)
@@ -129,7 +129,7 @@ singletonToIntermediaryFn f = HM.singleton (typeOf $ f undefined) (ToIntermediar
 data WriteToLoc a = WriteToLoc
   { _writeToLocRepetitionKeys :: [RepetitionKey]
   , _writeToLocPerform ::
-      (forall m. (LocationMonad m, KatipContext m, MonadThrow m)
+      (forall m. (LocationMonad m, KatipContext m)
       =>  a -> Loc -> RepetitionKeyValList -> m ())
   }
 
