@@ -6,17 +6,16 @@
 {-# LANGUAGE StaticPointers       #-}
 {-# LANGUAGE TypeSynonymInstances #-}
 {-# LANGUAGE DeriveFunctor        #-}
+{-# LANGUAGE DeriveFoldable       #-}
+{-# LANGUAGE DeriveTraversable    #-}
+{-# LANGUAGE TemplateHaskell      #-}
 {-# OPTIONS_GHC -Wall #-}
 
 module Data.Locations.Loc where
 
 import           Control.Applicative
-import           Control.DeepSeq             (NFData)
 import           Control.Lens
 import           Data.Aeson
-import           Data.Binary                 (Binary)
-import           Data.Data                   (Data, Typeable)
-import           Data.Maybe
 import           Data.Representable
 import           Data.String
 import qualified Data.Text                   as T
@@ -24,20 +23,24 @@ import           GHC.Generics                (Generic)
 import qualified Network.URL                 as URL
 import qualified System.Directory            as Dir (createDirectoryIfMissing)
 import qualified System.FilePath             as Path
-import qualified System.FilePath.Lens        as PL
 import qualified Data.HashMap.Strict as HM
+import Control.Monad (foldM)
 
 
--- | Each location can be a simple raw string or a string containing references
--- to variables, waiting to be spliced in.
+-- | Each location bit can be a simple chunk of string, or a variable name
+-- waiting to be spliced in.
 data LocBit
-  = LocBitString String  -- ^ A raw filepath part, to be used as is
+  = LocBitChunk FilePath  -- ^ A raw filepath part, to be used as is
   | LocBitVarRef String -- ^ A variable name
-  deriving (Eq, Ord, Show, Generic, ToJSON, FromJSON)
+  deriving (Eq, Ord, Generic, ToJSON, FromJSON)
 
--- instance Show LocBit where
---   show (LocBitString s) = s
---   show (LocBitVarRef v) = "{" ++ v ++ "}"
+instance Show LocBit where
+  show (LocBitChunk s) = s
+  show (LocBitVarRef v) = "{" ++ v ++ "}"
+
+locBitContent :: Lens' LocBit String
+locBitContent f (LocBitChunk p) = LocBitChunk <$> f p
+locBitContent f (LocBitVarRef v) = LocBitVarRef <$> f v
 
 -- | A newtype so that we can redefine the Show instance
 newtype LocString = LocString [LocBit]
@@ -45,127 +48,207 @@ newtype LocString = LocString [LocBit]
 instance Show LocString where
   show (LocString l) = concatMap show l
 
--- | True if the loc is just one 'LocPartRawString'
-isLocStringComplete :: LocString -> Bool
-isLocStringComplete (LocString [LocBitString _]) = True
-isLocStringComplete _ = False
+-- | Get all the variable names still in the loc string and possibly replace
+-- them.
+locStringVariables :: Traversal' LocString LocBit
+locStringVariables f (LocString bits) = LocString . concatChunks <$> traverse f' bits
+  where f' c@(LocBitChunk{}) = pure c
+        f' c@(LocBitVarRef{}) = f c
+        concatChunks (LocBitChunk p1 : LocBitChunk p2 : rest) =
+          concatChunks (LocBitChunk (p1++p2) : rest)
+        concatChunks (x : rest) = x : concatChunks rest
+        concatChunks [] = []
+
+data LocFilePath a = LocFilePath { _pathWithoutExt :: a, _pathExtension :: String }
+  deriving (Eq, Ord, Generic, ToJSON, FromJSON, Functor, Foldable, Traversable)
+
+makeLenses ''LocFilePath
+
+-- | Turns the 'LocFilePath' to a simple string, and the other way around
+rawFilePath :: Iso' (LocFilePath String) FilePath
+rawFilePath = iso to_ from_
+  where
+    to_ (LocFilePath p e) = case e of
+      "" -> p
+      _  -> p++"."++e
+    from_ fp = uncurry LocFilePath $ splitExtension' fp
+
+instance (Show a) => Show (LocFilePath a) where
+  show p = fmap show p ^. rawFilePath
+
 
 -- | Location's main type. A value of type @Loc@ denotes a file or a folder
 -- that may be local or hosted remotely (s3).
 data Loc_ a
-  = LocalFile { filePath :: a }
-  | S3Obj { bucketName :: a
-          , objectName :: a }
+  = LocalFile { filePath :: LocFilePath a }
+  | S3Obj { bucketName :: String
+          , objectName :: LocFilePath a }
   {- In the future, we might want to add the following locations
      | ParquetObj ...
      | SQLTableObj ...
   -}
-  deriving (Eq, Ord, Generic, ToJSON, FromJSON, Functor, NFData, Binary)
-
-type Loc = Loc_ LocString
-
-type ResolvedLoc = Loc_ String
+  deriving (Eq, Ord, Generic, ToJSON, FromJSON, Functor, Foldable, Traversable)
 
 instance (Show a) => Show (Loc_ a) where
   show LocalFile{ filePath } = show filePath
   show S3Obj{ bucketName, objectName } =
-    "s3://" ++ show bucketName ++ "/" ++ show objectName
+    "s3://" ++ bucketName ++ "/" ++ show objectName
 
-isLocComplete :: Loc -> Bool
-isLocComplete = allOf traversed isLocStringComplete
-
--- | Lens to the path in the 'Loc'
-locPath :: Lens' Loc FilePath
-locPath f LocalFile{ filePath } = LocalFile <$> f filePath
-locPath f S3Obj{ bucketName, objectName } =
-  (\n' -> S3Obj{ bucketName, objectName = n' }) <$> f objectName
+-- | Lens to the 'LocFilePath' of the 'Loc'
+locFilePath :: Lens (Loc_ a) (Loc_ b) (LocFilePath a) (LocFilePath b)
+locFilePath f (LocalFile fp) = LocalFile <$> f fp
+locFilePath f (S3Obj b fp) = S3Obj b <$> f fp
 
 -- | Lens to the extension of the 'Loc'
-locExt :: Lens' Loc T.Text
-locExt = locPath . PL.extension . iso T.pack T.unpack
+locExt :: Lens' (Loc_ a) String
+locExt = locFilePath . pathExtension
+
+
+type LocWithVars = Loc_ LocString
+
+type Loc = Loc_ String
+
+-- | Creates a 'LocWithVars' that will only contain a chunk, no variables
+locWithVarsFromLoc :: Loc -> LocWithVars
+locWithVarsFromLoc = fmap (LocString . (:[]) . LocBitChunk)
+
+-- | All the variables leftover in a 'LocWithVars'
+locVariables :: Traversal' LocWithVars LocBit
+locVariables = traversed . locStringVariables
+
+-- | Splices in the variables present in the hashmap
+spliceLocVariables :: HM.HashMap String String -> LocWithVars -> LocWithVars
+spliceLocVariables vars = over locVariables $ \v@(LocBitVarRef vname) ->
+  case HM.lookup vname vars of
+    Just val -> LocBitChunk val
+    Nothing -> v
+
+-- | Can represent file paths
+class IsLocPath a where
+  appendBeforePath :: String -> a -> a
+  appendAfterPath :: a -> String -> a
+  parseLocStringAndExt :: String -> Either String (LocFilePath a)
+
+splitExtension' :: FilePath -> (FilePath, String)
+splitExtension' fp = let (f,e) = Path.splitExtension fp in
+  case e of '.':e' -> (f,e')
+            _ -> (f,e)
+
+instance IsLocPath FilePath where
+  appendBeforePath = (Path.</>)
+  appendAfterPath = (Path.</>)
+  parseLocStringAndExt fp = Right $ fp ^. from rawFilePath
 
 parseLocString :: String -> Either String LocString
-parseLocString s = (LocString . reverse . map reverseLB . filter isFull)
+parseLocString s = (LocString . reverse . map (over locBitContent reverse) . filter isFull)
                    <$> foldM oneChar [] s
   where
-    oneChar (LocBitVarRef _ : _) '{' = Left "Cannot nest '{...}'"
+    oneChar (LocBitVarRef _ : _) '{' = Left "Cannot nest {...}"
     oneChar acc '{' = return $ LocBitVarRef "" : acc
-    oneChar (LocBitString _ : _) '}' = Left "'}' terminates nothing"
-    oneChar acc '}' = return $ LocBitString "" : acc
-    oneChar (hd : rest) c = return $ add c hd : rest
-    oneChar [] c = return [LocBitString [c]]
+    oneChar (LocBitChunk _ : _) '}' = Left "'}' terminates nothing"
+    oneChar acc '}' = return $ LocBitChunk "" : acc
+    oneChar (hd : rest) c = return $ over locBitContent (c:) hd : rest
+    oneChar [] c = return [LocBitChunk [c]]
 
-    add c (LocBitVarRef v) = LocBitVarRef $ c:v
-    add c (LocBitString v) = LocBitString $ c:v
-
-    isFull (LocBitString "") = False
+    isFull (LocBitChunk "") = False
     isFull _ = True
 
-    reverseLB (LocBitVarRef v) = LocBitVarRef $ reverse v
-    reverseLB (LocBitString v) = LocBitString $ reverse v
+refuseVarRefs :: String -> String -> Either String String
+refuseVarRefs place s = do
+  l <- parseLocString s
+  case l of
+    (LocString []) -> return ""
+    (LocString [LocBitChunk p]) -> return p
+    _ -> Left $ "Variable references {...} are not allowed in the " ++ place ++ " part of a URL"
 
-parseURL :: String -> Maybe Loc
+instance IsLocPath LocString where
+  appendBeforePath a (LocString b) = LocString $ case b of
+    LocBitChunk c : rest -> LocBitChunk (a ++ "/" ++ c) : rest
+    _ -> LocBitChunk (a++"/") : b
+  appendAfterPath (LocString a) b = LocString $ reverse $ case reverse a of
+    LocBitChunk c : rest -> LocBitChunk (c ++ "/" ++ b) : rest
+    a' -> LocBitChunk ('/':b) : a'
+  parseLocStringAndExt s =
+    LocFilePath <$> parseLocString p <*> refuseVarRefs "extension" e
+    where (p, e) = splitExtension' s
+
+-- | The main way to parse a 'Loc_'.
+parseURL :: (IsLocPath a) => String -> Either String (Loc_ a)
 parseURL litteralPath = do
-        pathUrl <- URL.importURL litteralPath
+        pathUrl <- maybe (Left "") Right $ URL.importURL litteralPath
         case URL.url_type pathUrl of
           URL.Absolute h ->
             case URL.protocol h of
               URL.RawProt "s3" ->
-                S3Obj { bucketName = URL.host h
-                      , objectName = URL.url_path pathUrl }
-              p -> error $ "Unsupported protocol: " ++ show p
-          URL.HostRelative -> LocalFile "/" <//> URL.url_path pathUrl
-          URL.PathRelative -> LocalFile $ URL.url_path pathUrl
+                S3Obj <$> (refuseVarRefs "bucket" $ URL.host h)
+                      <*> (parseLocStringAndExt $ URL.url_path pathUrl)
+              p -> Left $ "Unsupported protocol: " ++ show p
+          URL.HostRelative -> LocalFile <$> (parseLocStringAndExt $ "/" ++ URL.url_path pathUrl)
+          URL.PathRelative -> LocalFile <$> (parseLocStringAndExt $ URL.url_path pathUrl)
 
-instance IsString Loc where
-  fromString = fromJust . parseURL
+instance (IsLocPath a) => IsString (Loc_ a) where
+  fromString s = case parseURL s of
+    Right l -> l
+    Left e -> error e
 
-instance Representable Loc where
+instance (IsLocPath a, Show a) => Representable (Loc_ a) where
   toTextRepr = T.pack . show
   fromTextRepr x = case parseURL . T.unpack $ x of
-    Nothing -> empty
-    Just x' -> pure x'
+    Left _   -> empty
+    Right x' -> pure x'
 
--- | Appends a path to a location
+-- -- | Lens to the in the 'Loc'
+-- locPath :: Lens' Loc FilePath
+-- locPath f LocalFile{ filePath } = LocalFile <$> f filePath
+-- locPath f S3Obj{ bucketName, objectName } =
+--   (\n' -> S3Obj{ bucketName, objectName = n' }) <$> f objectName
+
+-- | Appends a path to a location. The Loc is considered to be a folder, so its
+-- possible extension will be /ignored/.
+(</>) :: (IsLocPath a) => Loc_ a -> FilePath -> Loc_ a
+f </> p = f & over (locFilePath . pathWithoutExt) (`appendAfterPath` p')
+            & locFilePath . pathExtension .~ newExt
+  where (p', newExt) = splitExtension' p
 infixl 4 </>
-(</>) :: Loc -> FilePath -> Loc
-f </> p = over locPath (Path.</> p) f
-
+  
 -- | Alias for '</>'
-infixl 4 <//>
-(<//>) :: Loc -> FilePath -> Loc
+(<//>) :: (IsLocPath a) => Loc_ a -> FilePath -> Loc_ a
 (<//>) = (</>)
+infixl 4 <//>
+  
+-- infixl 3 <.>
+-- (<.>) :: Loc_ a -> String -> Loc_ a
+-- f <.> ext = f & locFilePath . pathExtension %~ addExt
+--   where addExt "" = ext
+--         addExt extInPlace = extInPlace ++ "." ++ ext
 
-infixl 3 <.>
-(<.>) :: Loc -> String -> Loc
-f <.> ext = over locPath (Path.<.> ext) f
-
+-- | Replaces a Loc extension
+(-<.>) :: Loc -> String -> Loc
+f -<.> ext = f & locFilePath . pathExtension .~ ext
 infixl 3 -<.>
-(-<.>) :: Loc -> FilePath -> Loc
-f -<.> ext = over locPath (Path.-<.> ext) f
 
--- | Initialises a directory, so that we can safely write in it afterwards.
--- For a local filesystem, this means creating it
+-- | Initialises a directory from a Loc to it, so that we can safely write in it
+-- afterwards. For a local filesystem, this means creating it.
 initDir :: Loc -> IO ()
-initDir (LocalFile f) =
-  Dir.createDirectoryIfMissing True f
+initDir f@(LocalFile{}) =
+  Dir.createDirectoryIfMissing True $ f ^. locFilePath . pathWithoutExt
 initDir S3Obj{} = pure ()
 
--- | Open the selected folder in a default application
-openFolder :: Loc -> IO ()
-openFolder = print
+-- -- | Open the selected folder in a default application
+-- openFolder :: Loc -> IO ()
+-- openFolder = print
 
 -- | Analog to 'Path.takeDirectory' for generalized locations
 takeDirectory :: Loc -> Loc
-takeDirectory = over locPath Path.takeDirectory
+takeDirectory = over (locFilePath . pathWithoutExt) Path.takeDirectory . dropExtension
 
 -- | Analog of 'Path.dropExtension'
-dropExtension :: Loc -> Loc
-dropExtension = over locPath Path.dropExtension
+dropExtension :: Loc_ a -> Loc_ a
+dropExtension f = f & locFilePath . pathExtension .~ ""
 
-addExtToLocIfMissing :: Loc -> T.Text -> Loc
-addExtToLocIfMissing loc ext | T.null (loc^.locExt) =
-  if T.null ext
-     then loc
-     else loc & locExt .~ ext
-addExtToLocIfMissing loc _ = loc
+-- | Sets the extension unless the 'Loc_' already has one
+addExtToLocIfMissing :: Loc_ a -> String -> Loc_ a
+addExtToLocIfMissing loc newExt =
+  loc & over locExt (\curExt -> case curExt of
+                        "" -> newExt
+                        _  -> curExt)

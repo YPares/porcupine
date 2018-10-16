@@ -75,7 +75,7 @@ instance (Representable n) => FromJSON (LocationMappings_ (MbLocWithExt n)) wher
 
 -- | Lists all the physical paths that have been associated to some virtual
 -- location
-allLocsInMappings :: LocationMappings_ (MbLocWithExt n) -> [Loc]
+allLocsInMappings :: LocationMappings_ (MbLocWithExt n) -> [LocWithVars]
 allLocsInMappings (LocationMappings_ m) =
   concat . mapMaybe (f . snd) $ HM.toList m
   where
@@ -107,7 +107,7 @@ mappingsFromLocTree (LocationTree _ sub) =
         appendPath (LTP path, maps) = (LTP $ ltpi : path, maps)
         LocationMappings_ m = mappingsFromLocTree t
 
-data MbLocWithExt n = MbLocWithExt { mbLocWithExt_Loc :: Maybe Loc, mbLocWithExt_Ext :: Maybe n }
+data MbLocWithExt n = MbLocWithExt { mbLocWithExt_Loc :: Maybe LocWithVars, mbLocWithExt_Ext :: Maybe n }
   deriving (Show, Functor)
 
 instance (Representable n) => ToJSON (MbLocWithExt n) where
@@ -187,22 +187,24 @@ parseSerMethList _            = fail
 -- a never-empty stack). The Locs on the left take precedence and
 -- override these on the right. @a@ is often a filetype here.
 data LocLayers a = LocLayers
-  { _topLocLayer    :: (Loc, a)
-  , _otherlocLayers :: [(Loc, a)] }
+  { _topLocLayer    :: (LocWithVars, a)
+  , _otherlocLayers :: [(LocWithVars, a)] }
   deriving (Functor, Foldable, Traversable, Show)
 
 -- | Traverse the layers from top to bottom
-locLayers :: Traversal (LocLayers a) (LocLayers b) (Loc, a) (Loc, b)
+locLayers :: Traversal (LocLayers a) (LocLayers b) (LocWithVars, a) (LocWithVars, b)
 locLayers f (LocLayers l ls) = LocLayers <$> f l <*> traverse f ls
 
 -- | Creates a 'LocationMappings_' where the whole LocationTree is mapped to a
 -- single folder
 mappingRootOnly :: Loc -> Maybe a -> LocationMappings_ (MbLocWithExt a)
-mappingRootOnly l a = LocationMappings_ $ HM.fromList [(LTP [], MappedTo [MbLocWithExt (Just l) a])]
+mappingRootOnly l a = LocationMappings_ $
+  HM.fromList [( LTP []
+               , MappedTo [MbLocWithExt (Just $ locWithVarsFromLoc l) a] )]
 
 -- | Gets the last layer folder mapped to the root. Returns Nothing if the root
 -- has several mappings.
-getLocMappedToRoot :: LocationMappings_ (MbLocWithExt n) -> Maybe Loc
+getLocMappedToRoot :: LocationMappings_ (MbLocWithExt n) -> Maybe LocWithVars
 getLocMappedToRoot (LocationMappings_ h) = case HM.lookup (LTP []) h of
   Just (MappedTo (reverse -> MbLocWithExt (Just l) _:_)) -> Just l
   _                                                      -> Nothing

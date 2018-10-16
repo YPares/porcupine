@@ -133,11 +133,12 @@ bindResourceTreeAndRun progName (FullConfig defConfigFile defRoot) tree f =
           f cmd $ applyMappingsToResourceTree tam
       where
         refLoc = case mappings' of
-          Left rootLoc -> rootLoc
+          Left rootLoc -> fmap (const ()) rootLoc
           Right m      -> refLocFromMappings m
 
-refLocFromMappings :: LocationMappings a -> Loc
-refLocFromMappings m = foldr f (LocalFile "") (allLocsInMappings m)
+refLocFromMappings :: LocationMappings a -> Loc_ ()
+refLocFromMappings m = foldr f (LocalFile $ LocFilePath () "")
+                               (map (fmap (const ())) $ allLocsInMappings m)
   where
     f a@(S3Obj{}) _ = a
     f _ b@(S3Obj{}) = b

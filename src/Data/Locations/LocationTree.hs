@@ -49,7 +49,6 @@ import           Data.Binary
 import           Data.Hashable
 import qualified Data.HashMap.Strict as HM
 import           Data.List
-import           Data.Locations.Loc
 import           Data.Maybe
 import           Data.Representable
 import           Data.String

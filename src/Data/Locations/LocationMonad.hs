@@ -137,7 +137,7 @@ instance (LocationMonad m) => LocationMonad (KatipContextT m) where
 --
 -- You may want to use 'System.RunContext.runWithContext' which infers the Loc
 -- switch and the verbosity level from the given context
-selectRun :: Loc  -- ^ A Loc to use as switch (RunContext root or file)
+selectRun :: Loc_ t  -- ^ A Loc to use as switch (RunContext root or file)
           -> Bool -- ^ Verbosity
           -> (forall m. (LocationMonad m, MonadIO m) => m a)
              -- ^ The action to run, either in AWS or IO
@@ -154,14 +154,14 @@ instance LocationMonad AWS where
   writeBSS l             = writeBSS_S3 l
   readBSS (LocalFile l) = readBSS_Local l
   readBSS l             = readBSS_S3 l
-  withLocalBuffer f (LocalFile lf) = f lf
+  withLocalBuffer f (LocalFile lf) = f $ lf ^. rawFilePath
   withLocalBuffer f loc@S3Obj{} =
-    Tmp.withSystemTempDirectory "pipeline-tools.tmp" writeAndUpload
+    Tmp.withSystemTempDirectory "pipeline-tools-tmp" writeAndUpload
     where
       writeAndUpload tmpDir = do
         let tmpFile = tmpDir Path.</> "out"
         res <- f tmpFile
-        readBSS_ (LocalFile tmpFile) (writeBSS loc)
+        readBSS_ (LocalFile $ tmpFile ^. from rawFilePath) (writeBSS loc)
         return res
 
 -- | A location monad that also contains an environment
@@ -174,7 +174,7 @@ type LocationMonadReader r m =
 -- | Can be instantiated to any 'LocationMonadReader'
 newtype AnyLocationMR r a = AnyLocationMR { unAnyLocationMR :: forall m. (LocationMonadReader r m) => m a }
 
-checkLocal :: [Char] -> (FilePath -> p) -> Loc -> p
+checkLocal :: String -> (LocFilePath String -> p) -> Loc -> p
 checkLocal _ f (LocalFile fname) = f fname
 checkLocal funcName _ _ = error $ funcName ++ ": S3 location cannot be reached in IO! Need to use AWS"
 
@@ -184,7 +184,7 @@ type LocalM = ResourceT IO
 instance LocationMonad LocalM where
   writeBSS = checkLocal "writeBSS" writeBSS_Local
   readBSS  = checkLocal "readBSS" readBSS_Local
-  withLocalBuffer f = checkLocal "withLocalBuffer" (\lf -> f lf)
+  withLocalBuffer f = checkLocal "withLocalBuffer" (\lf -> f $ lf^.rawFilePath)
 
 writeText :: LocationMonad m
              => Loc
@@ -194,17 +194,19 @@ writeText loc body =
   let bsBody = BSS.fromStrict $ TE.encodeUtf8 body in
   writeBSS loc bsBody
 
-writeBSS_Local :: MonadResource m => FilePath -> BSS.ByteString m b -> m b
+writeBSS_Local :: MonadResource m => LocFilePath String -> BSS.ByteString m b -> m b
 writeBSS_Local path body = do
-  liftIO $ createDirectoryIfMissing True (Path.takeDirectory path)
-  BSS.writeFile path body
+  let raw = path ^. rawFilePath
+  liftIO $ createDirectoryIfMissing True (Path.takeDirectory raw)
+  BSS.writeFile raw body
 
 writeBSS_S3 :: (HasEnv r, MonadReader r m, MonadResource m, MonadAWS m) => Loc -> BSS.ByteString m () -> m ()
 writeBSS_S3 S3Obj { bucketName, objectName } body = do
-  res <- S3.uploadObj (fromString bucketName) (fromString objectName) body
+  let raw = objectName ^. rawFilePath
+  res <- S3.uploadObj (fromString bucketName) (fromString raw) body
   case view porsResponseStatus res of
     200 -> pure ()
-    _   -> error $ "Unable to upload to the object " ++ objectName ++ "."
+    _   -> error $ "Unable to upload to the object " ++ raw ++ "."
 writeBSS_S3 _ _ = undefined
 
 writeLazyByte
@@ -231,17 +233,21 @@ mapLeft _ (Right y) = Right y
 
 readBSS_Local
   :: forall f m a. (MonadCatch f, MonadResource m)
-  => FilePath
+  => LocFilePath String
   -> (BSS.ByteString m () -> f a)
   -> f (Either Error a)
 readBSS_Local f k = mapLeft (Error (LocalFile f) . IOError) <$>
-  try (k $ BSS.readFile f)
+  try (k $ BSS.readFile $ f ^. rawFilePath)
 
-readBSS_S3 :: (HasEnv r, MonadReader r m, MonadResource m, MonadAWS m) => Loc -> (BSS.ByteString m () -> m b) -> m (Either Error b)
+readBSS_S3
+  :: (HasEnv r, MonadReader r m, MonadResource m, MonadAWS m)
+  => Loc
+  -> (BSS.ByteString m () -> m b)
+  -> m (Either Error b)
 readBSS_S3 obj@S3Obj{ bucketName, objectName } k =
   mapLeft (Error obj . AWSError) <$> S3.streamObjInto
         (fromString bucketName)
-        (fromString objectName)
+        (fromString $ objectName ^. rawFilePath)
         k
 
 readBSS_S3 _ _ = undefined

@@ -32,14 +32,10 @@ type RepetitionKeyMap = HM.HashMap RepetitionKey T.Text
 type RepetitionKeyValList = [(RepetitionKey, Maybe T.Text)]
 
 -- | Adds the values of the repetition keys to the loc filename.
-suffixLocWithRKeys :: [(RepetitionKey, T.Text)] -> Loc -> Loc
-suffixLocWithRKeys [] loc = loc
-suffixLocWithRKeys rkeys loc = dir </> (fname ++ "-" ++ vals) <.> T.unpack ext
+spliceRKeysInLoc :: [(RepetitionKey, T.Text)] -> LocWithVars -> LocWithVars
+spliceRKeysInLoc rkeys = spliceLocVariables hm
   where
-    vals = intercalate "-" $ map (T.unpack . snd) rkeys
-    dir = takeDirectory loc
-    fname = P.dropExtension $ P.takeFileName (loc ^. locPath)
-    ext = loc ^. locExt
+    hm = HM.fromList $ map (\(RepetitionKey k, v) -> (T.unpack k, T.unpack v)) rkeys
 
 -- | Fills the missing values in the 'RepetitionKeyValList' with the content of
 -- the 'RepetitionKeyMap'

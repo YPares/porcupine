@@ -52,10 +52,10 @@ singletonFromIntermediaryFn f = HM.singleton argTypeRep (FromIntermediaryFn f)
 -- | How to read an @a@ from some file, in any 'LocationMonad'.
 data ReadFromLoc a =
   ReadFromLoc { _readFromLocRepetitionKeys :: [RepetitionKey]
-                , _readFromLocPerform        ::
-                    (forall m. (LocationMonad m, KatipContext m)
-                    => Loc -> RepetitionKeyValList -> m a)
-                }
+              , _readFromLocPerform        ::
+                  (forall m. (LocationMonad m, KatipContext m)
+                  => Loc -> m a)
+              }
   deriving (Functor)
 
 instance Show (ReadFromLoc a) where
@@ -63,18 +63,11 @@ instance Show (ReadFromLoc a) where
 
 makeLenses ''ReadFromLoc
 
--- | Constructs a 'ReadFromLoc' that will not expect any repetition and log
--- that it reads a file.
+-- | Constructs a 'ReadFromLoc' that will not expect any repetition.
 simpleReadFromLoc
   :: (forall m. (LocationMonad m, MonadThrow m) => Loc -> m a)
   -> ReadFromLoc a
-simpleReadFromLoc f = ReadFromLoc [] $ \loc rkeys ->
-  katipAddContext (sl "locationAccessed" (show loc)) $ do
-    rkeys' <- terminateRKeyValList rkeys
-    let loc' = suffixLocWithRKeys rkeys' loc
-    r <- f loc'
-    logFM InfoS $ logStr $ "Successfully read file '" ++ show loc' ++ "'"
-    return r
+simpleReadFromLoc f = ReadFromLoc [] f
 
 -- | A function to read @a@ from a 'DocRec'
 data ReadFromConfigFn a = forall rs. (Typeable rs) => ReadFromConfigFn (DocRec rs -> a)
@@ -130,7 +123,7 @@ data WriteToLoc a = WriteToLoc
   { _writeToLocRepetitionKeys :: [RepetitionKey]
   , _writeToLocPerform ::
       (forall m. (LocationMonad m, KatipContext m)
-      =>  a -> Loc -> RepetitionKeyValList -> m ())
+      =>  a -> Loc -> m ())
   }
 
 instance Show (WriteToLoc a) where
@@ -138,17 +131,11 @@ instance Show (WriteToLoc a) where
 
 makeLenses ''WriteToLoc
 
--- | Constructs a 'WriteToLoc' that will not expect any repetition and log
--- that it writes a file.
+-- | Constructs a 'WriteToLoc' that will not expect any repetition.
 simpleWriteToLoc
   :: (forall m. (LocationMonad m, MonadThrow m) => a -> Loc -> m ())
   -> WriteToLoc a
-simpleWriteToLoc f = WriteToLoc [] $ \x loc rkeys ->
-  katipAddContext (sl "locationAccessed" (show loc)) $ do
-    rkeys' <- terminateRKeyValList rkeys
-    let loc' = suffixLocWithRKeys rkeys' loc
-    f x loc'
-    logFM InfoS $ logStr $ "Successfully wrote file '" ++ show loc' ++ "'"
+simpleWriteToLoc f = WriteToLoc [] f
 
 -- | The contravariant part of 'ReadFromConfigFn'. Permits to write default values
 -- of the input config

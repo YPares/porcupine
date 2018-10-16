@@ -66,6 +66,7 @@ import qualified Data.Text                          as T
 import           Data.Typeable
 import           Options.Applicative
 import           System.TaskPipeline.CLI.Overriding
+import Katip
 
 
 -- * API for manipulating resource tree _nodes_
@@ -94,13 +95,13 @@ pattern VirtualFileNode x = MbVirtualFileNode (Just (SomeVirtualFile x))
 
 -- | The nodes of the ResourceTree, after mapping each 'VirtualFiles' to
 -- physical locations
-data PhysicalFileNode = MbPhysicalFileNode (Maybe (SomeVirtualFile, [(Loc, FileExt)]))
+data PhysicalFileNode = MbPhysicalFileNode (Maybe (SomeVirtualFile, [(LocWithVars, FileExt)]))
 -- | A non-empty 'PhysicalFileNode'
 pattern PhysicalFileNode l x = MbPhysicalFileNode (Just (SomeVirtualFile x, l))
 
 -- | The nodes of the LocationTree after the 'VirtualFiles' have been resolved
 -- to physical paths, and data possibly extracted from these paths
-data DataAccessNode m = MbDataAccessNode (First (SomeDataAccess m, [Loc]))
+data DataAccessNode m = MbDataAccessNode (First (SomeDataAccess m, [LocWithVars]))
   -- Data access function isn't a semigroup, hence the use of First here instead
   -- of Maybe.
 -- | A non-empty 'DataAccessNode'
@@ -320,7 +321,7 @@ applyOneRscMapping mbLayers (VirtualFileNode vf) mappingIsExplicit = PhysicalFil
                Nothing -> []
                Just l  -> map resolveExt $ toListOf locLayers l
     resolveExt (loc, mbExt) = case First mbExt <> defExt of
-      First (Just ext) -> (addExtToLocIfMissing loc ext, ext)
+      First (Just ext) -> (addExtToLocIfMissing loc $ T.unpack ext, ext)
       First Nothing    -> (loc, "")
 applyOneRscMapping _ _ _ = MbPhysicalFileNode Nothing
 
@@ -353,17 +354,32 @@ resolveDataAccess (PhysicalFileNode layers vf) = do
   readLocs <- findFunctions readers
   return $ DataAccessNode (map fst layers) $ \repetKeyMap input -> do
     forM_ writeLocs $ \(WriteToLoc rkeys f, loc) ->
-      f input loc $ fillRKeyValList (fmap (,Nothing) rkeys) repetKeyMap
+      katipAddContext (sl "locationAccessed" $ show loc) $ do
+        loc' <- fillLoc rkeys repetKeyMap loc
+        f input loc'
+        logFM InfoS $ logStr $ "Successfully wrote file '" ++ show loc' ++ "'"
     layersRes <- mconcat <$> forM readLocs (\(ReadFromLoc rkeys f, loc) ->
-      f loc $ fillRKeyValList (fmap (,Nothing) rkeys) repetKeyMap)
+      katipAddContext (sl "locationAccessed" $ show loc) $ do
+        loc' <- fillLoc rkeys repetKeyMap loc
+        r <- f loc'
+        logFM InfoS $ logStr $ "Successfully read file '" ++ show loc' ++ "'"
+        return r)
     return $ case vf ^? vfileEmbeddedValue of
       Just v  -> layersRes <> v
       Nothing -> layersRes
   where
+    fillLoc rkeys repetKeyMap loc = do
+      rkeys' <- terminateRKeyValList $ fillRKeyValList (fmap (,Nothing) rkeys) repetKeyMap
+      traverse terminateLocString $ spliceRKeysInLoc rkeys' loc
+    
+    terminateLocString (LocString [LocBitChunk s]) = return s
+    terminateLocString ls = throwWithPrefix $
+      "resolveDataAccess: Variables " ++ show (ls ^.. locStringVariables) ++ " haven't been fixed"
+    
     readers = vf ^. vfileSerials . serialReaders . serialReadersFromInputFile
     writers = vf ^. vfileSerials . serialWriters . serialWritersToOutputFile
 
-    findFunctions :: HM.HashMap FileExt v -> m' [(v, Loc)]
+    findFunctions :: HM.HashMap FileExt v -> m' [(v, LocWithVars)]
     findFunctions hm | HM.null hm = return []
                      | otherwise  = mapM findFunction layers
       where
