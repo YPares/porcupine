@@ -28,13 +28,10 @@ instance Show RepetitionKey where
 -- | 'RepetitionKey's associated with their current values.
 type RepetitionKeyMap = HM.HashMap RepetitionKey T.Text
 
--- | A reordered RepetitionKeyMap
+-- | A reordered 'RepetitionKeyMap'
 type RepetitionKeyValList = [(RepetitionKey, Maybe T.Text)]
 
--- | Adds the values of the repetition keys to the loc filename. This processing
--- should be parameterizable (for instance in the mapping list, the user should
--- be able to select between 'suffix', 'replace' etc to select how the rkeys
--- values should alter the file name).
+-- | Adds the values of the repetition keys to the loc filename.
 suffixLocWithRKeys :: [(RepetitionKey, T.Text)] -> Loc -> Loc
 suffixLocWithRKeys [] loc = loc
 suffixLocWithRKeys rkeys loc = dir </> (fname ++ "-" ++ vals) <.> T.unpack ext
@@ -50,7 +47,7 @@ fillRKeyValList :: RepetitionKeyValList -> RepetitionKeyMap -> RepetitionKeyValL
 fillRKeyValList required keyMap = map findOne required
   where findOne (k, v) = (k, getFirst $ First v <> First (HM.lookup k keyMap))
 
--- | Throws errors if not all the keys in the
+-- | Throws errors if not all the keys are associated to a value
 terminateRKeyValList :: (MonadThrow m, KatipContext m)
                      => RepetitionKeyValList -> m [(RepetitionKey, T.Text)]
 terminateRKeyValList rkeys = do

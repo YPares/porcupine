@@ -125,17 +125,6 @@ mappingOverStream repetitionKey mbVerb (PTask reqTree perform) = PTask reqTree' 
           (res, tree) <- perform ( inp, fmap (fmap (addKeyValToDataAccess val')) origTree )
           return ((val, res), tree)
 
-    -- updateTree ident =
-    --   over (traversed . rscAccessed . pRscVirtualFile . locLayers . _1)
-    --        (updateLoc ident)
-    -- -- We change the filename of every loc bound to a leaf, to add the
-    -- -- identifier to it
-    -- updateLoc ident loc = dir </> (fname ++ "-" ++ show ident) <.> T.unpack ext
-    --   where
-    --     dir = takeDirectory loc
-    --     fname = P.dropExtension $ P.takeFileName (loc ^. locPath)
-    --     ext = loc ^. locExt
-
 -- | See 'mappingOverStream'. Just runs the resulting stream and returns its end
 -- result.
 mappingOverStream_
