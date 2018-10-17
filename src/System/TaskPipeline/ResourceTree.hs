@@ -64,9 +64,9 @@ import           Data.Monoid                        (First (..))
 import           Data.Representable
 import qualified Data.Text                          as T
 import           Data.Typeable
+import           Katip
 import           Options.Applicative
 import           System.TaskPipeline.CLI.Overriding
-import Katip
 
 
 -- * API for manipulating resource tree _nodes_
@@ -371,11 +371,11 @@ resolveDataAccess (PhysicalFileNode layers vf) = do
     fillLoc rkeys repetKeyMap loc = do
       rkeys' <- terminateRKeyValList $ fillRKeyValList (fmap (,Nothing) rkeys) repetKeyMap
       traverse terminateLocString $ spliceRKeysInLoc rkeys' loc
-    
+
     terminateLocString (LocString [LocBitChunk s]) = return s
     terminateLocString ls = throwWithPrefix $
       "resolveDataAccess: Variables " ++ show (ls ^.. locStringVariables) ++ " haven't been fixed"
-    
+
     readers = vf ^. vfileSerials . serialReaders . serialReadersFromInputFile
     writers = vf ^. vfileSerials . serialWriters . serialWritersToOutputFile
 
