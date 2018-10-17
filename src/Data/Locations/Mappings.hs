@@ -11,19 +11,17 @@
 {-# LANGUAGE OverloadedStrings          #-}
 {-# LANGUAGE TupleSections              #-}
 {-# LANGUAGE ViewPatterns               #-}
+{-# LANGUAGE LambdaCase #-}
 {-# OPTIONS_GHC -Wall #-}
 
 module Data.Locations.Mappings
   ( LocationMappings
   , HasDefaultMappingRule(..)
-  , LocLayers(..)
-  , MbLocWithExt(..)
+  , LocShortcut(..)
   , Mapping
   , allLocsInMappings
   , mappingsFromLocTree
-  , locLayers
   , mappingRootOnly
-  , getLocMappedToRoot
   , insertMappings
   , propagateMappings
   , applyMappings
@@ -31,18 +29,18 @@ module Data.Locations.Mappings
 
 import           Control.Lens
 import           Data.Aeson
-import           Data.Either
-import           Data.Function               (on)
 import qualified Data.HashMap.Strict         as HM
 import           Data.List
 import           Data.Locations.Loc
 import           Data.Locations.LocationTree
+import           Data.Locations.SerializationMethod (FileExt)
 import           Data.Maybe
 import           Data.Representable
 import qualified Data.Text                   as T
 import           GHC.Generics
-import           System.FilePath             (splitExtension)
 
+
+-- * The 'LocationMappings' type
 
 newtype LocationMappings_ n = LocationMappings_
   (HM.HashMap LocationTreePath (Mapping n))
@@ -51,7 +49,7 @@ newtype LocationMappings_ n = LocationMappings_
 -- | Describes how physical locations are mapped to an application's
 -- LocationTree. This is the type that is written to the pipeline yaml config
 -- file under the "locations" section.
-type LocationMappings n = LocationMappings_ (MbLocWithExt n)
+type LocationMappings = LocationMappings_ LocShortcut
 
 instance Monoid (LocationMappings_ n) where
   mempty = LocationMappings_ mempty
@@ -68,36 +66,39 @@ instance (ToJSON n) => ToJSON (LocationMappings_ n) where
   toJSON (LocationMappings_ m) = Object $ HM.fromList $
     map (\(k, v) -> (toTextRepr k, toJSON v)) $ HM.toList m
 
-instance (Representable n) => FromJSON (LocationMappings_ (MbLocWithExt n)) where
+instance FromJSON LocationMappings where
   parseJSON (Object m) = LocationMappings_ . HM.fromList <$>
     mapM (\(k, v) -> (,) <$> fromTextRepr k <*> parseJSON v) (HM.toList m)
   parseJSON _ = mempty
 
 -- | Lists all the physical paths that have been associated to some virtual
 -- location
-allLocsInMappings :: LocationMappings_ (MbLocWithExt n) -> [LocWithVars]
+allLocsInMappings :: LocationMappings -> [LocWithVars]
 allLocsInMappings (LocationMappings_ m) =
   concat . mapMaybe (f . snd) $ HM.toList m
   where
     f Unmapped     = Nothing
-    f (MappedTo a) = Just $ mapMaybe mbLocWithExt_Loc a
+    f (MappedTo a) = Just $ mapMaybe g a
+    g (FullySpecifiedLoc l) = Just l
+    g _ = Nothing
 
+
+-- * How to get pre-filled defaut mappings from an existing LocationTree
+
+-- | Means that we can possibly derive a default @LocShortcut@ from @a@
 class HasDefaultMappingRule a where
-  isMappedByDefault :: a -> Bool  -- ^ False if the resource by default should
-                                  -- be mapped to 'null'
-
-instance (HasDefaultMappingRule a) => HasDefaultMappingRule (a, b) where
-  isMappedByDefault = isMappedByDefault . fst
+  getDefaultLocShortcut :: a -> Maybe LocShortcut
+    -- ^ Nothing means that the @a@ should not be mapped by default
 
 -- | Pre-fills the mappings from the context of a 'LocationTree', with extra
 -- metadata saying whether each node should be explicitely mapped or unmapped.
-mappingsFromLocTree :: (HasDefaultMappingRule a) => LocationTree a -> LocationMappings a
-mappingsFromLocTree (LocationTree node (HM.toList -> [])) =
+mappingsFromLocTree :: (HasDefaultMappingRule a) => LocationTree a -> LocationMappings
+mappingsFromLocTree (LocationTree node subtree) | HM.null subtree =
   LocationMappings_ $
-    HM.fromList [(LTP []
-                 , if isMappedByDefault node
-                   then MappedTo [MbLocWithExt Nothing (Just node)]
-                   else Unmapped)]
+    HM.singleton (LTP [])
+                 (case getDefaultLocShortcut node of
+                    Just ls -> MappedTo [ls]
+                    Nothing -> Unmapped)
 mappingsFromLocTree (LocationTree _ sub) =
   LocationMappings_ (mconcat $ map f $ HM.toList sub)
   where
@@ -107,107 +108,63 @@ mappingsFromLocTree (LocationTree _ sub) =
         appendPath (LTP path, maps) = (LTP $ ltpi : path, maps)
         LocationMappings_ m = mappingsFromLocTree t
 
-data MbLocWithExt n = MbLocWithExt { mbLocWithExt_Loc :: Maybe LocWithVars, mbLocWithExt_Ext :: Maybe n }
-  deriving (Show, Functor)
+-- | Creates a 'LocationMappings_' where the whole LocationTree is mapped to a
+-- single folder
+mappingRootOnly :: Loc -> LocationMappings
+mappingRootOnly l = LocationMappings_ $
+  HM.fromList [( LTP []
+               , MappedTo [FullySpecifiedLoc (locWithVarsFromLoc l)] )]
 
-instance (Representable n) => ToJSON (MbLocWithExt n) where
-  toJSON (MbLocWithExt Nothing Nothing)   = String "_"
-  toJSON (MbLocWithExt Nothing (Just n))  = String $ case toTextRepr n of
-    ""  -> "_"
-    ext -> "_." <> ext
-  toJSON (MbLocWithExt (Just l) Nothing)  = String $ toTextRepr l
-  toJSON (MbLocWithExt (Just l) (Just n)) = Object $ HM.fromList
-    [(toTextRepr l, String $ toTextRepr n)]
 
+-- * How to parse mappings to and from JSON
+
+-- | A 'LocWithVars' where some parts might have been eluded. Possibly
+-- associated to some data.
+data LocShortcut = DeriveWholeLocFromTree FileExt
+                   -- ^ Means that this loc path should be inherited from locs
+                   -- up the resource tree.
+                 | DeriveLocPrefixFromTree (LocFilePath LocString)
+                 | FullySpecifiedLoc LocWithVars
+  deriving (Show)
+
+      -- The underscore sign here means "reuse inherited", depending on the
+      -- position it can mean either file path or extension or both.
+instance ToJSON LocShortcut where
+  toJSON (DeriveWholeLocFromTree ext) = String $ case ext of
+    "" -> "_"
+    _  -> "_." <> ext
+  toJSON (DeriveLocPrefixFromTree l) = String $ "_" <> toTextRepr l
+  toJSON (FullySpecifiedLoc l) = String $ toTextRepr l
+
+instance FromJSON LocShortcut where
+  parseJSON (String "_") = pure $ DeriveWholeLocFromTree ""
+  parseJSON (String (T.uncons -> Just ('_', s))) = case parseLocStringAndExt $ T.unpack s of
+    Left s' -> fail s'
+    Right r -> pure $ DeriveLocPrefixFromTree r
+  parseJSON (String s) = case parseURL $ T.unpack s of
+    Left s' -> fail s'
+    Right r -> pure $ FullySpecifiedLoc r
+  parseJSON _ = fail "LocShortcut only readable from a JSON String"
 
 -- | If a ressource is mapped, it's mapped to a series of _layers_, each
--- subsequent layer having the capacity to override the previous ones. When a
--- layer's Loc is 'Nothing', then it means that this layer's path should be
--- inherited from layers up the tree.
+-- subsequent layer having the capacity to override the previous ones.
 data Mapping n = Unmapped | MappedTo [n]
   deriving (Eq, Show, Functor, Generic)
 
 instance (ToJSON n) => ToJSON (Mapping n) where
-  toJSON locs = case locs of
+  toJSON = \case
     Unmapped      -> Null
     MappedTo [ln] -> toJSON ln
     MappedTo p    -> toJSON $ map toJSON p
 
-instance (Representable a) => FromJSON (Mapping (MbLocWithExt a)) where
-  parseJSON Null                           = pure Unmapped
-  parseJSON (String (T.toLower -> "none")) = pure Unmapped
-  parseJSON j = MappedTo <$> readPathAndFormat j
-    where
-      -- The underscore sign here means "reuse inherited", depending on the
-      -- position it can mean either file path or extension or both.
-      readPathAndFormat (String "_") = pure
-        [MbLocWithExt Nothing Nothing]
-      readPathAndFormat (String s) =
-        case splitExtension $ T.unpack s of
-          (path, "") -> pure [MbLocWithExt (fromTextRepr $ T.pack path) Nothing]
-          (path, ext) ->
-            let ext' = case ext of
-                  '.' : e -> e
-                  e       -> e
-                path' = case path of
-                  "_" -> Nothing
-                  _   -> fromTextRepr $ T.pack path
-            in map (MbLocWithExt path') <$> case ext' of
-              "_" -> pure [Nothing]
-              _   -> parseSerMethList (String $ T.pack ext')
-      readPathAndFormat (Object (HM.toList -> [(l, fmts)])) = do
-        -- checking that we are matching for a single key based object
-        fmts' <- parseSerMethList fmts
-        case (fmts', null $ snd $ splitExtension $ T.unpack l) of
-          (_:_:_, False) -> fail $ "'" ++ T.unpack l ++
-            "' is invalid: a file cannot contain an extension when mapped to several types"
-          _ -> return $ map (MbLocWithExt (fromTextRepr l)) fmts'
-      readPathAndFormat (Array m)    = concat <$>
-        mapM readPathAndFormat (toListOf traversed m)
-      readPathAndFormat _            = fail
-        "A location mapping must either be a map of one 'path: format' entry,\
-        \ be just a 'format' string or be an array of some of these."
-
-parseSerMethList :: (Representable a, Monad m) => Value -> m [Maybe a]
-parseSerMethList Null         = pure [fromTextRepr ""]
-parseSerMethList (String fmt) = case fromTextRepr fmt of
-  Just f  -> pure [Just f]
-  Nothing -> fail $ "Unhandled serialization method: " ++ T.unpack fmt
-parseSerMethList (Object (HM.toList -> [(_fmt, Object _reprOpts)])) = fail
-  "Serialization options for formats aren't implemented yet"
-  -- TODO: implement options (pretty printing etc.) for serialization methods
-parseSerMethList (Array fmts) = concat <$>
-  mapM parseSerMethList (toListOf traversed fmts)
-parseSerMethList _            = fail
-  "Format must be a string, a null or an array of strings"
+instance (FromJSON n) => FromJSON (Mapping n) where
+  parseJSON Null = pure Unmapped
+  parseJSON j@(Array{}) = MappedTo <$> parseJSON j
+  parseJSON j = MappedTo . (:[]) <$> parseJSON j
 
 
--- | This type is used to indicate that a location in a 'LocationTree' is mapped
--- not to one but to several physical locs, at least one (LocLayers behaves like
--- a never-empty stack). The Locs on the left take precedence and
--- override these on the right. @a@ is often a filetype here.
-data LocLayers a = LocLayers
-  { _topLocLayer    :: (LocWithVars, a)
-  , _otherlocLayers :: [(LocWithVars, a)] }
-  deriving (Functor, Foldable, Traversable, Show)
-
--- | Traverse the layers from top to bottom
-locLayers :: Traversal (LocLayers a) (LocLayers b) (LocWithVars, a) (LocWithVars, b)
-locLayers f (LocLayers l ls) = LocLayers <$> f l <*> traverse f ls
-
--- | Creates a 'LocationMappings_' where the whole LocationTree is mapped to a
--- single folder
-mappingRootOnly :: Loc -> Maybe a -> LocationMappings_ (MbLocWithExt a)
-mappingRootOnly l a = LocationMappings_ $
-  HM.fromList [( LTP []
-               , MappedTo [MbLocWithExt (Just $ locWithVarsFromLoc l) a] )]
-
--- | Gets the last layer folder mapped to the root. Returns Nothing if the root
--- has several mappings.
-getLocMappedToRoot :: LocationMappings_ (MbLocWithExt n) -> Maybe LocWithVars
-getLocMappedToRoot (LocationMappings_ h) = case HM.lookup (LTP []) h of
-  Just (MappedTo (reverse -> MbLocWithExt (Just l) _:_)) -> Just l
-  _                                                      -> Nothing
+-- * How to apply mappings to a LocationTree to get the physical locations bound
+-- to each of its nodes
 
 -- | Returns a new 'LocationTree', updated from the mappings. Paths in the
 -- 'LocationMappings_' that don't correspond to anything in the 'LocationTree'
@@ -220,18 +177,17 @@ insertMappings (LocationMappings_ m) tree = foldl' go initTree $ HM.toList m
                                          -- list of layers
     go t (path, lw) = t & inLocTree path . _Just . locTreeNodeTag . _2 .~ lw
 
--- | For each location in the tree, gives it a final, physical location or
--- just put Nothing if it isn't mapped
-propagateMappings :: (Maybe (LocLayers (Maybe n')) -> n -> Bool -> n'')
-                  -> LocationTree (n, Mapping (MbLocWithExt n'))
+-- | For each location in the tree, gives it a final list of physical location,
+-- as /layers/ (which can be empty)
+propagateMappings :: ([LocWithVars] -> n -> Bool -> n'')
+                  -> LocationTree (n, Mapping LocShortcut)
                   -> LocationTree n''
-propagateMappings f tree = propagateMappings' Nothing tree
+propagateMappings f tree = propagateMappings' [] tree
   where
     -- if a folder is set to null, we recursively unmap everything is contains,
     -- ignoring every submapping that might exist:
-    propagateMappings' _ t@(LocationTree (_, Unmapped) _) =
-      t & traversed %~ unmap
-      where unmap (n, _) = f Nothing n True
+    propagateMappings' _ t@(LocationTree (_, Unmapped) _) = fmap unmap t
+      where unmap (n, _) = f [] n True
     -- if a folder is mapped, we propagate the mapping downwards:
     propagateMappings' inheritedLayers (LocationTree (thisNode, MappedTo theseMappings) thisSub) =
       LocationTree thisNode' $ imap recur thisSub
@@ -240,28 +196,22 @@ propagateMappings f tree = propagateMappings' Nothing tree
         thisNode' = f theseLayers thisNode (not $ null theseMappings)
         recur fname subtree = propagateMappings' sublayers subtree
           where
-            sublayers =
-              theseLayers & over (_Just.locLayers._1) (</> T.unpack (_ltpiName fname))
+            sublayers = fmap (</> T.unpack (_ltpiName fname)) theseLayers 
 
-applyMappingsToLayers :: Maybe (LocLayers a) -> [MbLocWithExt b] -> Maybe (LocLayers (Maybe b))
-applyMappingsToLayers inheritedLayers tm = layers
+-- | Given a list of loc layers inherited from further up the tree, fills in the
+-- blanks in the loc shortcuts given for once node of the tree in order to get
+-- the final loc layers mapped to this node.
+applyMappingsToLayers :: [LocWithVars] -- ^ Inherited layers
+                      -> [LocShortcut] -- ^ LocShortcuts mapped to the node
+                      -> [LocWithVars] -- ^ Final layers mapped to this node
+applyMappingsToLayers inheritedLayers = concatMap fillShortcut
   where
-    toLayers []     = Nothing
-    toLayers (l:ls) = Just $ LocLayers l ls
-    split (n, (MbLocWithExt Nothing     fmt)) = Left (n, fmt)
-    split (n, (MbLocWithExt (Just path) fmt)) = Right ((n,0::Int), (path, fmt))
-    splitted = partitionEithers $ map split $ zip [(0::Int)..] tm
-    layers = case (inheritedLayers, splitted) of
-      (Nothing, (_, l)) -> toLayers $ map snd l
-      (Just il, ([], [])) -> Just $
-        il & traversed .~ Nothing
-      (Just il, (justFmts, pathsAndFmts)) ->
-        let justFmts' =
-              [((order, order'), (loc, fmt))
-              | (order', (loc, _)) <- zip [0..] (toListOf locLayers il)
-              , (order, fmt)       <- justFmts]
-        in toLayers $ map snd $
-           sortBy (compare `on` fst) (justFmts' ++ pathsAndFmts)
+    fillShortcut = \case
+      FullySpecifiedLoc l -> [l]
+      DeriveLocPrefixFromTree fp -> flip map inheritedLayers $
+                                    over locFilePath (<> fp)
+      DeriveWholeLocFromTree ext -> flip map inheritedLayers $
+                                    over locExt (firstNonEmptyExt $ T.unpack ext)
 
 -- | Transform a tree to one where unmapped nodes have been changed to 'mempty'
 -- and mapped nodes have been associated to their physical 'Loc'. A function is
@@ -270,9 +220,9 @@ applyMappingsToLayers inheritedLayers tm = layers
 -- ie. if it was explicitely declared in the config file or if it was derived
 -- from the mapping of a parent folder. @n'@ is often some file type or metadata
 -- that's required in the mapping.
-applyMappings :: (Maybe (LocLayers (Maybe n')) -> n -> Bool -> n'')
+applyMappings :: ([LocWithVars] -> n -> Bool -> n'')
                                    -- ^ Add physical locations (if they exist) to a node
-              -> LocationMappings n'  -- ^ Mappings to apply
+              -> LocationMappings  -- ^ Mappings to apply
               -> LocationTree n       -- ^ Original tree
               -> LocationTree n''  -- ^ Tree with physical locations
 applyMappings f mappings loctree =

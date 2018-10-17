@@ -67,6 +67,7 @@ import           Data.Typeable
 import           Katip
 import           Options.Applicative
 import           System.TaskPipeline.CLI.Overriding
+import Data.Maybe
 
 
 -- * API for manipulating resource tree _nodes_
@@ -95,7 +96,7 @@ pattern VirtualFileNode x = MbVirtualFileNode (Just (SomeVirtualFile x))
 
 -- | The nodes of the ResourceTree, after mapping each 'VirtualFiles' to
 -- physical locations
-data PhysicalFileNode = MbPhysicalFileNode (Maybe (SomeVirtualFile, [(LocWithVars, FileExt)]))
+data PhysicalFileNode = MbPhysicalFileNode (Maybe (SomeVirtualFile, [LocWithVars]))
 -- | A non-empty 'PhysicalFileNode'
 pattern PhysicalFileNode l x = MbPhysicalFileNode (Just (SomeVirtualFile x, l))
 
@@ -129,7 +130,7 @@ instance Show PhysicalFileNode where
   show (PhysicalFileNode layers vf) =
     T.unpack (mconcat
               (intersperse " << "
-               (map (toTextRepr . fst) layers)))
+               (map toTextRepr layers)))
     ++ " - " ++ show (getVirtualFileDescription vf)
   show _ = "null"
 
@@ -147,16 +148,14 @@ type PhysicalResourceTree = LocationTree PhysicalFileNode
 type DataResourceTree m = LocationTree (DataAccessNode m)
 
 instance HasDefaultMappingRule VirtualFileNode where
-  isMappedByDefault (VirtualFileNode vf) = isMappedByDefault vf
-  isMappedByDefault _                    = True
-                        -- Intermediary levels (folders, where there is no
-                        -- VirtualFile) are kept
+  getDefaultLocShortcut (VirtualFileNode vf) = getDefaultLocShortcut vf
+  getDefaultLocShortcut _                    = Nothing
 
 -- | Filters the tree to get only the nodes that don't have data and can be
 -- mapped to external files
 rscTreeToMappings
   :: VirtualResourceTree
-  -> Maybe (LocationMappings VirtualFileNode)
+  -> Maybe LocationMappings
 rscTreeToMappings tree = mappingsFromLocTree <$> over filteredLocsInTree rmOpts tree
   where
     rmOpts (VirtualFileNode vfile)
@@ -206,7 +205,7 @@ embeddedDataTreeToJSONFields thisPath (LocationTree mbOpts sub) =
 -- to it. This is the way to serialize and deserialize a resource tree
 data ResourceTreeAndMappings =
   ResourceTreeAndMappings VirtualResourceTree
-                          (Either Loc (LocationMappings FileExt))
+                          (Either Loc LocationMappings)
 
 -- ResourceTreeAndMappings is only 'ToJSON' and not 'FromJSON' because we need
 -- more context to deserialize it. It is done by rscTreeConfigurationReader
@@ -216,21 +215,15 @@ instance ToJSON ResourceTreeAndMappings where
        Just m ->
          HM.singleton mappingsSection $ toJSON' $ case mappings of
            Right m'     -> m'
-           Left rootLoc -> mappingRootOnly rootLoc Nothing <> fmap nodeExt m
+           Left rootLoc -> mappingRootOnly rootLoc <> m
        Nothing -> HM.empty)
     <>
     (case rscTreeToEmbeddedDataTree tree of
       Just t  -> HM.fromList $ embeddedDataTreeToJSONFields embeddedDataSection t
       Nothing -> HM.empty)
     where
-      toJSON' :: LocationMappings FileExt -> Value
+      toJSON' :: LocationMappings -> Value
       toJSON' = toJSON
-
-      nodeExt :: MbLocWithExt VirtualFileNode -> MbLocWithExt FileExt
-      nodeExt (MbLocWithExt loc (Just (VirtualFileNode
-                                       (_serialDefaultExt . _vfileSerials -> First ext)))) =
-        MbLocWithExt loc ext
-      nodeExt (MbLocWithExt loc _) = MbLocWithExt loc Nothing
 
 -- ** Reading virtual resource trees from the input
 
@@ -308,21 +301,17 @@ rscTreeConfigurationReader (ResourceTreeAndMappings defTree _) =
 
 -- | Transform a virtual file node in file node with definite physical
 -- locations.
-applyOneRscMapping :: Maybe (LocLayers (Maybe FileExt)) -> VirtualFileNode -> Bool -> PhysicalFileNode
-applyOneRscMapping mbLayers (VirtualFileNode vf) mappingIsExplicit = PhysicalFileNode layers vf
+applyOneRscMapping :: [LocWithVars] -> VirtualFileNode -> Bool -> PhysicalFileNode
+applyOneRscMapping configLayers (VirtualFileNode vf) mappingIsExplicit = PhysicalFileNode layers vf
   where
-    defExt = _serialDefaultExt $ _vfileSerials vf
+    First defExt = _serialDefaultExt $ _vfileSerials vf
     intent = vfileDescIntent $ getVirtualFileDescription vf
     layers | not mappingIsExplicit, Just VFForCLIOptions <- intent = []
              -- Options usually present in the config file need an _explicit_
              -- mapping to be present in the config file, if we want them to be
              -- read from external files instead
-           | otherwise = case mbLayers of
-               Nothing -> []
-               Just l  -> map resolveExt $ toListOf locLayers l
-    resolveExt (loc, mbExt) = case First mbExt <> defExt of
-      First (Just ext) -> (addExtToLocIfMissing loc $ T.unpack ext, ext)
-      First Nothing    -> (loc, "")
+           | otherwise = map resolveExt configLayers
+    resolveExt loc = addExtToLocIfMissing loc $ T.unpack $ fromMaybe "" defExt
 applyOneRscMapping _ _ _ = MbPhysicalFileNode Nothing
 
 -- | Binding a 'VirtualResourceTree'
@@ -332,7 +321,7 @@ applyMappingsToResourceTree (ResourceTreeAndMappings tree mappings) =
   where
     m' = case mappings of
            Right m      -> m
-           Left rootLoc -> mappingRootOnly rootLoc Nothing
+           Left rootLoc -> mappingRootOnly rootLoc
 
 -- ** Transforming a physical resource tree to a data access tree (ie. a tree
 -- where each node is just a function that pulls or writes the relevant data)
@@ -352,7 +341,7 @@ resolveDataAccess
 resolveDataAccess (PhysicalFileNode layers vf) = do
   writeLocs <- findFunctions writers
   readLocs <- findFunctions readers
-  return $ DataAccessNode (map fst layers) $ \repetKeyMap input -> do
+  return $ DataAccessNode layers $ \repetKeyMap input -> do
     forM_ writeLocs $ \(WriteToLoc rkeys f, loc) ->
       katipAddContext (sl "locationAccessed" $ show loc) $ do
         loc' <- fillLoc rkeys repetKeyMap loc
@@ -383,11 +372,11 @@ resolveDataAccess (PhysicalFileNode layers vf) = do
     findFunctions hm | HM.null hm = return []
                      | otherwise  = mapM findFunction layers
       where
-        findFunction (loc, ext) = case HM.lookup ext hm of
+        findFunction loc = case HM.lookup (T.pack $ loc ^. locExt) hm of
           Just f -> return (f, loc)
           -- TODO: add VirtualFile path to error
           Nothing -> throwM $ TaskConstructionError $
-            show loc ++ " is bound to a VirtualFile that doesn't support extension '" ++ T.unpack ext
+            show loc ++ " is bound to a VirtualFile that doesn't support extension '" ++ (loc^.locExt)
             ++ "'. Accepted file extensions here are: " ++
             mconcat (intersperse "," (map T.unpack $ HM.keys hm)) ++ "."
 resolveDataAccess _ = return $ MbDataAccessNode $ First Nothing

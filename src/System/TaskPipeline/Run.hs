@@ -136,7 +136,7 @@ bindResourceTreeAndRun progName (FullConfig defConfigFile defRoot) tree f =
           Left rootLoc -> fmap (const ()) rootLoc
           Right m      -> refLocFromMappings m
 
-refLocFromMappings :: LocationMappings a -> Loc_ ()
+refLocFromMappings :: LocationMappings -> Loc_ ()
 refLocFromMappings m = foldr f (LocalFile $ LocFilePath () "")
                                (map (fmap (const ())) $ allLocsInMappings m)
   where

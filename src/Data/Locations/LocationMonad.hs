@@ -154,7 +154,7 @@ instance LocationMonad AWS where
   writeBSS l             = writeBSS_S3 l
   readBSS (LocalFile l) = readBSS_Local l
   readBSS l             = readBSS_S3 l
-  withLocalBuffer f (LocalFile lf) = f $ lf ^. rawFilePath
+  withLocalBuffer f (LocalFile lf) = f $ lf ^. locFilePathAsRawFilePath
   withLocalBuffer f loc@S3Obj{} =
     Tmp.withSystemTempDirectory "pipeline-tools-tmp" writeAndUpload
     where
@@ -184,7 +184,7 @@ type LocalM = ResourceT IO
 instance LocationMonad LocalM where
   writeBSS = checkLocal "writeBSS" writeBSS_Local
   readBSS  = checkLocal "readBSS" readBSS_Local
-  withLocalBuffer f = checkLocal "withLocalBuffer" (\lf -> f $ lf^.rawFilePath)
+  withLocalBuffer f = checkLocal "withLocalBuffer" (\lf -> f $ lf^.locFilePathAsRawFilePath)
 
 writeText :: LocationMonad m
              => Loc
@@ -196,13 +196,13 @@ writeText loc body =
 
 writeBSS_Local :: MonadResource m => LocFilePath String -> BSS.ByteString m b -> m b
 writeBSS_Local path body = do
-  let raw = path ^. rawFilePath
+  let raw = path ^. locFilePathAsRawFilePath
   liftIO $ createDirectoryIfMissing True (Path.takeDirectory raw)
   BSS.writeFile raw body
 
 writeBSS_S3 :: (HasEnv r, MonadReader r m, MonadResource m, MonadAWS m) => Loc -> BSS.ByteString m () -> m ()
 writeBSS_S3 S3Obj { bucketName, objectName } body = do
-  let raw = objectName ^. rawFilePath
+  let raw = objectName ^. locFilePathAsRawFilePath
   res <- S3.uploadObj (fromString bucketName) (fromString raw) body
   case view porsResponseStatus res of
     200 -> pure ()
@@ -237,7 +237,7 @@ readBSS_Local
   -> (BSS.ByteString m () -> f a)
   -> f (Either Error a)
 readBSS_Local f k = mapLeft (Error (LocalFile f) . IOError) <$>
-  try (k $ BSS.readFile $ f ^. rawFilePath)
+  try (k $ BSS.readFile $ f ^. locFilePathAsRawFilePath)
 
 readBSS_S3
   :: (HasEnv r, MonadReader r m, MonadResource m, MonadAWS m)
@@ -247,7 +247,7 @@ readBSS_S3
 readBSS_S3 obj@S3Obj{ bucketName, objectName } k =
   mapLeft (Error obj . AWSError) <$> S3.streamObjInto
         (fromString bucketName)
-        (fromString $ objectName ^. rawFilePath)
+        (fromString $ objectName ^. locFilePathAsRawFilePath)
         k
 
 readBSS_S3 _ _ = undefined

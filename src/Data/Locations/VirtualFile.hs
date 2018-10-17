@@ -32,7 +32,8 @@ import           Data.Functor.Compose
 import qualified Data.HashMap.Strict                as HM
 import qualified Data.HashSet                       as HS
 import           Data.Locations.LocationTree
-import           Data.Locations.Mappings            (HasDefaultMappingRule (..))
+import           Data.Locations.Mappings            (HasDefaultMappingRule (..)
+                                                    ,LocShortcut (..))
 import           Data.Locations.SerializationMethod
 import           Data.Monoid                        (First (..))
 import           Data.Profunctor                    (Profunctor (..))
@@ -59,7 +60,12 @@ data VirtualFile a b = VirtualFile
 makeLenses ''VirtualFile
 
 instance HasDefaultMappingRule (VirtualFile a b) where
-  isMappedByDefault = _vfileUsedByDefault
+  getDefaultLocShortcut vf = if _vfileUsedByDefault vf
+    then Just $ DeriveWholeLocFromTree $
+         case _serialDefaultExt $ _vfileSerials vf of
+           First (Just ext) -> ext
+           _                -> T.pack ""
+    else Nothing
 
 -- For now, given the requirement of PTask, VirtualFile has to be a Monoid
 -- because a Resource Tree also has to.
