@@ -25,6 +25,7 @@ import qualified System.Directory            as Dir (createDirectoryIfMissing)
 import qualified System.FilePath             as Path
 import qualified Data.HashMap.Strict as HM
 import Control.Monad (foldM)
+import Data.Binary (Binary)
 
 
 -- | Each location bit can be a simple chunk of string, or a variable name
@@ -60,11 +61,11 @@ locStringVariables f (LocString bits) = LocString . concatChunks <$> traverse f'
         concatChunks [] = []
 
 data LocFilePath a = LocFilePath { _pathWithoutExt :: a, _pathExtension :: String }
-  deriving (Eq, Ord, Generic, ToJSON, FromJSON, Functor, Foldable, Traversable)
+  deriving (Eq, Ord, Generic, ToJSON, FromJSON, Functor, Foldable, Traversable, Binary)
 
 makeLenses ''LocFilePath
 
--- | Turns the 'LocFilePath' to a simple string, and the other way around
+-- | Turns the 'LocFilePath' to/from a simple string
 rawFilePath :: Iso' (LocFilePath String) FilePath
 rawFilePath = iso to_ from_
   where
@@ -76,7 +77,6 @@ rawFilePath = iso to_ from_
 instance (Show a) => Show (LocFilePath a) where
   show p = fmap show p ^. rawFilePath
 
-
 -- | Location's main type. A value of type @Loc@ denotes a file or a folder
 -- that may be local or hosted remotely (s3).
 data Loc_ a
@@ -87,7 +87,7 @@ data Loc_ a
      | ParquetObj ...
      | SQLTableObj ...
   -}
-  deriving (Eq, Ord, Generic, ToJSON, FromJSON, Functor, Foldable, Traversable)
+  deriving (Eq, Ord, Generic, ToJSON, FromJSON, Functor, Foldable, Traversable, Binary)
 
 instance (Show a) => Show (Loc_ a) where
   show LocalFile{ filePath } = show filePath
@@ -107,6 +107,10 @@ locExt = locFilePath . pathExtension
 type LocWithVars = Loc_ LocString
 
 type Loc = Loc_ String
+
+-- | Creates a 'Loc' from a simple litteral string
+localFile :: FilePath -> Loc
+localFile s = LocalFile $ s ^. from rawFilePath
 
 -- | Creates a 'LocWithVars' that will only contain a chunk, no variables
 locWithVarsFromLoc :: Loc -> LocWithVars

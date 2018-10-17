@@ -161,7 +161,7 @@ instance LocationMonad AWS where
       writeAndUpload tmpDir = do
         let tmpFile = tmpDir Path.</> "out"
         res <- f tmpFile
-        readBSS_ (LocalFile $ tmpFile ^. from rawFilePath) (writeBSS loc)
+        readBSS_ (localFile tmpFile) (writeBSS loc)
         return res
 
 -- | A location monad that also contains an environment
