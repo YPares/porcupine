@@ -32,8 +32,8 @@ import           Data.Functor.Compose
 import qualified Data.HashMap.Strict                as HM
 import qualified Data.HashSet                       as HS
 import           Data.Locations.LocationTree
-import           Data.Locations.Mappings            (HasDefaultMappingRule (..)
-                                                    ,LocShortcut (..))
+import           Data.Locations.Mappings            (HasDefaultMappingRule (..),
+                                                     LocShortcut (..))
 import           Data.Locations.SerializationMethod
 import           Data.Monoid                        (First (..))
 import           Data.Profunctor                    (Profunctor (..))

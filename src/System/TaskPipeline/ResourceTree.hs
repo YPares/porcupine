@@ -60,6 +60,7 @@ import           Data.DocRecord.OptParse
 import qualified Data.HashMap.Strict                as HM
 import           Data.List                          (intersperse)
 import           Data.Locations
+import           Data.Maybe
 import           Data.Monoid                        (First (..))
 import           Data.Representable
 import qualified Data.Text                          as T
@@ -67,7 +68,6 @@ import           Data.Typeable
 import           Katip
 import           Options.Applicative
 import           System.TaskPipeline.CLI.Overriding
-import Data.Maybe
 
 
 -- * API for manipulating resource tree _nodes_

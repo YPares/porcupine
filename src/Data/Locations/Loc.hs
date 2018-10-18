@@ -75,7 +75,7 @@ makeLenses ''LocFilePath
 
 firstNonEmptyExt :: String -> String -> String
 firstNonEmptyExt "" b = b
-firstNonEmptyExt a _ = a
+firstNonEmptyExt a _  = a
 
 instance (Semigroup a) => Semigroup (LocFilePath a) where
   -- Concats the filepaths /without considering extension/ and then chooses one

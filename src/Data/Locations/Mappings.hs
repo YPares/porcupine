@@ -1,24 +1,20 @@
 {-# OPTIONS_GHC -fno-warn-type-defaults #-}
-{-# LANGUAGE DeriveFoldable             #-}
 {-# LANGUAGE DeriveFunctor              #-}
-{-# LANGUAGE DeriveGeneric              #-}
-{-# LANGUAGE DeriveTraversable          #-}
 {-# LANGUAGE FlexibleContexts           #-}
 {-# LANGUAGE FlexibleInstances          #-}
 {-# LANGUAGE FunctionalDependencies     #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE LambdaCase                 #-}
 {-# LANGUAGE MultiParamTypeClasses      #-}
 {-# LANGUAGE OverloadedStrings          #-}
 {-# LANGUAGE TupleSections              #-}
 {-# LANGUAGE ViewPatterns               #-}
-{-# LANGUAGE LambdaCase #-}
 {-# OPTIONS_GHC -Wall #-}
 
 module Data.Locations.Mappings
   ( LocationMappings
   , HasDefaultMappingRule(..)
   , LocShortcut(..)
-  , Mapping
   , allLocsInMappings
   , mappingsFromLocTree
   , mappingRootOnly
@@ -29,21 +25,20 @@ module Data.Locations.Mappings
 
 import           Control.Lens
 import           Data.Aeson
-import qualified Data.HashMap.Strict         as HM
+import qualified Data.HashMap.Strict                as HM
 import           Data.List
 import           Data.Locations.Loc
 import           Data.Locations.LocationTree
 import           Data.Locations.SerializationMethod (FileExt)
 import           Data.Maybe
 import           Data.Representable
-import qualified Data.Text                   as T
-import           GHC.Generics
+import qualified Data.Text                          as T
 
 
 -- * The 'LocationMappings' type
 
 newtype LocationMappings_ n = LocationMappings_
-  (HM.HashMap LocationTreePath (Mapping n))
+  (HM.HashMap LocationTreePath [n])
   deriving (Functor, Show)
 
 -- | Describes how physical locations are mapped to an application's
@@ -56,31 +51,31 @@ instance Monoid (LocationMappings_ n) where
 
 instance Semigroup (LocationMappings_ n) where
   (LocationMappings_ m) <> (LocationMappings_ m') = LocationMappings_ $
-    HM.unionWith f m m'
-    where
-      f Unmapped a                 = a
-      f a Unmapped                 = a
-      f (MappedTo l) (MappedTo l') = MappedTo (l ++ l')
+    HM.unionWith (++) m m'
 
 instance (ToJSON n) => ToJSON (LocationMappings_ n) where
   toJSON (LocationMappings_ m) = Object $ HM.fromList $
-    map (\(k, v) -> (toTextRepr k, toJSON v)) $ HM.toList m
+    map (\(k, v) -> (toTextRepr k, layersToJSON v)) $ HM.toList m
+    where
+      layersToJSON []     = Null
+      layersToJSON [l]    = toJSON l
+      layersToJSON layers = toJSON layers
 
 instance FromJSON LocationMappings where
   parseJSON (Object m) = LocationMappings_ . HM.fromList <$>
-    mapM (\(k, v) -> (,) <$> fromTextRepr k <*> parseJSON v) (HM.toList m)
+    mapM (\(k, v) -> (,) <$> fromTextRepr k <*> parseJSONLayers v) (HM.toList m)
+    where
+      parseJSONLayers Null        = pure []
+      parseJSONLayers j@(Array{}) = parseJSON j
+      parseJSONLayers j           = (:[]) <$> parseJSON j
   parseJSON _ = mempty
 
 -- | Lists all the physical paths that have been associated to some virtual
 -- location
 allLocsInMappings :: LocationMappings -> [LocWithVars]
 allLocsInMappings (LocationMappings_ m) =
-  concat . mapMaybe (f . snd) $ HM.toList m
-  where
-    f Unmapped     = Nothing
-    f (MappedTo a) = Just $ mapMaybe g a
-    g (FullySpecifiedLoc l) = Just l
-    g _ = Nothing
+  [ loc
+  | (_,layers) <- HM.toList m, FullySpecifiedLoc loc <- layers ]
 
 
 -- * How to get pre-filled defaut mappings from an existing LocationTree
@@ -97,8 +92,8 @@ mappingsFromLocTree (LocationTree node subtree) | HM.null subtree =
   LocationMappings_ $
     HM.singleton (LTP [])
                  (case getDefaultLocShortcut node of
-                    Just ls -> MappedTo [ls]
-                    Nothing -> Unmapped)
+                    Just ls -> [ls]
+                    Nothing -> [])
 mappingsFromLocTree (LocationTree _ sub) =
   LocationMappings_ (mconcat $ map f $ HM.toList sub)
   where
@@ -112,8 +107,8 @@ mappingsFromLocTree (LocationTree _ sub) =
 -- single folder
 mappingRootOnly :: Loc -> LocationMappings
 mappingRootOnly l = LocationMappings_ $
-  HM.fromList [( LTP []
-               , MappedTo [FullySpecifiedLoc (locWithVarsFromLoc l)] )]
+  HM.singleton (LTP [])
+               [FullySpecifiedLoc $ locWithVarsFromLoc l]
 
 
 -- * How to parse mappings to and from JSON
@@ -139,28 +134,12 @@ instance ToJSON LocShortcut where
 instance FromJSON LocShortcut where
   parseJSON (String "_") = pure $ DeriveWholeLocFromTree ""
   parseJSON (String (T.uncons -> Just ('_', s))) = case parseLocStringAndExt $ T.unpack s of
-    Left s' -> fail s'
+    Left e  -> fail e
     Right r -> pure $ DeriveLocPrefixFromTree r
   parseJSON (String s) = case parseURL $ T.unpack s of
-    Left s' -> fail s'
+    Left e  -> fail e
     Right r -> pure $ FullySpecifiedLoc r
   parseJSON _ = fail "LocShortcut only readable from a JSON String"
-
--- | If a ressource is mapped, it's mapped to a series of _layers_, each
--- subsequent layer having the capacity to override the previous ones.
-data Mapping n = Unmapped | MappedTo [n]
-  deriving (Eq, Show, Functor, Generic)
-
-instance (ToJSON n) => ToJSON (Mapping n) where
-  toJSON = \case
-    Unmapped      -> Null
-    MappedTo [ln] -> toJSON ln
-    MappedTo p    -> toJSON $ map toJSON p
-
-instance (FromJSON n) => FromJSON (Mapping n) where
-  parseJSON Null = pure Unmapped
-  parseJSON j@(Array{}) = MappedTo <$> parseJSON j
-  parseJSON j = MappedTo . (:[]) <$> parseJSON j
 
 
 -- * How to apply mappings to a LocationTree to get the physical locations bound
@@ -170,41 +149,50 @@ instance (FromJSON n) => FromJSON (Mapping n) where
 -- 'LocationMappings_' that don't correspond to anything in the 'LocationTree'
 -- will just be ignored
 insertMappings
-  :: LocationMappings_ n' -> LocationTree n -> LocationTree (n, Mapping n')
+  :: LocationMappings
+  -> LocationTree a
+  -> LocationTree (a, Maybe [LocShortcut])
 insertMappings (LocationMappings_ m) tree = foldl' go initTree $ HM.toList m
   where
-    initTree = fmap (,MappedTo []) tree  -- No mapping declared means an empty
-                                         -- list of layers
-    go t (path, lw) = t & inLocTree path . _Just . locTreeNodeTag . _2 .~ lw
+    initTree = fmap (,Nothing) tree
+      -- By defaut, each node is set to "no mapping defined"...
+    go t (path, layers) = t &
+      inLocTree path . _Just . locTreeNodeTag . _2 .~ Just layers
+      -- ...then we update the tree for each mapping present in the
+      -- LocationMappings
 
 -- | For each location in the tree, gives it a final list of physical location,
 -- as /layers/ (which can be empty)
-propagateMappings :: ([LocWithVars] -> n -> Bool -> n'')
-                  -> LocationTree (n, Mapping LocShortcut)
-                  -> LocationTree n''
+propagateMappings :: ([LocWithVars] -> a -> Bool -> b)
+                  -> LocationTree (a, Maybe [LocShortcut])
+                  -> LocationTree b
 propagateMappings f tree = propagateMappings' [] tree
   where
-    -- if a folder is set to null, we recursively unmap everything is contains,
-    -- ignoring every submapping that might exist:
-    propagateMappings' _ t@(LocationTree (_, Unmapped) _) = fmap unmap t
+    -- if a folder is explicitly set to null (ie if no layer exist for this
+    -- folder), then we recursively unmap everything is contains, ignoring every
+    -- submapping that might exist:
+    propagateMappings' _ t@(LocationTree (_, Just []) _) = fmap unmap t
       where unmap (n, _) = f [] n True
     -- if a folder is mapped, we propagate the mapping downwards:
-    propagateMappings' inheritedLayers (LocationTree (thisNode, MappedTo theseMappings) thisSub) =
+    propagateMappings' inheritedLayers (LocationTree (thisNode, mbTheseMappings) thisSub) =
       LocationTree thisNode' $ imap recur thisSub
       where
-        theseLayers = applyMappingsToLayers inheritedLayers theseMappings
-        thisNode' = f theseLayers thisNode (not $ null theseMappings)
+        theseLayers = applyInheritedLayersToShortcuts inheritedLayers mbTheseMappings
+        thisNode' = f theseLayers thisNode (isJust mbTheseMappings)
         recur fname subtree = propagateMappings' sublayers subtree
           where
-            sublayers = fmap (</> T.unpack (_ltpiName fname)) theseLayers 
+            sublayers = fmap (</> T.unpack (_ltpiName fname)) theseLayers
 
 -- | Given a list of loc layers inherited from further up the tree, fills in the
 -- blanks in the loc shortcuts given for once node of the tree in order to get
 -- the final loc layers mapped to this node.
-applyMappingsToLayers :: [LocWithVars] -- ^ Inherited layers
-                      -> [LocShortcut] -- ^ LocShortcuts mapped to the node
-                      -> [LocWithVars] -- ^ Final layers mapped to this node
-applyMappingsToLayers inheritedLayers = concatMap fillShortcut
+applyInheritedLayersToShortcuts
+  :: [LocWithVars] -- ^ Inherited layers
+  -> Maybe [LocShortcut] -- ^ LocShortcuts mapped to the node
+  -> [LocWithVars] -- ^ Final layers mapped to this node
+applyInheritedLayersToShortcuts inheritedLayers Nothing = inheritedLayers
+applyInheritedLayersToShortcuts inheritedLayers (Just shortcuts) =
+  concatMap fillShortcut shortcuts
   where
     fillShortcut = \case
       FullySpecifiedLoc l -> [l]
@@ -220,11 +208,11 @@ applyMappingsToLayers inheritedLayers = concatMap fillShortcut
 -- ie. if it was explicitely declared in the config file or if it was derived
 -- from the mapping of a parent folder. @n'@ is often some file type or metadata
 -- that's required in the mapping.
-applyMappings :: ([LocWithVars] -> n -> Bool -> n'')
+applyMappings :: ([LocWithVars] -> a -> Bool -> b)
                                    -- ^ Add physical locations (if they exist) to a node
               -> LocationMappings  -- ^ Mappings to apply
-              -> LocationTree n       -- ^ Original tree
-              -> LocationTree n''  -- ^ Tree with physical locations
+              -> LocationTree a    -- ^ Original tree
+              -> LocationTree b    -- ^ Tree with physical locations
 applyMappings f mappings loctree =
   propagateMappings f $
     insertMappings mappings loctree
