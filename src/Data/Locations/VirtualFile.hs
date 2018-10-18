@@ -31,9 +31,12 @@ import           Data.DocRecord.OptParse            (RecordUsableWithCLI)
 import           Data.Functor.Compose
 import qualified Data.HashMap.Strict                as HM
 import qualified Data.HashSet                       as HS
+import           Data.List                          (intersperse)
+import           Data.Locations.Loc
 import           Data.Locations.LocationTree
 import           Data.Locations.Mappings            (HasDefaultMappingRule (..),
                                                      LocShortcut (..))
+import           Data.Locations.RepetitionKeys
 import           Data.Locations.SerializationMethod
 import           Data.Monoid                        (First (..))
 import           Data.Profunctor                    (Profunctor (..))
@@ -59,13 +62,25 @@ data VirtualFile a b = VirtualFile
 
 makeLenses ''VirtualFile
 
+-- How we derive the default configuration for mapping some VirtualFile
 instance HasDefaultMappingRule (VirtualFile a b) where
-  getDefaultLocShortcut vf = if _vfileUsedByDefault vf
-    then Just $ DeriveWholeLocFromTree $
-         case _serialDefaultExt $ _vfileSerials vf of
-           First (Just ext) -> ext
-           _                -> T.pack ""
-    else Nothing
+  getDefaultLocShortcut vf
+    | vf ^. vfileUsedByDefault = Just $
+      case vf ^? vfileSerials . serialsRepetitionKeys . filtered (not . null) of
+        Nothing -> DeriveWholeLocFromTree defExt
+        -- LIMITATION: For now we suppose that every reading/writing function in
+        -- the serials has the same repetition keys
+        Just rkeys -> DeriveLocPrefixFromTree $
+          let toVar (RepetitionKey k) = LocBitVarRef $ T.unpack k
+              ls = LocString $ (LocBitChunk "-")
+                   : intersperse (LocBitChunk "-") (map toVar rkeys)
+          in LocFilePath ls $ T.unpack defExt
+    | otherwise = Nothing
+    where
+      defExt =
+        case vf ^. vfileSerials . serialDefaultExt of
+          First (Just ext) -> ext
+          _                -> T.pack ""
 
 -- For now, given the requirement of PTask, VirtualFile has to be a Monoid
 -- because a Resource Tree also has to.
