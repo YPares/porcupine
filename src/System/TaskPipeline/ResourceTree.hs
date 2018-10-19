@@ -51,23 +51,23 @@
 
 module System.TaskPipeline.ResourceTree where
 
-import           Control.Lens                       hiding ((<.>))
+import           Control.Lens                            hiding ((<.>))
 import           Control.Monad
 import           Control.Monad.Catch
 import           Data.Aeson
 import           Data.DocRecord
 import           Data.DocRecord.OptParse
-import qualified Data.HashMap.Strict                as HM
-import           Data.List                          (intersperse)
+import qualified Data.HashMap.Strict                     as HM
+import           Data.List                               (intersperse)
 import           Data.Locations
 import           Data.Maybe
-import           Data.Monoid                        (First (..))
+import           Data.Monoid                             (First (..))
 import           Data.Representable
-import qualified Data.Text                          as T
+import qualified Data.Text                               as T
 import           Data.Typeable
 import           Katip
 import           Options.Applicative
-import           System.TaskPipeline.CLI.Overriding
+import           System.TaskPipeline.ConfigurationReader
 
 
 -- * API for manipulating resource tree _nodes_
@@ -230,18 +230,33 @@ instance ToJSON ResourceTreeAndMappings where
 
 -- ** Reading virtual resource trees from the input
 
+type ResourceTreeAndMappingsOverrides =
+  ( LocationTree (VirtualFileNode, Maybe (RecOfOptions SourcedDocField))
+    -- The tree containing options parsed by optparse-applicative
+  , HM.HashMap T.Text T.Text
+    -- The map of variables and their values read from CLI too
+  )
+
 -- | Reads the data from the input config file. Constructs the parser for the
 -- command-line arguments. Combines both results to create the
 -- 'VirtualResourceTree' (and its mappings) the pipeline should run on.
 rscTreeConfigurationReader
   :: ResourceTreeAndMappings
-  -> CLIOverriding ResourceTreeAndMappings
-                   (LocationTree (VirtualFileNode, Maybe (RecOfOptions SourcedDocField)))
+  -> ConfigurationReader ResourceTreeAndMappings ResourceTreeAndMappingsOverrides
 rscTreeConfigurationReader (ResourceTreeAndMappings{rtamResourceTree=defTree}) =
-  CLIOverriding overridesParser_ nullOverrides_ overrideCfgFromYamlFile_
+  ConfigurationReader overridesParser_ nullOverrides_ overrideCfgFromYamlFile_
   where
-    overridesParser_ = traverseOf (traversed . _2 . _Just) parseOptions $
-                       fmap nodeAndRecOfOptions defTree
+    overridesParser_ = (,) <$> treeOfOptsParser <*> variablesParser
+      where
+        treeOfOptsParser = traverseOf (traversed . _2 . _Just) parseOptions $
+                           fmap nodeAndRecOfOptions defTree
+        variablesParser = HM.fromList <$>
+          many (option (eitherReader varBinding)
+                 (long "var"
+               <> help "Set a variable already present in the config file"))
+        varBinding (T.splitOn "=" . T.pack -> [var,val]) = Right (var,val)
+        varBinding _ = Left "Var binding must be of the form \"variable=value\""
+
     nodeAndRecOfOptions :: VirtualFileNode -> (VirtualFileNode, Maybe DocRecOfOptions)
     nodeAndRecOfOptions n@(VirtualFileNode vf) = (n, vf ^? vfileAsBidir . vfileRecOfOptions)
     nodeAndRecOfOptions n = (n, Nothing)
@@ -249,11 +264,11 @@ rscTreeConfigurationReader (ResourceTreeAndMappings{rtamResourceTree=defTree}) =
     parseOptions (RecOfOptions r) = RecOfOptions <$>
       parseRecFromCLI (tagWithDefaultSource r)
 
-    nullOverrides_ = allOf (traversed . _2 . _Just) nullRec
+    nullOverrides_ (t,_) = allOf (traversed . _2 . _Just) nullRec t
     nullRec (RecOfOptions RNil) = True
     nullRec _                   = False
 
-    overrideCfgFromYamlFile_ (Object aesonCfg) embeddedDataTree = ([], rtam)
+    overrideCfgFromYamlFile_ (Object aesonCfg) (embeddedDataTree, cliVars) = ([], rtam)
       where
         dataSectionContent = HM.lookup embeddedDataSection aesonCfg
         mappingsSectionContent = HM.lookup mappingsSection aesonCfg
@@ -264,7 +279,7 @@ rscTreeConfigurationReader (ResourceTreeAndMappings{rtamResourceTree=defTree}) =
           <*> (case mappingsSectionContent of
                  Just m -> Right <$> parseJSONEither m
                  _      -> pure $ Right mempty)
-          <*> (case variablesSectionContent of
+          <*> ((cliVars <>) <$> case variablesSectionContent of
                  Just m -> parseJSONEither m
                  _      -> pure mempty)
     overrideCfgFromYamlFile_ _ _ = ([], Left "Configuration file doesn't contain a JSON object")

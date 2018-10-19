@@ -6,7 +6,7 @@
 {-# OPTIONS_GHC -Wall          #-}
 
 module System.TaskPipeline.CLI
-  ( module System.TaskPipeline.CLI.Overriding
+  ( module System.TaskPipeline.ConfigurationReader
   , PipelineCommand(..)
   , PipelineConfigMethod(..)
   , LocTreeLayout(..)
@@ -23,17 +23,17 @@ module System.TaskPipeline.CLI
 import           Control.Lens
 import           Control.Monad.IO.Class
 import           Data.Aeson
-import           Data.Char                          (toLower)
-import qualified Data.HashMap.Lazy                  as HashMap
+import           Data.Char                               (toLower)
+import qualified Data.HashMap.Lazy                       as HashMap
 import           Data.Locations
-import qualified Data.Text                          as T
-import qualified Data.Text.Encoding                 as T
-import qualified Data.Yaml                          as Y
+import qualified Data.Text                               as T
+import qualified Data.Text.Encoding                      as T
+import qualified Data.Yaml                               as Y
 import           Katip
 import           Options.Applicative
 import           System.Directory
-import           System.Environment                 (getArgs, withArgs)
-import           System.TaskPipeline.CLI.Overriding
+import           System.Environment                      (getArgs, withArgs)
+import           System.TaskPipeline.ConfigurationReader
 import           System.TaskPipeline.Logger
 
 
@@ -94,7 +94,7 @@ cliYamlParser
   => String                   -- ^ The program name
   -> FilePath                 -- ^ Configuration file
   -> cfg                      -- ^ Default configuration
-  -> CLIOverriding cfg overrides
+  -> ConfigurationReader cfg overrides
   -> [(Parser cmd, String, String)]  -- ^ [(Parser cmd, Command repr, Command help string)]
   -> cmd                      -- ^ Default command
   -> IO (Parser (Maybe (cfg, cmd), LoggerScribeParams, [PostParsingAction]))
@@ -129,7 +129,7 @@ pureCliParser
   -> Maybe Y.Value            -- ^ Config read
   -> FilePath                 -- ^ Configuration file
   -> cfg                      -- ^ Default configuration
-  -> CLIOverriding cfg overrides
+  -> ConfigurationReader cfg overrides
   -> [(Parser cmd, String, String)]  -- ^ [(Parser cmd, Command repr, Command help string)]
   -> cmd                      -- ^ Default command
   -> Parser (Maybe (cfg, cmd), LoggerScribeParams, [PostParsingAction])
@@ -174,7 +174,7 @@ handleOptions
   -> FilePath -- ^ Config file
   -> Maybe Y.Value -- ^ Config body. This is the JSON content of the config file
   -> cfg           -- ^ The default configuration
-  -> CLIOverriding (LoggerScribeParams, cfg) (LoggerScribeParams, overrides)
+  -> ConfigurationReader (LoggerScribeParams, cfg) (LoggerScribeParams, overrides)
   -> Maybe (cmd, String) -- ^ Command to run (and a name/description for it)
   -> Bool -- ^ Whether to save the overrides
   -> (LoggerScribeParams, overrides) -- ^ overrides
@@ -262,7 +262,7 @@ parseShowLocTree = ShowLocTree <$>
 
 pipelineCliParser
   :: (Monoid r, ToJSON cfg)
-  => (cfg -> CLIOverriding cfg overrides)
+  => (cfg -> ConfigurationReader cfg overrides)
   -> String
   -> FilePath
   -> cfg

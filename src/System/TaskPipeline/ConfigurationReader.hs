@@ -6,10 +6,10 @@
 {-# LANGUAGE TupleSections     #-}
 {-# OPTIONS_GHC -Wall          #-}
 
-module System.TaskPipeline.CLI.Overriding
-  ( CLIOverriding(..)
-  , docRecBasedCLIOverriding
-  , genericAesonBasedCLIOverriding
+module System.TaskPipeline.ConfigurationReader
+  ( ConfigurationReader(..)
+  , docRecBasedConfigurationReader
+  , genericAesonBasedConfigurationReader
   , parseJSONEither
   , addScribeParamsParsing
   ) where
@@ -29,8 +29,9 @@ import           System.TaskPipeline.Logger         (LoggerScribeParams (..),
                                                      Severity (..),
                                                      Verbosity (..))
 
--- | How to override a YAML file config from the command-line
-data CLIOverriding cfg overrides = CLIOverriding
+-- | How to override a YAML file config from the command-line to return some
+-- config type @cfg@
+data ConfigurationReader cfg overrides = ConfigurationReader
   { overridesParser    :: Parser overrides
   -- ^ Generate a parser from default cfg
   , nullOverrides      :: overrides -> Bool
@@ -80,8 +81,8 @@ parseScribeParams = LoggerScribeParams
     numToVerbosity _ = V3
 
 -- | Modifies a CLI parsing so it features verbosity and severity flags
-addScribeParamsParsing :: CLIOverriding cfg ovs -> CLIOverriding (LoggerScribeParams, cfg) (LoggerScribeParams, ovs)
-addScribeParamsParsing super = CLIOverriding
+addScribeParamsParsing :: ConfigurationReader cfg ovs -> ConfigurationReader (LoggerScribeParams, cfg) (LoggerScribeParams, ovs)
+addScribeParamsParsing super = ConfigurationReader
   { overridesParser = (,) <$> parseScribeParams <*> overridesParser super
   , nullOverrides = \(_, ovs) -> nullOverrides super ovs
   , overrideCfgFromYamlFile = \yaml (scribeParams, ovs) ->
@@ -91,10 +92,10 @@ addScribeParamsParsing super = CLIOverriding
 
 -- | defCfg must be a 'DocRec' here. Uses it to generate one option per field in
 -- the DocRec, along with its documentation.
-docRecBasedCLIOverriding
+docRecBasedConfigurationReader
   :: (RecordUsableWithCLI rs)
-  => DocRec rs -> CLIOverriding (DocRec rs) (Rec SourcedDocField rs)
-docRecBasedCLIOverriding defCfg = CLIOverriding{..}
+  => DocRec rs -> ConfigurationReader (DocRec rs) (Rec SourcedDocField rs)
+docRecBasedConfigurationReader defCfg = ConfigurationReader{..}
   where
     overridesParser = parseRecFromCLI $ tagWithDefaultSource defCfg
         -- The parser will set the source to CLI for each modified
@@ -116,11 +117,11 @@ docRecBasedCLIOverriding defCfg = CLIOverriding{..}
 -- can be repeated. Also has a -q flag that activates quiet mode. Doesn't make
 -- assumptions on the types of values, but doesn't do extra checks and doesn't
 -- display any extra documentation.
-genericAesonBasedCLIOverriding
+genericAesonBasedConfigurationReader
   :: (A.FromJSON cfg)
-  => String -> [(String, Char, String)] -> CLIOverriding cfg [String]
-genericAesonBasedCLIOverriding configFile shortcuts =
-  CLIOverriding genParser null
+  => String -> [(String, Char, String)] -> ConfigurationReader cfg [String]
+genericAesonBasedConfigurationReader configFile shortcuts =
+  ConfigurationReader genParser null
     (\origCfg overrides ->
        let (warnings, result) =
              overrideConfigFromKeyValues origCfg overrides
