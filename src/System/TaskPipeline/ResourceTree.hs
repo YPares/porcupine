@@ -389,8 +389,9 @@ resolveDataAccess (PhysicalFileNode layers vf) = do
       traverse terminateLocString $ spliceRKeysInLoc rkeys' loc
 
     terminateLocString (LocString [LocBitChunk s]) = return s
-    terminateLocString ls = throwWithPrefix $
-      "resolveDataAccess: Variables " ++ show (ls ^.. locStringVariables) ++ " haven't been fixed"
+    terminateLocString locString = throwWithPrefix $
+      "resolveDataAccess: Variable(s) " ++ show (locString ^.. locStringVariables)
+      ++ " in '" ++ show locString ++ "' haven't been given a value"
 
     readers = vf ^. vfileSerials . serialReaders . serialReadersFromInputFile
     writers = vf ^. vfileSerials . serialWriters . serialWritersToOutputFile

@@ -2,16 +2,13 @@
 
 module Data.Locations.RepetitionKeys where
 
-import           Control.Lens                hiding ((<.>))
 import           Data.Hashable               (Hashable)
 import qualified Data.HashMap.Strict         as HM
-import           Data.List                   (intercalate)
 import           Data.Locations.Loc
 import           Data.Locations.LogAndErrors
 import           Data.Monoid
 import           Data.String                 (IsString)
 import qualified Data.Text                   as T
-import qualified System.FilePath             as P
 
 
 -- | Some 'VirtualFile's can be accessed in tasks that will be part of a

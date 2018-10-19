@@ -147,10 +147,12 @@ locVariables = traversed . locStringVariables
 
 -- | Splices in the variables present in the hashmap
 spliceLocVariables :: HM.HashMap String String -> LocWithVars -> LocWithVars
-spliceLocVariables vars = over locVariables $ \v@(LocBitVarRef vname) ->
-  case HM.lookup vname vars of
-    Just val -> LocBitChunk val
-    Nothing  -> v
+spliceLocVariables vars = over locVariables $ \v -> case v of
+  LocBitVarRef vname ->
+    case HM.lookup vname vars of
+      Just val -> LocBitChunk val
+      Nothing  -> v
+  _ -> error "spliceLocVariables: Should not happen"
 
 -- | Means that @a@ can represent file paths
 class (Monoid a) => IsLocString a where
@@ -220,7 +222,7 @@ instance (IsLocString a) => Representable (LocFilePath a) where
     Left _   -> empty
     Right x' -> pure x'
 
-instance (IsLocString a, Show a) => Representable (Loc_ a) where
+instance (IsLocString a) => Representable (Loc_ a) where
   toTextRepr = T.pack . show
   fromTextRepr x = case parseURL $ T.unpack x of
     Left _   -> empty
