@@ -220,8 +220,8 @@ mergeWithDefault path (Object o1) (Object o2) =
   let newKeys = fmap fst . HashMap.toList $ HashMap.difference o2 o1
       warnings = fmap (\key -> PostParsingLog WarningS $ logStr $
                     "The key " <> T.intercalate "." (key:path) <>
-                    "is present in the config but not in the schema." <>
-                    "This is probably an error")
+                    " is present in the config but not in the schema." <>
+                    " This is probably an error")
                   newKeys
       (subWarnings, merged)
         = sequenceA $ HashMap.unionWithKey
