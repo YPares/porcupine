@@ -17,8 +17,7 @@ import           Data.Locations.VirtualFile
 import           Data.Monoid                             (Last (..))
 import           Data.Typeable
 import           Katip
-import           System.TaskPipeline.ATask
-import           System.TaskPipeline.Resource
+import           System.TaskPipeline.PTask
 import           System.TaskPipeline.Tasks.LayeredAccess
 
 
@@ -29,13 +28,14 @@ getOptions
   => [LocationTreePathItem]  -- ^ The path for the options in the LocationTree
   -> DocRec rs               -- ^ The DocRec containing the fields with their
                              -- docs and default values
-  -> ATask m PipelineResource () (DocRec rs)  -- ^ An ATask that returns the new
-                                              -- options values, overriden by
-                                              -- the user
+  -> PTask m () (DocRec rs)  -- ^ A PTask that returns the new options values,
+                             -- overriden by the user
 getOptions path defOpts = arr (const defOpts') >>> accessVirtualFile vfile >>> arr post
   where
     defOpts' = Last $ Just defOpts
     post (Last Nothing)  = defOpts
     post (Last (Just x)) = x
-    vfile = bidirVirtualFile path $ someBidirSerial $
-      DocRecSerial defOpts' post (Last . Just)
+    vfile = bidirVirtualFile path $
+      someBidirSerial (DocRecSerial defOpts' post (Last . Just))
+      <>
+      someBidirSerial JSONSerial

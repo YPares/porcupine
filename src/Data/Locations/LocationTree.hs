@@ -11,7 +11,6 @@
 {-# LANGUAGE TupleSections        #-}
 {-# LANGUAGE TypeOperators        #-}
 {-# LANGUAGE TypeSynonymInstances #-}
-{-# LANGUAGE ViewPatterns         #-}
 {-# OPTIONS_GHC -Wall #-}
 {-# LANGUAGE DataKinds            #-}
 {-# OPTIONS_GHC -fno-warn-type-defaults #-}
@@ -21,24 +20,21 @@
 module Data.Locations.LocationTree
   (
   -- * Types
-    LocationTree(..), BareLocationTree
+    LocationTree(..)
   , LocationTreePathItem(..), LocationTreePath(..)
-  , SerialMethod(..), LTPIAndSubtree(..)
+  , LTPIAndSubtree(..)
   , (:||)(..), _Unprioritized, _Prioritized
   -- * Functions
   , locTreeNodeTag, locTreeSubfolders
-  , everyLeaf
   , inLocTree
-  , allSubLocTrees
+  , allSubLocTrees, traversedTreeWithPath
   , atSubfolder, atSubfolderRec
   , filteredLocsInTree
   , subtractPathFromTree
-  , serialMethodAccepted
   , singLTP
   , showLTPIName
   , ltpiName
-  , parseSerMethList
-  , locItemWithExt, addExtToLocIfMissing
+  , addExtToLocIfMissing
   , locNode, folderNode, fileEmpty, file
   , splitLocTree, joinLocTrees
   , locTreeToDataTree
@@ -48,20 +44,19 @@ module Data.Locations.LocationTree
 where
 
 import           Control.Applicative
-import           Control.Lens                       hiding ((<.>))
+import           Control.Lens        hiding ((<.>))
 import           Data.Aeson
 import           Data.Binary
 import           Data.Hashable
-import qualified Data.HashMap.Strict                as HM
+import qualified Data.HashMap.Strict as HM
 import           Data.List
 import           Data.Locations.Loc
-import           Data.Locations.SerializationMethod
 import           Data.Maybe
 import           Data.Representable
 import           Data.String
-import qualified Data.Text                          as T
-import qualified Data.Tree                          as DT
-import           GHC.Generics                       (Generic)
+import qualified Data.Text           as T
+import qualified Data.Tree           as DT
+import           GHC.Generics        (Generic)
 -- import Data.Tree.Pretty
 -- import Diagrams.TwoD.Layout.Tree
 
@@ -71,9 +66,8 @@ import           GHC.Generics                       (Generic)
 -- (solving, exploration) will need its 'LocationTree', that can be obtained by
 -- composing the 'LocationTree's of the tasks it contains.
 --
--- In some project using simwork, the project's code will only use virtual
--- paths, and it won't know what actual physical location is behind that
--- path.
+-- In a project using pipeline-tools, the project's code will only use virtual
+-- paths, and it won't know what actual physical location is behind that path.
 --
 -- We could use a DocRecord to represent a LocationTree. Maybe we'll refactor it
 -- to use DocRecords in the future, but for now it was simpler to use a simple
@@ -90,23 +84,6 @@ data LocationTree a = LocationTree
                   -- ^ The content of the node. Is empty for a terminal file.
   }
   deriving (Eq, Show, Functor, Foldable, Traversable)
-
--- | A 'LocationTree' without any mountings (just a prefered serial method),
--- waiting for them to be configured by the user.
-type BareLocationTree = LocationTree SerialMethod
-
-parseSerMethList :: (Monad m) => Value -> m [Maybe SerialMethod]
-parseSerMethList Null         = pure [fromTextRepr ""]
-parseSerMethList (String fmt) = case fromTextRepr fmt of
-  Just f  -> pure [Just f]
-  Nothing -> fail $ "Unhandled serialization method: " ++ T.unpack fmt
-parseSerMethList (Object (HM.toList -> [(_fmt, Object _reprOpts)])) = fail
-  "Serialization options for formats aren't implemented yet"
-  -- TODO: implement options (pretty printing etc.) for serialization methods
-parseSerMethList (Array fmts) = concat <$>
-  mapM parseSerMethList (toListOf traversed fmts)
-parseSerMethList _            = fail
-  "Format must be a string, a null or an array of strings"
 
 instance (Monoid a) => Monoid (LocationTree a) where
   mempty = LocationTree mempty mempty
@@ -181,12 +158,6 @@ filteredLocsInTree f (LocationTree a sub) =
   where
     onSub (k,t) = fmap (k,) <$> filteredLocsInTree f t
 
--- | Traverses all the leaves of the 'LocationTree'
-everyLeaf :: Traversal' (LocationTree a) (LocationTree a)
-everyLeaf f node@(LocationTree a sub)
-  | HM.null sub = f node
-  | otherwise = LocationTree a <$> traversed f sub
-
 -- | Access or edit a subtree
 inLocTree :: LocationTreePath -> Lens' (LocationTree a) (Maybe (LocationTree a))
 inLocTree path f t = fromJust <$> go path (Just t)
@@ -205,27 +176,22 @@ allSubLocTrees
   :: Traversal (LocationTree a) (LocationTree b)
                (LocationTreePath, LocationTree a) b
 allSubLocTrees f = go []
-  where go ps n@(LocationTree _ sub) = LocationTree <$>
-              f (LTP $ reverse ps, n)
+  where go ps n@(LocationTree _ sub) = LocationTree
+          <$> f (LTP $ reverse ps, n)
           <*> itraverse (\p n' -> go (p:ps) n') sub
 
--- | Remove a path from a 'BareLocationTree', for instance to indicate that the
--- configuration files corresponding to that path do not have to be read,
--- because that part of the configuration will be hardcoded. Useful for examples
--- and simple projects, to be able to test that we never read something that is not
--- needed.
-subtractPathFromTree :: BareLocationTree -> LocationTreePath -> BareLocationTree
-subtractPathFromTree tree path = tree & inLocTree path .~ Nothing
+-- | Traverse all the nodes, indexed by their 'LocationTreePath'
+traversedTreeWithPath
+  :: Traversal (LocationTree a) (LocationTree b)
+               (LocationTreePath, a) b
+traversedTreeWithPath f = go []
+  where go ps (LocationTree n sub) = LocationTree
+          <$> f (LTP $ reverse ps, n)
+          <*> itraverse (\p n' -> go (p:ps) n') sub
 
--- | Tells whether a physical 'Loc' accepts to use some 'SerialMethod'
-serialMethodAccepted :: Loc -> SerialMethod -> Bool
-serialMethodAccepted _           LocDefault = True
-  -- Every loc has some suitable default, so this is always accepted
-serialMethodAccepted LocalFile{} CSV        = True
-serialMethodAccepted LocalFile{} JSON       = True
-serialMethodAccepted S3Obj{}     CSV        = True
-serialMethodAccepted S3Obj{}     JSON       = True
-serialMethodAccepted _           _          = False
+-- | Removes a path from a 'LocationTree'.
+subtractPathFromTree :: LocationTree a -> LocationTreePath -> LocationTree a
+subtractPathFromTree tree path = tree & inLocTree path .~ Nothing
 
 -- | Just a tuple-like type. An entry for the map of contents at some path in a
 -- 'LocationTree'
@@ -250,21 +216,14 @@ file :: LocationTreePathItem
       -> LTPIAndSubtree a
 file i a = i :/ LocationTree a mempty
 
-instance IsString (LTPIAndSubtree ()) where
+instance (Monoid a) => IsString (LTPIAndSubtree a) where
   fromString = fileEmpty . fromString
 
--- | Get the filename with extension that we are supposed to find at some path
--- under the 'LocationTree'
-locItemWithExt :: LTPIAndSubtree SerialMethod -> String
-locItemWithExt (ltpi :/ n) =
-  T.unpack $ _ltpiName ltpi <> "." <> toTextRepr (_locTreeNodeTag n)
-
-addExtToLocIfMissing :: Loc -> SerialMethod -> Loc
-addExtToLocIfMissing loc ser | T.null (loc^.locExt) =
+addExtToLocIfMissing :: Loc -> T.Text -> Loc
+addExtToLocIfMissing loc ext | T.null (loc^.locExt) =
   if T.null ext
-    then loc
-    else loc & locExt .~ ext
-  where ext = toTextRepr ser
+     then loc
+     else loc & locExt .~ ext
 addExtToLocIfMissing loc _ = loc
 
 -- | Like Either, but equipped with a Monoid instance that would prioritize Right over Left

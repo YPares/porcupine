@@ -156,7 +156,7 @@ instance LocationMonad AWS where
   readBSS l             = readBSS_S3 l
   withLocalBuffer f (LocalFile lf) = f lf
   withLocalBuffer f loc@S3Obj{} =
-    Tmp.withSystemTempDirectory "simwork.tmp" writeAndUpload
+    Tmp.withSystemTempDirectory "pipeline-tools.tmp" writeAndUpload
     where
       writeAndUpload tmpDir = do
         let tmpFile = tmpDir Path.</> "out"

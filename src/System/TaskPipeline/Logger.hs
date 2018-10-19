@@ -8,16 +8,12 @@ module System.TaskPipeline.Logger
   , defaultLoggerScribeParams
   , log
   , runLogger
-  , addContextToTask
-  , addNamespaceToTask
   ) where
 
-import           Control.Monad.Catch       (MonadMask, bracket)
-import           Control.Monad.IO.Class    (MonadIO, liftIO)
-import           Data.String               (fromString)
+import           Control.Monad.Catch    (MonadMask, bracket)
+import           Control.Monad.IO.Class (MonadIO, liftIO)
 import           Katip
-import           System.IO                 (stdout)
-import           System.TaskPipeline.ATask (ATask (..))
+import           System.IO              (stdout)
 
 
 -- | Scribe parameters for Logger. Define a severity threshold and a verbosity level.
@@ -44,21 +40,3 @@ runLogger (LoggerScribeParams sev verb) x = do
                 =<< initLogEnv "jinko" "devel"
     bracket mkLogEnv (liftIO . closeScribes) $ \le ->
         runKatipContextT le () "main" $ x
-
--- | Adds some context that will be used at logging time. See 'katipAddContext'
-addContextToTask
-  :: (KatipContext m, LogItem i)
-  => i              -- ^ The context
-  -> ATask m n a b  -- ^ The task to wrap
-  -> ATask m n a b
-addContextToTask item (ATask tree fn) =
-  ATask tree $ katipAddContext item . fn
-
--- | Adds a namespace to the task. See 'katipAddNamespace'
-addNamespaceToTask
-  :: (KatipContext m)
-  => String        -- ^ The namespace. (Is IsString instance)
-  -> ATask m n a b -- ^ The task to wrap
-  -> ATask m n a b
-addNamespaceToTask ns (ATask tree fn) =
-  ATask tree $ katipAddNamespace (fromString ns) . fn

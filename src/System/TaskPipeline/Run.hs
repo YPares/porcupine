@@ -8,7 +8,7 @@ module System.TaskPipeline.Run
   , PipelineTask
   , runPipelineTask
   , runPipelineTask_
-  , runPipelineCommandOnATask
+  , runPipelineCommandOnPTask
   ) where
 
 import           Control.Monad
@@ -16,7 +16,7 @@ import           Control.Monad.Catch
 import           Control.Monad.IO.Class
 import           Data.Locations
 import           Data.Maybe
-import           Katip                      hiding (logMsg)
+import           Katip
 import           System.Exit
 import           System.TaskPipeline.CLI
 import           System.TaskPipeline.Logger (defaultLoggerScribeParams,
@@ -29,12 +29,12 @@ import           System.TaskPipeline.Tasks
 -- sequentially with '(>>>)' (or '(.)'), or in parallel with '(***)'.
 type PipelineTask i o =
      forall m. (KatipContext m, LocationMonad m, MonadIO m)
-  => ATask m PipelineResource i o
+  => PTask m i o
   -- MonadIO constraint is meant to be temporary (that's needed for the
   -- pipelines who do time tracking for instance, but that shouldn't be done
   -- like that).
 
--- | Runs an 'ATask' according to some 'PipelineConfigMethod' and with an input
+-- | Runs an 'PTask' according to some 'PipelineConfigMethod' and with an input
 -- @i@. In principle, it should be directly called by your @main@ function. It
 -- exits with @ExitFailure 1@ when the 'PipelineTask' raises an uncatched
 -- exception.
@@ -44,17 +44,16 @@ runPipelineTask
                              -- config or not
   -> PipelineTask i o  -- ^ The whole pipeline task to run
   -> i                 -- ^ The pipeline task input
-  -> IO (o, RscAccessTree BoundPipelineResource)
+  -> IO o -- , RscAccessTree (ResourceTreeNode m))
                        -- ^ The pipeline task output and the final LocationTree
-runPipelineTask progName cliUsage atask input = do
-  let cliUsage' = pipelineConfigMethodChangeResult cliUsage
-      tree = getTaskTree atask
-        -- We temporarily instanciate atask so we can get the
-        -- tree (which doesn't depend anyway on the
-        -- monad). That's just to make GHC happy.
+runPipelineTask progName cliUsage ptask input = do
+  let -- cliUsage' = pipelineConfigMethodChangeResult cliUsage
+      tree = getTaskTree ptask
+        -- We temporarily instanciate ptask so we can get the tree (which
+        -- doesn't depend anyway on the monad). That's just to make GHC happy.
   catch
-    (bindResourceTreeAndRun progName cliUsage' tree $
-      runPipelineCommandOnATask atask input)
+    (bindResourceTreeAndRun progName cliUsage tree $
+      runPipelineCommandOnPTask ptask input)
     (\(SomeException e) -> do
         putStrLn $ displayException e
         exitWith $ ExitFailure 1)
@@ -66,36 +65,39 @@ runPipelineTask_
   -> PipelineConfigMethod o
   -> PipelineTask () o
   -> IO o
-runPipelineTask_ name cliUsage atask =
-  fst <$> runPipelineTask name cliUsage atask ()
+runPipelineTask_ name cliUsage ptask =
+  -- fst <$>
+  runPipelineTask name cliUsage ptask ()
 
-pipelineConfigMethodChangeResult
-  :: PipelineConfigMethod o
-  -> PipelineConfigMethod (o, RscAccessTree BoundPipelineResource)
-pipelineConfigMethodChangeResult cliUsage = case cliUsage of
-  NoConfig r     -> NoConfig r
-  FullConfig s r -> FullConfig s r
+-- pipelineConfigMethodChangeResult
+--   :: PipelineConfigMethod o
+--   -> PipelineConfigMethod (o, RscAccessTree (ResourceTreeNode m))
+-- pipelineConfigMethodChangeResult cliUsage = case cliUsage of
+--   NoConfig r     -> NoConfig r
+--   FullConfig s r -> FullConfig s r
 
 getTaskTree
-  :: ATask (KatipContextT LocalM) PipelineResource i o
-  -> UnboundResourceTree
-getTaskTree (ATask t _) = t
+  :: PTask (KatipContextT LocalM) i o
+  -> VirtualResourceTree
+getTaskTree (PTask t _) = t
 
--- | Runs the required 'PipelineCommand' on an 'ATask'
-runPipelineCommandOnATask
-  :: (LocationMonad m)
-  => ATask m PipelineResource i o
+-- | Runs the required 'PipelineCommand' on an 'PTask'
+runPipelineCommandOnPTask
+  :: (LocationMonad m, KatipContext m)
+  => PTask m i o
   -> i
-  -> PipelineCommand (o, RscAccessTree BoundPipelineResource)
-  -> BoundResourceTree
-  -> m (o, RscAccessTree BoundPipelineResource)
-runPipelineCommandOnATask (ATask origTree taskFn) input cmd boundTree =
-  -- origTree is the bare tree straight from the pipeline
-  -- boundTree is origTree after configuration, with options and mappings updated
+  -> PipelineCommand o --, RscAccessTree (ResourceTreeNode m))
+  -> PhysicalResourceTree
+  -> m o --, RscAccessTree (PhysicalTreeNode m)
+runPipelineCommandOnPTask (PTask origTree taskFn) input cmd boundTree =
+  -- origTree is the bare tree straight from the pipeline. boundTree is origTree
+  -- after configuration, with embedded data and mappings updated
   case cmd of
-    RunPipeline -> taskFn (input, fmap (RscAccess 0) boundTree)
+    RunPipeline -> do
+      dataTree <- traverse resolveDataAccess boundTree
+      fst <$> taskFn (input, fmap (RscAccess 0) dataTree)
     ShowLocTree mode -> do
-      logMsg $ case mode of
+      liftIO $ putStrLn $ case mode of
         NoMappings   -> prettyLocTree origTree
         FullMappings -> prettyLocTree boundTree
       return mempty
@@ -105,21 +107,21 @@ runPipelineCommandOnATask (ATask origTree taskFn) input cmd boundTree =
 bindResourceTreeAndRun
   :: String   -- ^ Program name (often model name)
   -> PipelineConfigMethod r -- ^ How to get CLI args from ModelOpts
-  -> UnboundResourceTree -- ^ The tree to look for DocRecOfoptions in
+  -> VirtualResourceTree    -- ^ The tree to look for DocRecOfoptions in
   -> (forall m. (KatipContext m, LocationMonad m, MonadIO m)
-      => PipelineCommand r -> BoundResourceTree -> m r)
+      => PipelineCommand r -> PhysicalResourceTree -> m r)
              -- ^ What to do with the model
   -> IO r
 bindResourceTreeAndRun _ (NoConfig root) tree f =
   selectRun root True $
     runLogger defaultLoggerScribeParams $
       f RunPipeline $
-        applyMappingsToResourceTree' tree (Left root)
+        applyMappingsToResourceTree $ ResourceTreeAndMappings tree (Left root)
 bindResourceTreeAndRun progName (FullConfig defConfigFile defRoot) tree f =
   withCliParser progName "Run a task pipeline" getParser run
   where
     getParser mbConfigFile =
-      pipelineCliParser rscTreeBasedCLIOverriding progName
+      pipelineCliParser rscTreeConfigurationReader progName
         (fromMaybe defConfigFile mbConfigFile)
         (ResourceTreeAndMappings tree $ Left defRoot)
     run tam@(ResourceTreeAndMappings _ mappings') cmd lsp logItems =

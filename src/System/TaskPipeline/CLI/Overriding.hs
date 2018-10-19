@@ -16,16 +16,18 @@ module System.TaskPipeline.CLI.Overriding
 
 import           Control.Applicative
 import           Control.Monad
-import qualified Data.Aeson                 as A
+import qualified Data.Aeson                         as A
 import           Data.DocRecord
 import           Data.DocRecord.OptParse
-import qualified Data.HashMap.Lazy          as HashMap
-import qualified Data.Text                  as T
-import qualified Data.Text.Encoding         as T
-import qualified Data.Yaml                  as Y
+import qualified Data.HashMap.Lazy                  as HashMap
+import           Data.Locations.SerializationMethod (parseJSONEither)
+import qualified Data.Text                          as T
+import qualified Data.Text.Encoding                 as T
+import qualified Data.Yaml                          as Y
 import           Options.Applicative
-import           System.TaskPipeline.Logger (LoggerScribeParams (..),
-                                             Severity (..), Verbosity (..))
+import           System.TaskPipeline.Logger         (LoggerScribeParams (..),
+                                                     Severity (..),
+                                                     Verbosity (..))
 
 -- | How to override a YAML file config from the command-line
 data CLIOverriding cfg overrides = CLIOverriding
@@ -86,12 +88,6 @@ addScribeParamsParsing super = CLIOverriding
       let (warns, res) = overrideCfgFromYamlFile super yaml ovs
       in (warns, (scribeParams,) <$> res)
   }
-
-parseJSONEither :: (A.FromJSON t) => A.Value -> Either String t
-parseJSONEither x = case A.fromJSON x of
-  A.Success s -> Right s
-  A.Error r   -> Left r
-{-# INLINE parseJSONEither #-}
 
 -- | defCfg must be a 'DocRec' here. Uses it to generate one option per field in
 -- the DocRec, along with its documentation.
