@@ -28,9 +28,8 @@ getOptions
   => [LocationTreePathItem]  -- ^ The path for the options in the LocationTree
   -> DocRec rs               -- ^ The DocRec containing the fields with their
                              -- docs and default values
-  -> PTask m () (DocRec rs)  -- ^ An PTask that returns the new
-                                              -- options values, overriden by
-                                              -- the user
+  -> PTask m () (DocRec rs)  -- ^ A PTask that returns the new options values,
+                             -- overriden by the user
 getOptions path defOpts = arr (const defOpts') >>> accessVirtualFile vfile >>> arr post
   where
     defOpts' = Last $ Just defOpts

@@ -64,15 +64,19 @@ instance (Semigroup a) => Semigroup (RscAccess a) where
 instance (Monoid a) => Monoid (RscAccess a) where
   mempty = RscAccess 0 mempty  -- So that mappend x mempty is still equal to x
 
--- | What a task needs to run, namely files to be accessed and options to be
--- overriden. The options are put in a LocationTree too (it will be needed for
--- composed models). The trees are kept separated to simplify code creating
--- PTasks
+-- | What a task needs to run, ie. data to be accessed (read or written).
 type RscAccessTree n = LocationTree (RscAccess n)
 
--- | A Task than turns @a@ into @b@. It runs in some monad @m@ so can access
--- locations described in a 'LocationTree' with nodes of type @n@. @n@ is some
--- type of resource required by the task.
+-- | A task is an Arrow than turns @a@ into @b@. It runs in some monad @m@.
+-- Each 'PTask' will expose its requirements in terms of resource it wants to
+-- access in the form of a resource tree (implemented as a 'LocationTree' of
+-- 'VirtualFile's). These trees of requirements are aggregated when the tasks
+-- are combined with each other, so once the full pipeline has been composed
+-- (through Arrow composition), its 'pTaskResourceTree' will contain the
+-- complete requirements of the pipeline.
+--
+-- At the time of running, 'pTaskPerform' will be given the resource tree where
+-- VirtualFiles have been replaced by function to pull and write the data.
 data PTask m a b = PTask
   { pTaskResourceTree :: LocationTree VirtualFileNode
     -- ^ The tree of all resources required by task. When two tasks are

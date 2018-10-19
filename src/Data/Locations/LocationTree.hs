@@ -189,11 +189,7 @@ traversedTreeWithPath f = go []
           <$> f (LTP $ reverse ps, n)
           <*> itraverse (\p n' -> go (p:ps) n') sub
 
--- | Remove a path from a 'BareLocationTree', for instance to indicate that the
--- configuration files corresponding to that path do not have to be read,
--- because that part of the configuration will be hardcoded. Useful for examples
--- and simple projects, to be able to test that we never read something that is not
--- needed.
+-- | Removes a path from a 'LocationTree'.
 subtractPathFromTree :: LocationTree a -> LocationTreePath -> LocationTree a
 subtractPathFromTree tree path = tree & inLocTree path .~ Nothing
 
