@@ -177,6 +177,9 @@ rscTreeToEmbeddedDataTree = over filteredLocsInTree keepOpts
       where intent = vfileDescIntent $ getVirtualFileDescription vfile
     keepOpts n = Just n
 
+variablesSection :: T.Text
+variablesSection = "variables"
+
 embeddedDataSection :: T.Text
 embeddedDataSection = "data"
 
@@ -203,27 +206,27 @@ embeddedDataTreeToJSONFields thisPath (LocationTree mbOpts sub) =
 
 -- | A 'VirtualResourceTree' associated with the mapping that should be applied
 -- to it. This is the way to serialize and deserialize a resource tree
-data ResourceTreeAndMappings =
-  ResourceTreeAndMappings VirtualResourceTree
-                          (Either Loc LocationMappings)
+data ResourceTreeAndMappings = ResourceTreeAndMappings
+  { rtamResourceTree :: VirtualResourceTree
+  , rtamMappings     :: Either Loc LocationMappings
+  , rtamVariables    :: HM.HashMap T.Text T.Text }
 
 -- ResourceTreeAndMappings is only 'ToJSON' and not 'FromJSON' because we need
 -- more context to deserialize it. It is done by rscTreeConfigurationReader
 instance ToJSON ResourceTreeAndMappings where
-  toJSON (ResourceTreeAndMappings tree mappings) = Object $
+  toJSON (ResourceTreeAndMappings tree mappings variables) = Object $
+    (case rscTreeToEmbeddedDataTree tree of
+      Just t  -> HM.fromList $ embeddedDataTreeToJSONFields embeddedDataSection t
+      Nothing -> HM.empty)
+    <>
     (case rscTreeToMappings tree of
        Just m ->
-         HM.singleton mappingsSection $ toJSON' $ case mappings of
+         HM.singleton mappingsSection $ toJSON $ case mappings of
            Right m'     -> m'
            Left rootLoc -> mappingRootOnly rootLoc <> m
        Nothing -> HM.empty)
     <>
-    (case rscTreeToEmbeddedDataTree tree of
-      Just t  -> HM.fromList $ embeddedDataTreeToJSONFields embeddedDataSection t
-      Nothing -> HM.empty)
-    where
-      toJSON' :: LocationMappings -> Value
-      toJSON' = toJSON
+    (HM.singleton variablesSection $ toJSON variables)
 
 -- ** Reading virtual resource trees from the input
 
@@ -234,7 +237,7 @@ rscTreeConfigurationReader
   :: ResourceTreeAndMappings
   -> CLIOverriding ResourceTreeAndMappings
                    (LocationTree (VirtualFileNode, Maybe (RecOfOptions SourcedDocField)))
-rscTreeConfigurationReader (ResourceTreeAndMappings defTree _) =
+rscTreeConfigurationReader (ResourceTreeAndMappings{rtamResourceTree=defTree}) =
   CLIOverriding overridesParser_ nullOverrides_ overrideCfgFromYamlFile_
   where
     overridesParser_ = traverseOf (traversed . _2 . _Just) parseOptions $
@@ -250,24 +253,29 @@ rscTreeConfigurationReader (ResourceTreeAndMappings defTree _) =
     nullRec (RecOfOptions RNil) = True
     nullRec _                   = False
 
-    overrideCfgFromYamlFile_ aesonCfg optsTree =
-      ([], ResourceTreeAndMappings
-           <$> traverseOf traversedTreeWithPath (integrateAesonCfg aesonCfg) optsTree
-           <*> case aesonCfg of
-                 Object (HM.lookup mappingsSection -> Just m) ->
-                   Right <$> parseJSONEither m  -- mappings is an Either field
-                                                -- in ResourceTreeAndMappings
-                 _ -> Left $
-                   "Section '" ++ T.unpack mappingsSection
-                   ++ "' not found in the config file")
+    overrideCfgFromYamlFile_ (Object aesonCfg) embeddedDataTree = ([], rtam)
+      where
+        dataSectionContent = HM.lookup embeddedDataSection aesonCfg
+        mappingsSectionContent = HM.lookup mappingsSection aesonCfg
+        variablesSectionContent = HM.lookup variablesSection aesonCfg
+        rtam = ResourceTreeAndMappings
+          <$> traverseOf traversedTreeWithPath
+                (replaceWithDataFromConfig dataSectionContent) embeddedDataTree
+          <*> (case mappingsSectionContent of
+                 Just m -> Right <$> parseJSONEither m
+                 _      -> pure $ Right mempty)
+          <*> (case variablesSectionContent of
+                 Just m -> parseJSONEither m
+                 _      -> pure mempty)
+    overrideCfgFromYamlFile_ _ _ = ([], Left "Configuration file doesn't contain a JSON object")
 
-    integrateAesonCfg
-      :: Value
+    replaceWithDataFromConfig
+      :: Maybe Value  -- The content of the embedded data section
       -> (LocationTreePath, (VirtualFileNode, Maybe (RecOfOptions SourcedDocField)))
       -> Either String VirtualFileNode
-    integrateAesonCfg aesonCfg (LTP path, (node@(VirtualFileNode vf), mbRecFromCLI)) =
-      let mbAesonValInCfg = findInAesonVal (LTPI embeddedDataSection : path) aesonCfg
-      in case mbAesonValInCfg of
+    replaceWithDataFromConfig (Just dataSectionContent)
+                              (LTP path, (node@(VirtualFileNode vf), mbRecFromCLI)) =
+      case findInAesonVal path dataSectionContent of
           Right v -> case mbRecFromCLI of
             Just (RecOfOptions recFromCLI) -> do
               -- YAML: yes, CLI: yes
@@ -287,7 +295,7 @@ rscTreeConfigurationReader (ResourceTreeAndMappings defTree _) =
             Nothing ->
               -- YAML: no, CLI: no
               return node
-    integrateAesonCfg _ (_, (node, _)) = return node
+    replaceWithDataFromConfig _ (_, (node, _)) = return node
 
     findInAesonVal path = go path
       where
@@ -300,24 +308,28 @@ rscTreeConfigurationReader (ResourceTreeAndMappings defTree _) =
 -- tree with physical locations attached)
 
 -- | Transform a virtual file node in file node with definite physical
--- locations.
-applyOneRscMapping :: [LocWithVars] -> VirtualFileNode -> Bool -> PhysicalFileNode
-applyOneRscMapping configLayers (VirtualFileNode vf) mappingIsExplicit = PhysicalFileNode layers vf
+-- locations. Splices in the locs the variables that can be spliced.
+applyOneRscMapping :: HM.HashMap T.Text T.Text -> [LocWithVars] -> VirtualFileNode -> Bool -> PhysicalFileNode
+applyOneRscMapping variables configLayers (VirtualFileNode vf) mappingIsExplicit =
+  PhysicalFileNode layers vf
   where
-    First defExt = _serialDefaultExt $ _vfileSerials vf
+    variables' = HM.fromList $ map (\(k,v) -> (T.unpack k, T.unpack v)) $ HM.toList variables
+    configLayers' = map (spliceLocVariables variables') configLayers
+    First defExt = vf ^. vfileSerials . serialDefaultExt
     intent = vfileDescIntent $ getVirtualFileDescription vf
     layers | not mappingIsExplicit, Just VFForCLIOptions <- intent = []
              -- Options usually present in the config file need an _explicit_
              -- mapping to be present in the config file, if we want them to be
              -- read from external files instead
-           | otherwise = map resolveExt configLayers
+           | otherwise = map resolveExt configLayers'
     resolveExt loc = addExtToLocIfMissing loc $ T.unpack $ fromMaybe "" defExt
-applyOneRscMapping _ _ _ = MbPhysicalFileNode Nothing
+applyOneRscMapping _ _ _ _ = MbPhysicalFileNode Nothing
 
--- | Binding a 'VirtualResourceTree'
-applyMappingsToResourceTree :: ResourceTreeAndMappings -> PhysicalResourceTree
-applyMappingsToResourceTree (ResourceTreeAndMappings tree mappings) =
-  applyMappings applyOneRscMapping m' tree
+-- | Binds together a 'VirtualResourceTree' with physical locations an splices
+-- in the variables read from the configuration.
+getPhysicalResourceTreeFromMappings :: ResourceTreeAndMappings -> PhysicalResourceTree
+getPhysicalResourceTreeFromMappings (ResourceTreeAndMappings tree mappings variables) =
+  applyMappings (applyOneRscMapping variables) m' tree
   where
     m' = case mappings of
            Right m      -> m
