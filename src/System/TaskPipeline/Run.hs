@@ -116,28 +116,29 @@ bindResourceTreeAndRun _ (NoConfig root) tree f =
   selectRun root True $
     runLogger defaultLoggerScribeParams $
       f RunPipeline $
-        applyMappingsToResourceTree $ ResourceTreeAndMappings tree (Left root)
+        getPhysicalResourceTreeFromMappings $ ResourceTreeAndMappings tree (Left root) mempty
 bindResourceTreeAndRun progName (FullConfig defConfigFile defRoot) tree f =
   withCliParser progName "Run a task pipeline" getParser run
   where
     getParser mbConfigFile =
       pipelineCliParser rscTreeConfigurationReader progName
         (fromMaybe defConfigFile mbConfigFile)
-        (ResourceTreeAndMappings tree $ Left defRoot)
-    run tam@(ResourceTreeAndMappings _ mappings') cmd lsp logItems =
+        (ResourceTreeAndMappings tree (Left defRoot) mempty)
+    run rtam@(ResourceTreeAndMappings{rtamMappings=mappings'}) cmd lsp logItems =
       selectRun refLoc True $
         runLogger lsp $ do
           katipAddNamespace "pipelineConfig" $
             forM_ logItems $ \(lvl, msg) ->
               $(logTM) lvl msg
-          f cmd $ applyMappingsToResourceTree tam
+          f cmd $ getPhysicalResourceTreeFromMappings rtam
       where
         refLoc = case mappings' of
-          Left rootLoc -> rootLoc
+          Left rootLoc -> fmap (const ()) rootLoc
           Right m      -> refLocFromMappings m
 
-refLocFromMappings :: LocationMappings a -> Loc
-refLocFromMappings m = foldr f (LocalFile "") (allLocsInMappings m)
+refLocFromMappings :: LocationMappings -> Loc_ ()
+refLocFromMappings m = foldr f (LocalFile $ LocFilePath () "")
+                               (map (fmap (const ())) $ allLocsInMappings m)
   where
     f a@(S3Obj{}) _ = a
     f _ b@(S3Obj{}) = b

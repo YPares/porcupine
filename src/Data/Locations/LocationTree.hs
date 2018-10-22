@@ -34,7 +34,6 @@ module Data.Locations.LocationTree
   , singLTP
   , showLTPIName
   , ltpiName
-  , addExtToLocIfMissing
   , locNode, folderNode, fileEmpty, file
   , splitLocTree, joinLocTrees
   , locTreeToDataTree
@@ -50,7 +49,6 @@ import           Data.Binary
 import           Data.Hashable
 import qualified Data.HashMap.Strict as HM
 import           Data.List
-import           Data.Locations.Loc
 import           Data.Maybe
 import           Data.Representable
 import           Data.String
@@ -218,13 +216,6 @@ file i a = i :/ LocationTree a mempty
 
 instance (Monoid a) => IsString (LTPIAndSubtree a) where
   fromString = fileEmpty . fromString
-
-addExtToLocIfMissing :: Loc -> T.Text -> Loc
-addExtToLocIfMissing loc ext | T.null (loc^.locExt) =
-  if T.null ext
-     then loc
-     else loc & locExt .~ ext
-addExtToLocIfMissing loc _ = loc
 
 -- | Like Either, but equipped with a Monoid instance that would prioritize Right over Left
 data a :|| b = Unprioritized a | Prioritized b

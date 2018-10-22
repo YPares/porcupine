@@ -29,7 +29,6 @@ haskell_library(
             "//hackage:data-default",
             "//hackage:deepseq",
             "//hackage:directory",
-            "//hackage:distributed-closure",
             "//hackage:exceptions",
             "//hackage:filepath",
             "//hackage:formatting",

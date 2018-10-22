@@ -2,16 +2,13 @@
 
 module Data.Locations.RepetitionKeys where
 
-import           Control.Lens                hiding ((<.>))
 import           Data.Hashable               (Hashable)
 import qualified Data.HashMap.Strict         as HM
-import           Data.List                   (intercalate)
 import           Data.Locations.Loc
 import           Data.Locations.LogAndErrors
 import           Data.Monoid
 import           Data.String                 (IsString)
 import qualified Data.Text                   as T
-import qualified System.FilePath             as P
 
 
 -- | Some 'VirtualFile's can be accessed in tasks that will be part of a
@@ -28,21 +25,14 @@ instance Show RepetitionKey where
 -- | 'RepetitionKey's associated with their current values.
 type RepetitionKeyMap = HM.HashMap RepetitionKey T.Text
 
--- | A reordered RepetitionKeyMap
+-- | A reordered 'RepetitionKeyMap'
 type RepetitionKeyValList = [(RepetitionKey, Maybe T.Text)]
 
--- | Adds the values of the repetition keys to the loc filename. This processing
--- should be parameterizable (for instance in the mapping list, the user should
--- be able to select between 'suffix', 'replace' etc to select how the rkeys
--- values should alter the file name).
-suffixLocWithRKeys :: [(RepetitionKey, T.Text)] -> Loc -> Loc
-suffixLocWithRKeys [] loc = loc
-suffixLocWithRKeys rkeys loc = dir </> (fname ++ "-" ++ vals) <.> T.unpack ext
+-- | Adds the values of the repetition keys to the loc filename.
+spliceRKeysInLoc :: [(RepetitionKey, T.Text)] -> LocWithVars -> LocWithVars
+spliceRKeysInLoc rkeys = spliceLocVariables hm
   where
-    vals = intercalate "-" $ map (T.unpack . snd) rkeys
-    dir = takeDirectory loc
-    fname = P.dropExtension $ P.takeFileName (loc ^. locPath)
-    ext = loc ^. locExt
+    hm = HM.fromList $ map (\(RepetitionKey k, v) -> (T.unpack k, T.unpack v)) rkeys
 
 -- | Fills the missing values in the 'RepetitionKeyValList' with the content of
 -- the 'RepetitionKeyMap'
@@ -50,7 +40,7 @@ fillRKeyValList :: RepetitionKeyValList -> RepetitionKeyMap -> RepetitionKeyValL
 fillRKeyValList required keyMap = map findOne required
   where findOne (k, v) = (k, getFirst $ First v <> First (HM.lookup k keyMap))
 
--- | Throws errors if not all the keys in the
+-- | Throws errors if not all the keys are associated to a value
 terminateRKeyValList :: (MonadThrow m, KatipContext m)
                      => RepetitionKeyValList -> m [(RepetitionKey, T.Text)]
 terminateRKeyValList rkeys = do

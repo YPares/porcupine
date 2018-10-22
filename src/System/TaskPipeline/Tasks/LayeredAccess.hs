@@ -81,7 +81,7 @@ err vfile s = throwWithPrefix $ "accessVirtualFile (" ++ showVFilePath vfile ++ 
 -- expose this path as a requirement (hence the result list may be empty, as no
 -- mapping might exist). SHOULD NOT BE USED UNLESS loadData/writeData cannot do
 -- what you want.
-getLocsMappedTo :: (Monad m) => [LocationTreePathItem] -> PTask m () [Loc]
+getLocsMappedTo :: (Monad m) => [LocationTreePathItem] -> PTask m () [LocWithVars]
 getLocsMappedTo path = PTask mempty (\(_,tree) -> return (getLocs tree, tree))
   where
     getLocs tree =
