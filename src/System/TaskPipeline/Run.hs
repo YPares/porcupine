@@ -112,9 +112,9 @@ bindResourceTreeAndRun
       => PipelineCommand r -> PhysicalResourceTree -> m r)
              -- ^ What to do with the model
   -> IO r
-bindResourceTreeAndRun _ (NoConfig root) tree f =
+bindResourceTreeAndRun progName (NoConfig root) tree f =
   selectRun root True $
-    runLogger defaultLoggerScribeParams $
+    runLogger progName defaultLoggerScribeParams $
       f RunPipeline $
         getPhysicalResourceTreeFromMappings $ ResourceTreeAndMappings tree (Left root) mempty
 bindResourceTreeAndRun progName (FullConfig defConfigFile defRoot) tree f =
@@ -126,7 +126,7 @@ bindResourceTreeAndRun progName (FullConfig defConfigFile defRoot) tree f =
         (ResourceTreeAndMappings tree (Left defRoot) mempty)
     run rtam@(ResourceTreeAndMappings{rtamMappings=mappings'}) cmd lsp logItems =
       selectRun refLoc True $
-        runLogger lsp $ do
+        runLogger progName lsp $ do
           katipAddNamespace "pipelineConfig" $
             forM_ logItems $ \(lvl, msg) ->
               $(logTM) lvl msg

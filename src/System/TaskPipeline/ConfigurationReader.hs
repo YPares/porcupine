@@ -25,9 +25,8 @@ import qualified Data.Text                          as T
 import qualified Data.Text.Encoding                 as T
 import qualified Data.Yaml                          as Y
 import           Options.Applicative
-import           System.TaskPipeline.Logger         (LoggerScribeParams (..),
-                                                     Severity (..),
-                                                     Verbosity (..))
+import           System.TaskPipeline.Logger
+
 
 -- | How to override a YAML file config from the command-line to return some
 -- config type @cfg@
@@ -48,23 +47,27 @@ parseScribeParams = LoggerScribeParams
   <$> ((option (eitherReader severityParser)
           (  long "severity"
           <> help "Control exactly which minimal severity level will be logged (used instead of -q)"))
-      <|>
-      (numToSeverity . length <$>
-        (many
-          (flag' ()
-            (  short 'q'
-            <> help "Print only warnings (-q) or errors (-qq)")))))
+       <|>
+       (numToSeverity . length <$>
+         (many
+           (flag' ()
+             (  short 'q'
+             <> help "Print only warnings (-q) or errors (-qq)")))))
   <*> (numToVerbosity . length <$>
         (many
           (flag' ()
             (  long "verbose"
             <> short 'v'
             <> help "Controls the amount of information to display for each logged message"))))
+  <*> (option (eitherReader loggerFormatParser)
+        ( long "log-format"
+        <> help "Selects a format for the log: 'simple' (default), 'bracket' or 'json'"
+        <> value SimpleLog))
   where
     numToSeverity 0 = InfoS
     numToSeverity 1 = WarningS
     numToSeverity 2 = ErrorS
-    numToSeverity _ = EmergencyS -- by convention for no output
+    numToSeverity _ = EmergencyS
     severityParser = \case
         "debug" -> Right DebugS
         "info" -> Right InfoS
@@ -73,12 +76,16 @@ parseScribeParams = LoggerScribeParams
         "error" -> Right ErrorS
         "critical" -> Right CriticalS
         "alert" -> Right AlertS
-        "emergency" -> Right EmergencyS -- by convention for no output
+        "emergency" -> Right EmergencyS
         s -> Left $ s ++ " isn't a valid severity level"
     numToVerbosity 0 = V0
     numToVerbosity 1 = V0
     numToVerbosity 2 = V2
     numToVerbosity _ = V3
+    loggerFormatParser "simple"  = Right SimpleLog
+    loggerFormatParser "bracket" = Right BracketLog
+    loggerFormatParser "json"    = Right JSONLog
+    loggerFormatParser s         = Left $ s ++ " isn't a valid log format"
 
 -- | Modifies a CLI parsing so it features verbosity and severity flags
 addScribeParamsParsing :: ConfigurationReader cfg ovs -> ConfigurationReader (LoggerScribeParams, cfg) (LoggerScribeParams, ovs)
