@@ -217,19 +217,18 @@ handleOptions progName configFile mbCfg defCfg cliOverriding mbCmd saveOverrides
 
 mergeWithDefault :: [T.Text] -> Y.Value -> Y.Value -> ([PostParsingAction], Y.Value)
 mergeWithDefault path (Object o1) (Object o2) =
-  let newKeys = fmap fst . HashMap.toList $ HashMap.difference o2 o1
-      warnings = fmap (\key -> PostParsingLog WarningS $ logStr $
-                    "The key " <> T.intercalate "." (key:path) <>
-                    " is present in the config but not in the schema." <>
-                    " This is probably an error")
-                  newKeys
-      (subWarnings, merged)
-        = sequenceA $ HashMap.unionWithKey
-                        (\key (_,v1) (_,v2) -> mergeWithDefault (key:path) v1 v2)
-                        (fmap pure o1)
-                        (fmap pure o2)
-  in
-  (warnings ++ subWarnings, Object merged)
+  let newKeys = HashMap.keys $ o2 `HashMap.difference` o1
+      warnings = map (\key -> PostParsingLog DebugS $ logStr $
+                       "The key '" <> T.intercalate "." (reverse $ key:path) <>
+                       "' isn't present in the default configuration. " <>
+                       "Please make sure it isn't a typo.")
+                     newKeys
+      (subWarnings, merged) =
+        sequenceA $ HashMap.unionWithKey
+                      (\key (_,v1) (_,v2) -> mergeWithDefault (key:path) v1 v2)
+                      (fmap pure o1)
+                      (fmap pure o2)
+  in (warnings ++ subWarnings, Object merged)
 mergeWithDefault _ _ v = pure v
 
 -- | Tries to read a yaml filepath on CLI, then a JSON path, then command line
