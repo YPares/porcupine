@@ -200,7 +200,8 @@ instance IsLocString LocString where
 -- | The main way to parse a 'Loc_'.
 parseURL :: (IsLocString a) => String -> Either String (Loc_ a)
 parseURL litteralPath = do
-  pathUrl <- maybe (Left "") Right $ URL.importURL litteralPath
+  pathUrl <- maybe (Left $ "parseURL: Invalid URL '" ++ litteralPath ++ "'") Right $
+             URL.importURL litteralPath
   case URL.url_type pathUrl of
     URL.Absolute h ->
       case URL.protocol h of
