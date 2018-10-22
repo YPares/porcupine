@@ -373,12 +373,12 @@ resolveDataAccess (PhysicalFileNode layers vf) = do
       katipAddContext (sl "locationAccessed" $ show loc) $ do
         loc' <- fillLoc rkeys repetKeyMap loc
         f input loc'
-        logFM InfoS $ logStr $ "Successfully wrote file '" ++ show loc' ++ "'"
+        logFM NoticeS $ logStr $ "Wrote '" ++ show loc' ++ "'"
     layersRes <- mconcat <$> forM readLocs (\(ReadFromLoc rkeys f, loc) ->
       katipAddContext (sl "locationAccessed" $ show loc) $ do
         loc' <- fillLoc rkeys repetKeyMap loc
         r <- f loc'
-        logFM InfoS $ logStr $ "Successfully read file '" ++ show loc' ++ "'"
+        logFM DebugS $ logStr $ "Read '" ++ show loc' ++ "'"
         return r)
     return $ case vf ^? vfileEmbeddedValue of
       Just v  -> layersRes <> v
