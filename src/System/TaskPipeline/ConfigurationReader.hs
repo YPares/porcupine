@@ -1,6 +1,5 @@
 {-# LANGUAGE FlexibleContexts  #-}
 {-# LANGUAGE GADTs             #-}
-{-# LANGUAGE LambdaCase        #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RecordWildCards   #-}
 {-# LANGUAGE TupleSections     #-}
@@ -11,7 +10,6 @@ module System.TaskPipeline.ConfigurationReader
   , docRecBasedConfigurationReader
   , genericAesonBasedConfigurationReader
   , parseJSONEither
-  , addScribeParamsParsing
   ) where
 
 import           Control.Applicative
@@ -25,7 +23,6 @@ import qualified Data.Text                          as T
 import qualified Data.Text.Encoding                 as T
 import qualified Data.Yaml                          as Y
 import           Options.Applicative
-import           System.TaskPipeline.Logger
 
 
 -- | How to override a YAML file config from the command-line to return some
@@ -39,62 +36,6 @@ data ConfigurationReader cfg overrides = ConfigurationReader
       :: A.Value -> overrides -> ([String], Either String cfg)
   -- ^ How to override the config read from YAML file. Returns: (Warnings,
   -- Overriden config or an error).
-  }
-
--- | Parses the CLI options that will be given to Katip's logger scribe
-parseScribeParams :: Parser LoggerScribeParams
-parseScribeParams = LoggerScribeParams
-  <$> ((option (eitherReader severityParser)
-          (  long "severity"
-          <> help "Control exactly which minimal severity level will be logged (used instead of -q)"))
-       <|>
-       (numToSeverity . length <$>
-         (many
-           (flag' ()
-             (  short 'q'
-             <> help "Print only warnings (-q) or errors (-qq)")))))
-  <*> (numToVerbosity . length <$>
-        (many
-          (flag' ()
-            (  long "verbose"
-            <> short 'v'
-            <> help "Controls the amount of information to display for each logged message"))))
-  <*> (option (eitherReader loggerFormatParser)
-        ( long "log-format"
-        <> help "Selects a format for the log: 'simple' (default), 'bracket' or 'json'"
-        <> value SimpleLog))
-  where
-    numToSeverity 0 = InfoS
-    numToSeverity 1 = WarningS
-    numToSeverity 2 = ErrorS
-    numToSeverity _ = EmergencyS
-    severityParser = \case
-        "debug" -> Right DebugS
-        "info" -> Right InfoS
-        "notice" -> Right NoticeS
-        "warning" -> Right WarningS
-        "error" -> Right ErrorS
-        "critical" -> Right CriticalS
-        "alert" -> Right AlertS
-        "emergency" -> Right EmergencyS
-        s -> Left $ s ++ " isn't a valid severity level"
-    numToVerbosity 0 = V0
-    numToVerbosity 1 = V0
-    numToVerbosity 2 = V2
-    numToVerbosity _ = V3
-    loggerFormatParser "simple"  = Right SimpleLog
-    loggerFormatParser "bracket" = Right BracketLog
-    loggerFormatParser "json"    = Right JSONLog
-    loggerFormatParser s         = Left $ s ++ " isn't a valid log format"
-
--- | Modifies a CLI parsing so it features verbosity and severity flags
-addScribeParamsParsing :: ConfigurationReader cfg ovs -> ConfigurationReader (LoggerScribeParams, cfg) (LoggerScribeParams, ovs)
-addScribeParamsParsing super = ConfigurationReader
-  { overridesParser = (,) <$> parseScribeParams <*> overridesParser super
-  , nullOverrides = \(_, ovs) -> nullOverrides super ovs
-  , overrideCfgFromYamlFile = \yaml (scribeParams, ovs) ->
-      let (warns, res) = overrideCfgFromYamlFile super yaml ovs
-      in (warns, (scribeParams,) <$> res)
   }
 
 -- | defCfg must be a 'DocRec' here. Uses it to generate one option per field in

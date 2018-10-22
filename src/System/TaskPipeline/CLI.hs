@@ -1,5 +1,6 @@
 {-# LANGUAGE ExistentialQuantification #-}
 {-# LANGUAGE GADTs                     #-}
+{-# LANGUAGE LambdaCase                #-}
 {-# LANGUAGE OverloadedStrings         #-}
 {-# LANGUAGE RankNTypes                #-}
 {-# LANGUAGE TupleSections             #-}
@@ -159,6 +160,78 @@ pureCliParser progName mcfg configFile defCfg cfgCLIParsing cmds defCmd =
            <> help ("Save overrides in the " <> configFile <> " before running.") )) <*>
    overridesParser cliOverriding
   where cliOverriding = addScribeParamsParsing cfgCLIParsing
+
+severityShortcuts :: Parser Severity
+severityShortcuts =
+  numToSeverity <$> liftA2 (-)
+    (length <$>
+      (many
+        (flag' ()
+          (  short 'q'
+          <> long "quiet"
+          <> help "Print only warning (-q) or error (-qq) messages. Cancels out with -v."))))
+    (length <$>
+      (many
+        (flag' ()
+          (  long "verbose"
+          <> short 'v'
+          <> help "Print info (-v) and debug (-vv) messages. Cancels out with -q."))))
+  where
+    numToSeverity (-1) = InfoS
+    numToSeverity 0 = NoticeS
+    numToSeverity 1 = WarningS
+    numToSeverity 2 = ErrorS
+    numToSeverity 3 = CriticalS
+    numToSeverity 4 = AlertS
+    numToSeverity x | x>0 = EmergencyS
+                    | otherwise = DebugS
+
+-- | Parses the CLI options that will be given to Katip's logger scribe
+parseScribeParams :: Parser LoggerScribeParams
+parseScribeParams = LoggerScribeParams
+  <$> ((option (eitherReader severityParser)
+          (  long "severity"
+          <> help "Control exactly which minimal severity level will be logged (used instead of -q or -v)"))
+       <|>
+       severityShortcuts)
+  <*> (numToVerbosity <$>
+       option auto
+         (  long "context-verb"
+         <> help "A number from 0 to 3 (default: 0). Controls the amount of context to show per log line"
+         <> value (0 :: Int)))
+  <*> (option (eitherReader loggerFormatParser)
+        (  long "log-format"
+        <> help "Selects a format for the log: 'simple' (default), 'bracket' or 'json'"
+        <> value SimpleLog))
+  where
+    severityParser = \case
+        "debug" -> Right DebugS
+        "info" -> Right InfoS
+        "notice" -> Right NoticeS
+        "warning" -> Right WarningS
+        "error" -> Right ErrorS
+        "critical" -> Right CriticalS
+        "alert" -> Right AlertS
+        "emergency" -> Right EmergencyS
+        s -> Left $ s ++ " isn't a valid severity level"
+    numToVerbosity 0 = V0
+    numToVerbosity 1 = V0
+    numToVerbosity 2 = V2
+    numToVerbosity _ = V3
+    loggerFormatParser "simple"  = Right SimpleLog
+    loggerFormatParser "bracket" = Right BracketLog
+    loggerFormatParser "json"    = Right JSONLog
+    loggerFormatParser s         = Left $ s ++ " isn't a valid log format"
+
+-- | Modifies a CLI parsing so it features verbosity and severity flags
+addScribeParamsParsing :: ConfigurationReader cfg ovs -> ConfigurationReader (LoggerScribeParams, cfg) (LoggerScribeParams, ovs)
+addScribeParamsParsing super = ConfigurationReader
+  { overridesParser = (,) <$> parseScribeParams <*> overridesParser super
+  , nullOverrides = \(_, ovs) -> nullOverrides super ovs
+  , overrideCfgFromYamlFile = \yaml (scribeParams, ovs) ->
+      let (warns, res) = overrideCfgFromYamlFile super yaml ovs
+      in (warns, (scribeParams,) <$> res)
+  }
 
 -- | Some action to be carried out after the parser is done. Writing the config
 -- file is done here, as is the logging of config.
