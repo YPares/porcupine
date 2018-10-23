@@ -201,7 +201,7 @@ parseScribeParams = LoggerScribeParams
          <> value (0 :: Int)))
   <*> (option (eitherReader loggerFormatParser)
         (  long "log-format"
-        <> help "Selects a format for the log: 'pretty' (default, only for human consumption), 'json' or 'bracket'"
+        <> help "Selects a format for the log: 'pretty' (default, only for human consumption), 'compact' (pretty but more compact), 'json' or 'bracket'"
         <> value PrettyLog))
   where
     severityParser = \case
@@ -219,6 +219,7 @@ parseScribeParams = LoggerScribeParams
     numToVerbosity 2 = V2
     numToVerbosity _ = V3
     loggerFormatParser "pretty"  = Right PrettyLog
+    loggerFormatParser "compact" = Right CompactLog
     loggerFormatParser "json"    = Right JSONLog
     loggerFormatParser "bracket" = Right BracketLog
     loggerFormatParser s         = Left $ s ++ " isn't a valid log format"

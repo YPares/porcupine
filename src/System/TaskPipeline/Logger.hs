@@ -12,24 +12,25 @@ module System.TaskPipeline.Logger
   , runLogger
   ) where
 
-import           Control.Monad.Catch     (MonadMask, bracket)
-import           Control.Monad.IO.Class  (MonadIO, liftIO)
+import           Control.Monad.Catch      (MonadMask, bracket)
+import           Control.Monad.IO.Class   (MonadIO, liftIO)
 import           Data.Aeson
 import           Data.Aeson.Encode.Pretty (encodePrettyToTextBuilder)
-import qualified Data.HashMap.Strict     as HM
+import           Data.Aeson.Text          (encodeToTextBuilder)
+import qualified Data.HashMap.Strict      as HM
 import           Data.String
-import           Data.Text               (Text)
-import           Data.Text.Lazy.Builder  hiding (fromString)
+import           Data.Text                (Text)
+import           Data.Text.Lazy.Builder   hiding (fromString)
 import           Katip
 import           Katip.Core
-import           Katip.Scribes.Handle
-import           System.IO               (stdout)
+import           System.IO                (stdout)
 
 
 -- | Switch between the different type of formatters for the log
 data LoggerFormat
   = PrettyLog  -- ^ Just shows the log messages, colored, with namespace and
                -- pretty-prints . For human consumption.
+  | CompactLog  -- ^ Like pretty, but prints JSON context just on one line
   | JSONLog  -- ^ JSON-formatted log, from katip
   | BracketLog  -- ^ Regular bracket log, from katip
   deriving (Eq, Show)
@@ -56,7 +57,8 @@ runLogger
 runLogger progName (LoggerScribeParams sev verb logFmt) x = do
     let logFmt' :: LogItem t => ItemFormatter t
         logFmt' = case logFmt of
-          PrettyLog  -> prettyFormat
+          PrettyLog  -> prettyFormat True
+          CompactLog -> prettyFormat False
           BracketLog -> bracketFormat
           JSONLog    -> jsonFormat
     handleScribe <- liftIO $
@@ -69,8 +71,8 @@ runLogger progName (LoggerScribeParams sev verb logFmt) x = do
 
 -- | Doesn't log time, host, file location etc. Colors the whole message and
 -- displays context AFTER the message.
-prettyFormat :: LogItem a => ItemFormatter a
-prettyFormat withColor verb Item{..} =
+prettyFormat :: LogItem a => Bool -> ItemFormatter a
+prettyFormat usePrettyJSON withColor verb Item{..} =
     colorize withColor "40" (mconcat $ map fromText $ intercalateNs _itemNamespace) <>
     fromText " " <>
     colorBySeverity' withColor _itemSeverity (mbSeverity <> unLogStr _itemMessage) <>
@@ -78,7 +80,9 @@ prettyFormat withColor verb Item{..} =
   where
     ctx = case toJSON $ payloadObject verb _itemPayload of
       Object hm | HM.null hm -> mempty
-      c -> fromText "\n" <> encodePrettyToTextBuilder c
+      c -> if usePrettyJSON
+        then fromText "\n" <> encodePrettyToTextBuilder c
+        else fromText " " <> encodeToTextBuilder c
     -- We display severity levels not distinguished by color
     mbSeverity = case _itemSeverity of
       CriticalS  -> fromText "[CRITICAL] "
