@@ -12,6 +12,7 @@ haskell_library(
     deps =
         [
             "//hackage:aeson",
+	    "//hackage:aeson-pretty",
             "//hackage:amazonka",
             "//hackage:amazonka-core",
             "//hackage:amazonka-s3",
