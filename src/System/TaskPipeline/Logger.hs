@@ -12,15 +12,18 @@ module System.TaskPipeline.Logger
   , runLogger
   ) where
 
-import           Control.Monad.Catch    (MonadMask, bracket)
-import           Control.Monad.IO.Class (MonadIO, liftIO)
+import           Control.Monad.Catch     (MonadMask, bracket)
+import           Control.Monad.IO.Class  (MonadIO, liftIO)
+import           Data.Aeson
+import           Data.Aeson.Text         (encodeToTextBuilder)
+import qualified Data.HashMap.Strict     as HM
 import           Data.String
-import           Data.Text              (Text)
-import           Data.Text.Lazy.Builder hiding (fromString)
+import           Data.Text               (Text)
+import           Data.Text.Lazy.Builder  hiding (fromString)
 import           Katip
 import           Katip.Core
 import           Katip.Scribes.Handle
-import           System.IO              (stdout)
+import           System.IO               (stdout)
 
 
 -- | Switch between the different type of formatters for the log
@@ -72,9 +75,11 @@ simpleFormat withColor verb Item{..} =
     fromText " " <>
     colorBySeverity' withColor _itemSeverity (mbSeverity <> unLogStr _itemMessage) <>
     fromText " " <>
-    colorize withColor "2" (mconcat ks)
+    colorize withColor "2" ctx
   where
-    ks = map brackets $ getKeys verb _itemPayload
+    ctx = case toJSON $ payloadObject verb _itemPayload of
+      Object hm | HM.null hm -> mempty
+      c -> encodeToTextBuilder c
     -- We display severity levels not distinguished by color
     mbSeverity = case _itemSeverity of
       CriticalS  -> fromText "[CRITICAL] "
