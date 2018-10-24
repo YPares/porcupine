@@ -24,7 +24,7 @@ already have.
 an `A` (ie. if you have a `SerialsFor A A`), then you can just use `dimap` to
 get a `SerialsFor B B` if you know how to convert `A` to & from `B`. Handling
 only one-way serialization or deserialization is perfectly possible, that just mean you
-will have `SerialsFor Void B` or `SerialsFor A ()`. Any `SerialsFor a b` is also
+will have `SerialsFor Void B` or `SerialsFor A ()` and use only lmap or rmap. Any `SerialsFor a b` is also
 a monoid, meaning that you can for instance gather default serials, or serials
 from an external source and add to them your custom serialization methods,
 before using it in a task pipeline.
@@ -41,7 +41,8 @@ pipeline so that it can deal with more different data sources.
 ## Resource tree
 
 Every task in Porcupine exposes a resource tree. This a morally a hierarchy of
-`VirtualFile`s, which the end user of the task pipeline can bind to physical
+`VirtualFiles`, which the end user of the task pipeline (the one who runs the executable)
+can bind to physical
 locations. However this tree isn't created manually by the developper of the
 pipeline, it's completely hidden from them. This tree is made of atomic bits
 (constructed by the primitive tasks) which are composed when tasks are composed
@@ -55,21 +56,22 @@ end:
 ```haskell
 myInput :: VirtualFile Void MyType
 	-- MyType must be an instance of FromJSON here
-myInput = dataSource ["Inputs", "MyInput"]
-	                 (somePureDeserial JSONSerial)
+myInput = dataSource ["Inputs", "MyInput"] -- A virtual path
+	             (somePureDeserial JSONSerial)
 ```
 
 And then, using `myInput` in a task pipeline is just a matter of calling the
-primitive task `accessVirtualFile myInput`. `accessVirtualFile` just turns a
+primitive task `accessVirtualFile myInput`, and the whole pipeline will expose
+a new `/Inputs/MyInput` virtual file. `accessVirtualFile` just turns a
 `VirtualFile a b` into a `PTask a b`.
 
 ## Tasks
 
-A `PTask` is an arrow. Atomic `PTask`s can access resources, as we saw, or
+A `PTask` is an arrow. Atomic `PTasks` can access resources, as we saw, or
 perform computations, as any pure function can be lifted. Each `PTask` will
-expose is requirements in the form of a resource tree, and a function that will
-actually execute the task when the pipeline runs. `PTask`s compose much like
-functions do, and they merge their requirements as they go.
+expose its requirements (in the form of a resource tree) and a function that will
+actually execute the task when the pipeline runs. `PTasks` compose much like
+functions do, and they merge their requirements as they compose.
 
 Once you have e.g. a `mainTask :: PTask () ()` that corresponds to your whole
 pipeline, your application just needs to call:
