@@ -22,8 +22,8 @@ already have.
 
 `SerialsFor` is a profunctor. That means that once you know how to (de)serialize
 an `A` (ie. if you have a `SerialsFor A A`), then you can just use `dimap` to
-get a `SerialsFor B B` if you know how to convert `A` to & from `B`. YouHandling
-only serialization or deserialization is perfectly possible, that just mean you
+get a `SerialsFor B B` if you know how to convert `A` to & from `B`. Handling
+only one-way serialization or deserialization is perfectly possible, that just mean you
 will have `SerialsFor Void B` or `SerialsFor A ()`. Any `SerialsFor a b` is also
 a monoid, meaning that you can for instance gather default serials, or serials
 from an external source and add to them your custom serialization methods,
