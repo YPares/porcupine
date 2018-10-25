@@ -17,7 +17,7 @@ jobs:
           command: stack setup
       - run:
           name: Building dependencies
-          command: stack build --only-snapshot --prefetch
+          command: stack test --only-snapshot --prefetch
       - save_cache:
           paths:
             - "~/.stack"
@@ -25,9 +25,9 @@ jobs:
       - run:
           name: Building
           command: stack build --pedantic
-      # - run:
-      #     name: Building tests
-      #     command: stack test --pedantic --no-run-tests
-      # - run:
-      #     name: Running tests
-      #     command: stack test funflow:unit-tests
+      - run:
+          name: Building tests
+          command: stack test --pedantic --no-run-tests
+      - run:
+          name: Running tests
+          command: stack test
