@@ -230,11 +230,15 @@ instance ToJSON ResourceTreeAndMappings where
 
 -- ** Reading virtual resource trees from the input
 
+data LayerOperator = ReplaceLayers | AddLayer
+
 type ResourceTreeAndMappingsOverrides =
-  ( LocationTree (VirtualFileNode, Maybe (RecOfOptions SourcedDocField))
-    -- The tree containing options parsed by optparse-applicative
-  , HM.HashMap T.Text T.Text
+  ( HM.HashMap T.Text T.Text
     -- The map of variables and their values read from CLI too
+  , [(LocationTreePath, LayerOperator, LocShortcut)]
+    -- Locations mapped to new layers
+  , LocationTree (VirtualFileNode, Maybe (RecOfOptions SourcedDocField))
+    -- The tree containing options parsed by optparse-applicative
   )
 
 -- | Reads the data from the input config file. Constructs the parser for the
@@ -246,7 +250,8 @@ rscTreeConfigurationReader
 rscTreeConfigurationReader (ResourceTreeAndMappings{rtamResourceTree=defTree}) =
   ConfigurationReader overridesParser_ nullOverrides_ overrideCfgFromYamlFile_
   where
-    overridesParser_ = (,) <$> treeOfOptsParser <*> variablesParser
+    overridesParser_ =
+      (,,) <$> variablesParser <*> mappingsParser <*> treeOfOptsParser
       where
         treeOfOptsParser = traverseOf (traversed . _2 . _Just) parseOptions $
                            fmap nodeAndRecOfOptions defTree
@@ -256,6 +261,20 @@ rscTreeConfigurationReader (ResourceTreeAndMappings{rtamResourceTree=defTree}) =
                <> help "Set a variable already present in the config file"))
         varBinding (T.splitOn "=" . T.pack -> [var,val]) = Right (var,val)
         varBinding _ = Left "Var binding must be of the form \"variable=value\""
+        mappingsParser =
+          many (option (eitherReader locBinding)
+                 (long "loc"
+               <> help "Map a virtual file path to a physical location"))
+        parseLocBinding vpath locOp loc = do
+          p <- fromTextRepr vpath
+          l <- parseJSONEither $ String loc
+          return (p,locOp,l)
+        locBinding (T.splitOn "=" . T.pack -> [vpath,loc]) =
+          parseLocBinding vpath ReplaceLayers loc
+        locBinding (T.splitOn "+=" . T.pack -> [vpath,loc]) =
+          parseLocBinding vpath AddLayer loc
+        locBinding _ =
+          Left "Location mapping must be of the form \"virtual_path(+)=physical_path\""
 
     nodeAndRecOfOptions :: VirtualFileNode -> (VirtualFileNode, Maybe DocRecOfOptions)
     nodeAndRecOfOptions n@(VirtualFileNode vf) = (n, vf ^? vfileAsBidir . vfileRecOfOptions)
@@ -264,21 +283,27 @@ rscTreeConfigurationReader (ResourceTreeAndMappings{rtamResourceTree=defTree}) =
     parseOptions (RecOfOptions r) = RecOfOptions <$>
       parseRecFromCLI (tagWithDefaultSource r)
 
-    nullOverrides_ (t,_) = allOf (traversed . _2 . _Just) nullRec t
+    nullOverrides_ (_,_,t) = allOf (traversed . _2 . _Just) nullRec t
     nullRec (RecOfOptions RNil) = True
     nullRec _                   = False
 
-    overrideCfgFromYamlFile_ (Object aesonCfg) (embeddedDataTree, cliVars) = ([], rtam)
+    overrideCfgFromYamlFile_ (Object aesonCfg) (cliVars, cliMappings, embeddedDataTree) = ([], rtam)
       where
         dataSectionContent = HM.lookup embeddedDataSection aesonCfg
         mappingsSectionContent = HM.lookup mappingsSection aesonCfg
         variablesSectionContent = HM.lookup variablesSection aesonCfg
+        addCLIMappings (LocationMappings_ yamlMappings) =
+          LocationMappings_ $ foldl addOne yamlMappings cliMappings
+          where
+            addOne mappings (path, locOp, loc) = HM.alter (go locOp loc) path mappings
+            go AddLayer loc (Just locs) = Just $ locs ++ [loc]
+            go _        loc _ = Just [loc]
         rtam = ResourceTreeAndMappings
           <$> traverseOf traversedTreeWithPath
                 (replaceWithDataFromConfig dataSectionContent) embeddedDataTree
-          <*> (case mappingsSectionContent of
-                 Just m -> Right <$> parseJSONEither m
-                 _      -> pure $ Right mempty)
+          <*> (Right . addCLIMappings <$> case mappingsSectionContent of
+                 Just m -> parseJSONEither m
+                 _      -> pure mempty)
           <*> ((cliVars <>) <$> case variablesSectionContent of
                  Just m -> parseJSONEither m
                  _      -> pure mempty)
