@@ -31,7 +31,7 @@ dependencies:
   - filepath
   - formatting
   - hashable
-  - katip
+  - katip >= 0.6.3
   - lens
   - monad-control
   - mtl
