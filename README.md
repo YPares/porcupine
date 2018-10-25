@@ -1,6 +1,6 @@
-[![CircleCI](https://circleci.com/gh/tweag/porcupine/tree/master.svg?style=svg)](https://circleci.com/gh/tweag/porcupine/tree/master)
-
 # Porcupine
+
+[![CircleCI](https://circleci.com/gh/tweag/porcupine/tree/master.svg?style=svg)](https://circleci.com/gh/tweag/porcupine/tree/master)
 
 Porcupine stands for _Portable, Reusable & Customizable Pipeline_. It
 is a tool aimed at data scientists and numerical analysts, so that
