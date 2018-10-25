@@ -53,3 +53,10 @@ dependencies:
 
 library:
   source-dirs: src
+
+tests:
+  doctest:
+    source-dirs: test
+    main: DocTest.hs
+    dependencies:
+      - doctest
