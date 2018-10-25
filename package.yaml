@@ -53,10 +53,19 @@ dependencies:
 
 library:
   source-dirs: src
-
+  
 tests:
   doctest:
     source-dirs: test
     main: DocTest.hs
     dependencies:
       - doctest
+      - text
+      - unordered-containers
+
+executables:
+  example1:
+    source-dirs: examples
+    main: Example1.hs
+    dependencies:
+      - porcupine

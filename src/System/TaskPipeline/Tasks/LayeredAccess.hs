@@ -15,6 +15,7 @@
 -- several files organized in layers for each location in the 'LocationTree'
 module System.TaskPipeline.Tasks.LayeredAccess
   ( loadData
+  , loadLast
   , writeData
   , accessVirtualFile
   , getLocsMappedTo
@@ -26,6 +27,7 @@ import           Prelude                          hiding (id, (.))
 import           Control.Lens
 import           Data.Locations
 import           Data.Typeable
+import           Data.Monoid
 import           System.TaskPipeline.PTask
 import           System.TaskPipeline.ResourceTree
 
@@ -41,6 +43,18 @@ loadData
   -> PTask m () a  -- ^ The resulting task
 loadData vf = arr (const $ error "loadData: THIS IS VOID")  -- Won't be evaluated
           >>> (accessVirtualFile $ makeSource vf)
+
+-- | Like 'loadData', but doesn't require your data to be a monoid. Will always
+-- load the last layer bound to the 'VirtualFile'.
+loadLast
+  :: (LocationMonad m, KatipContext m, Typeable a)
+  => VirtualFile ignored a -- ^ A 'DataSource'
+  -> PTask m () a  -- ^ The resulting task
+loadLast vf = loadData (rmap (Last . Just) vf') >>> arr get
+  where
+    vf' = vf & vfileUsage .~ MustBeMapped
+    get (Last (Just x)) = x
+    get _ = error "loadLast: THIS SHOULD NOT HAPPEN" -- Won't be evaluated
 
 -- | Uses only the write part of a 'VirtualFile'. It is therefore considered as
 -- a pure 'DataSink'.

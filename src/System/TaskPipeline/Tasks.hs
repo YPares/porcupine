@@ -5,9 +5,11 @@ module System.TaskPipeline.Tasks
   , module System.TaskPipeline.Tasks.Options
   , module System.TaskPipeline.Tasks.Repetition
   , module Data.Locations.LogAndErrors
+  , LocationMonad
   ) where
 
 import           Data.Locations.LogAndErrors
+import           Data.Locations.LocationMonad
 import           System.TaskPipeline.PTask
 import           System.TaskPipeline.ResourceTree
 import           System.TaskPipeline.Tasks.LayeredAccess

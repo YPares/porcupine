@@ -12,7 +12,7 @@
 {-# OPTIONS_GHC -Wall #-}
 
 module Data.Locations.Mappings
-  ( LocationMappings
+  ( LocationMappings, LocationMappings_(..)
   , HasDefaultMappingRule(..)
   , LocShortcut(..)
   , allLocsInMappings

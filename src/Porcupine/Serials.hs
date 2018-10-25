@@ -3,10 +3,12 @@ module Porcupine.Serials
   , VirtualFile(..)
   , BidirVirtualFile, DataSource, DataSink
   , LocationTreePathItem
+  , localFile
   , unusedByDefault, documentedFile
   , bidirVirtualFile, dataSource, dataSink
   , ensureBidirFile, makeSource, makeSink )
 where
 
+import Data.Locations.Loc
 import Data.Locations.SerializationMethod
 import Data.Locations.VirtualFile
