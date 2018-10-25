@@ -16,7 +16,6 @@ haskell_library(
             "//hackage:amazonka",
             "//hackage:amazonka-core",
             "//hackage:amazonka-s3",
-            "//hackage:amazonka-s3-streaming",
             "//hackage:base",
             "//hackage:basic-prelude",
             "//hackage:binary",
