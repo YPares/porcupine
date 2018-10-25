@@ -5,6 +5,7 @@ description: See README at <https://github.com/tweag/porcupine#README.md>
 maintainer: Yves Parès <yves.pares@tweag.io>
 github: tweag/porcupine
 category: Numerical, JSON
+copyright: 2018 EURL Tweag, NovaDiscovery
 
 ghc-options: -Wall
 
