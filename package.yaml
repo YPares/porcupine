@@ -15,7 +15,6 @@ dependencies:
   - amazonka
   - amazonka-core
   - amazonka-s3
-  - amazonka-s3-streaming
   - binary
   - binary-orphans
   - bytestring
