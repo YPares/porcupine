@@ -1,22 +1,25 @@
 # Porcupine
 
-Porcupine stands for _Portable, Reusable & Customizable Pipeline_. It is a tool
-aimed at data-scientists and numerical analysts, so they can express general
-data manipulation and analysis tasks in a way (1) that is agnostic from the
-source of the input data and from the destination of the end results, (2) that a
-pipeline can be re-executed in a different environment and on different data
-without recompiling, by
-just a shift in its configuration and (3) that composability is maintained (any
-task can always be reused as a subtask of a greater task pipeline).
+Porcupine stands for _Portable, Reusable & Customizable Pipeline_. It
+is a tool aimed at data scientists and numerical analysts, so that
+they can express general data manipulation and analysis tasks,
 
-Porcupine provides three frameworks that work together in that end: _serials_,
-_tasks_ and _resource trees_.
+1. in a way that is agnostic from the source of the input data and
+from the destination of the end results,
+2. such that a pipeline can be re-executed in a different environment
+and on different data without recompiling, by just a shift in its
+configuration,
+3. while maintaining composability (any task can always be reused as
+a subtask of a greater task pipeline).
+
+Porcupine provides three core abstractions: _serials_, _tasks_ and
+_resource trees_.
 
 ## Serials
 
 A `SerialsFor a b` encompasses functions to write data of type `a` and read data
 of type `b`. Porcupine provides a few serials if your datatype already
-implements standard serialization interfaces, such as `aeson`'s To/FromJSON or
+implements standard serialization interfaces, such as `aeson`'s `To/FromJSON` or
 `binary`, and makes it easy to reuse custom serialization functions you might
 already have.
 
