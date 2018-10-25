@@ -36,10 +36,7 @@ resolver: lts-12.14
 #  - auto-update
 #  - wai
 packages:
-# The following packages have been ignored due to incompatibility with the
-# resolver compiler, dependency conflicts with other packages
-# or unsatisfied dependencies.
-#- .
+- .
 
 # Dependency packages to be pulled from upstream that are not in the resolver
 # using the same syntax as the packages field.
@@ -48,6 +45,12 @@ extra-deps:
 - katip-0.6.3.0
 - url-2.1.3
 - streaming-conduit-0.1.2.2
+- git: https://github.com/brendanhay/amazonka
+  commit: b9ebf7f99dde4196117f44e1bf9bedf3fa468358
+  subdirs:
+    - amazonka
+    - core
+    - amazonka-s3
 
 # Override default flag values for local packages and extra-deps
 # flags: {}
