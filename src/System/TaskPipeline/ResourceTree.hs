@@ -391,6 +391,11 @@ resolveDataAccess
   => PhysicalFileNode
   -> m' (DataAccessNode m)
 resolveDataAccess (PhysicalFileNode layers vf) = do
+  case layers of
+    [] | vf ^. vfileUsage == MustBeMapped ->
+         throwM $ TaskConstructionError $
+         vpath ++ " requires to be mapped to a non-null location."
+    _ -> return ()
   writeLocs <- findFunctions writers
   readLocs <- findFunctions readers
   return $ DataAccessNode layers $ \repetKeyMap input -> do
@@ -409,6 +414,8 @@ resolveDataAccess (PhysicalFileNode layers vf) = do
       Just v  -> layersRes <> v
       Nothing -> layersRes
   where
+    vpath = T.unpack $ toTextRepr $ LTP $ vf ^. vfilePath
+    
     fillLoc rkeys repetKeyMap loc = do
       rkeys' <- terminateRKeyValList $ fillRKeyValList (fmap (,Nothing) rkeys) repetKeyMap
       traverse terminateLocString $ spliceRKeysInLoc rkeys' loc
@@ -429,7 +436,8 @@ resolveDataAccess (PhysicalFileNode layers vf) = do
           Just f -> return (f, loc)
           -- TODO: add VirtualFile path to error
           Nothing -> throwM $ TaskConstructionError $
-            show loc ++ " is bound to a VirtualFile that doesn't support extension '" ++ (loc^.locExt)
-            ++ "'. Accepted file extensions here are: " ++
+            show loc ++ " is bound to " ++ vpath ++
+            " which doesn't support extension '" ++ (loc^.locExt) ++
+            "'. Accepted file extensions here are: " ++
             mconcat (intersperse "," (map T.unpack $ HM.keys hm)) ++ "."
 resolveDataAccess _ = return $ MbDataAccessNode $ First Nothing

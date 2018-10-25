@@ -199,6 +199,7 @@ instance IsLocString LocString where
 
 -- | The main way to parse a 'Loc_'.
 parseURL :: (IsLocString a) => String -> Either String (Loc_ a)
+parseURL "." = Right $ LocalFile $ LocFilePath ("." ^. from locStringAsRawString) ""
 parseURL litteralPath = do
   pathUrl <- maybe (Left $ "parseURL: Invalid URL '" ++ litteralPath ++ "'") Right $
              URL.importURL litteralPath

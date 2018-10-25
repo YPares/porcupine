@@ -37,5 +37,7 @@ getOptions path defOpts = arr (const defOpts') >>> accessVirtualFile vfile >>> a
     post (Last (Just x)) = x
     vfile = bidirVirtualFile path $
       someBidirSerial (DocRecSerial defOpts' post (Last . Just))
+      -- TODO: merge properly the docrecs here instead of just using the last
+      -- one
       <>
       someBidirSerial JSONSerial
