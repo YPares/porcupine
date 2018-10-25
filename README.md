@@ -1,3 +1,5 @@
+[![CircleCI](https://circleci.com/gh/tweag/porcupine/tree/master.svg?style=svg)](https://circleci.com/gh/tweag/porcupine/tree/master)
+
 # Porcupine
 
 Porcupine stands for _Portable, Reusable & Customizable Pipeline_. It
