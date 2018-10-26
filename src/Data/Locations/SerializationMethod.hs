@@ -26,8 +26,8 @@ import           Data.DocRecord
 import           Data.DocRecord.OptParse       (RecordUsableWithCLI)
 import qualified Data.HashMap.Strict           as HM
 import           Data.Locations.Loc            as Loc
+import           Data.Locations.LocVariable
 import           Data.Locations.LocationMonad  as Loc
-import           Data.Locations.RepetitionKeys
 import           Data.Monoid                   (First (..))
 import qualified Data.Text                     as T
 import           Data.Typeable
@@ -51,7 +51,7 @@ singletonFromIntermediaryFn f = HM.singleton argTypeRep (FromIntermediaryFn f)
 
 -- | How to read an @a@ from some file, in any 'LocationMonad'.
 data ReadFromLoc a =
-  ReadFromLoc { _readFromLocRepetitionKeys :: [RepetitionKey]
+  ReadFromLoc { _readFromLocRepetitionKeys :: [LocVariable]
               , _readFromLocPerform        ::
                   (forall m. (LocationMonad m, KatipContext m)
                   => Loc -> m a)
@@ -120,7 +120,7 @@ singletonToIntermediaryFn f = HM.singleton (typeOf $ f undefined) (ToIntermediar
 
 -- | How to write an @a@ to some file, in any 'LocationMonad'.
 data WriteToLoc a = WriteToLoc
-  { _writeToLocRepetitionKeys :: [RepetitionKey]
+  { _writeToLocRepetitionKeys :: [LocVariable]
   , _writeToLocPerform ::
       (forall m. (LocationMonad m, KatipContext m)
       =>  a -> Loc -> m ())
@@ -380,7 +380,7 @@ customPureDeserial exts f = somePureDeserial $ CustomPureDeserial exts f
 
 -- | Traverses to the repetition keys stored in the access functions of a
 -- 'SerialsFor'
-serialsRepetitionKeys :: Traversal' (SerialsFor a b) [RepetitionKey]
+serialsRepetitionKeys :: Traversal' (SerialsFor a b) [LocVariable]
 serialsRepetitionKeys f (SerialsFor writers readers ext) =
   rebuild <$> (serialWritersToOutputFile . traversed . writeToLocRepetitionKeys) f writers
           <*> (serialReadersFromInputFile . traversed . readFromLocRepetitionKeys) f readers

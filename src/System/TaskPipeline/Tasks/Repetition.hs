@@ -18,7 +18,6 @@ import           Control.Monad
 import           Data.Aeson
 import qualified Data.HashMap.Strict                     as HM
 import           Data.Locations
-import qualified Data.Text                               as T
 import           Data.Typeable
 import           Katip
 import           Prelude                                 hiding ((.))
@@ -32,12 +31,12 @@ import           System.TaskPipeline.Tasks.LayeredAccess
 -- * Logging context for repeated tasks
 
 data TaskRepetitionContext = TRC
-  { _repetitionKey     :: RepetitionKey
+  { _repetitionKey     :: LocVariable
   , _repetitionKeyVal  :: String
   , _repetitionKeyVerb :: Verbosity }
 
 instance ToJSON TaskRepetitionContext where
-  toJSON (TRC (RepetitionKey k) i _) = object [ T.pack k .= i ]
+  toJSON (TRC k v _) = toJSON $ HM.singleton k v
 instance ToObject TaskRepetitionContext
 instance LogItem TaskRepetitionContext where
   payloadKeys v (TRC _ _ v') | v >= v' = AllKeys
@@ -81,18 +80,18 @@ type OSTask m i a b =
 mappingOverStream
   :: forall m i a b r.
      (KatipContext m, Show i)
-  => RepetitionKey                 -- ^ A key to indicate which repetition we're
-                                   -- at. Used by the logger and the read/write
-                                   -- code.
-  -> Maybe Verbosity               -- ^ The minimal vebosity level at which to
-                                   -- display the logger context. (Nothing if we
-                                   -- don't want to add context)
-  -> PTask m a b                   -- ^ The base task X to repeat
-  -> STask m i a b r               -- ^ A task that will repeat X it for each
-                                   -- input. Each input is associated to a
-                                   -- identifier that will be appended to
-                                   -- every Loc mapped to every leaf in the
-                                   -- LocationTree given to X.
+  => LocVariable       -- ^ A variable name, used as a key to indicate which
+                       -- repetition we're at. Used in the logger context and
+                       -- exposed in the yaml file for each VirtualFile that
+                       -- will be repeated by this task
+  -> Maybe Verbosity   -- ^ The minimal vebosity level at which to display the
+                       -- logger context. (Nothing if we don't want to add
+                       -- context)
+  -> PTask m a b       -- ^ The base task X to repeat
+  -> STask m i a b r   -- ^ A task that will repeat X it for each input. Each
+                       -- input is associated to a identifier that will be
+                       -- appended to every Loc mapped to every leaf in the
+                       -- LocationTree given to X.
 mappingOverStream repetitionKey mbVerb (PTask reqTree perform) = PTask reqTree' perform'
   where
     reqTree' = fmap addKeyToVirtualFile reqTree
@@ -129,7 +128,7 @@ mappingOverStream repetitionKey mbVerb (PTask reqTree perform) = PTask reqTree' 
 -- result.
 mappingOverStream_
   :: (KatipContext m, Show i)
-  => RepetitionKey
+  => LocVariable
   -> Maybe Verbosity
   -> PTask m a b
   -> ISTask m i a r
@@ -141,7 +140,7 @@ mappingOverStream_ k v t =
 -- file will be different each time). Returns the result of the input stream.
 repeatedlyWriteData
   :: (LocationMonad m, KatipContext m, Typeable a, Show i)
-  => RepetitionKey
+  => LocVariable
   -> VirtualFile a ignored -- ^ A 'DataSink'
   -> ISTask m i a r
 repeatedlyWriteData rkey vf =
@@ -152,8 +151,8 @@ repeatedlyWriteData rkey vf =
 -- file will be different each time).
 repeatedlyLoadData
   :: (LocationMonad m, KatipContext m, Typeable b, Monoid b, Show i)
-  => RepetitionKey
-  -> VirtualFile ignored b
+  => LocVariable
+  -> VirtualFile ignored b -- ^ A 'DataSource'
   -> OSTask m i (Stream (Of i) m r) b
 repeatedlyLoadData rkey vf =
   arr (fmap (const ()) . S.map (,()))
@@ -164,8 +163,8 @@ repeatedlyLoadData rkey vf =
 -- from a list whose elements can be Shown.
 repeatedlyLoadData'
   :: (LocationMonad m, KatipContext m, Typeable b, Monoid b, Show i)
-  => RepetitionKey
-  -> VirtualFile ignore b
+  => LocVariable
+  -> VirtualFile ignore b -- ^ A 'DataSource'
   -> OSTask m i [i] b
 repeatedlyLoadData' rkey vf =
   arr S.each >>> repeatedlyLoadData rkey vf

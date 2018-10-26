@@ -19,6 +19,7 @@ import           Control.Monad       (foldM)
 import           Data.Aeson
 import           Data.Binary         (Binary)
 import qualified Data.HashMap.Strict as HM
+import           Data.Locations.LocVariable
 import           Data.Representable
 import           Data.String
 import qualified Data.Text           as T
@@ -32,16 +33,16 @@ import qualified System.FilePath     as Path
 -- waiting to be spliced in.
 data LocBit
   = LocBitChunk FilePath  -- ^ A raw filepath part, to be used as is
-  | LocBitVarRef String -- ^ A variable name
-  deriving (Eq, Ord, Generic, ToJSON, FromJSON)
+  | LocBitVarRef LocVariable -- ^ A variable name
+  deriving (Eq, Generic, ToJSON, FromJSON)
 
 instance Show LocBit where
   show (LocBitChunk s)  = s
-  show (LocBitVarRef v) = "{" ++ v ++ "}"
+  show (LocBitVarRef (LocVariable v)) = "{" ++ v ++ "}"
 
 locBitContent :: Lens' LocBit String
 locBitContent f (LocBitChunk p)  = LocBitChunk <$> f p
-locBitContent f (LocBitVarRef v) = LocBitVarRef <$> f v
+locBitContent f (LocBitVarRef (LocVariable v)) = LocBitVarRef . LocVariable <$> f v
 
 -- | A newtype so that we can redefine the Show instance
 newtype LocString = LocString [LocBit]
@@ -145,8 +146,11 @@ locWithVarsFromLoc = fmap (LocString . (:[]) . LocBitChunk)
 locVariables :: Traversal' LocWithVars LocBit
 locVariables = traversed . locStringVariables
 
+-- | A map that can be used to splice variables in a 'LocWithVars'
+type LocVariableMap = HM.HashMap LocVariable String
+
 -- | Splices in the variables present in the hashmap
-spliceLocVariables :: HM.HashMap String String -> LocWithVars -> LocWithVars
+spliceLocVariables :: LocVariableMap -> LocWithVars -> LocWithVars
 spliceLocVariables vars = over locVariables $ \v -> case v of
   LocBitVarRef vname ->
     case HM.lookup vname vars of
@@ -173,7 +177,7 @@ parseLocString s = (LocString . reverse . map (over locBitContent reverse) . fil
                    <$> foldM oneChar [] s
   where
     oneChar (LocBitVarRef _ : _) '{' = Left "Cannot nest {...}"
-    oneChar acc '{' = return $ LocBitVarRef "" : acc
+    oneChar acc '{' = return $ LocBitVarRef (LocVariable "") : acc
     oneChar (LocBitChunk _ : _) '}' = Left "'}' terminates nothing"
     oneChar acc '}' = return $ LocBitChunk "" : acc
     oneChar (hd : rest) c = return $ over locBitContent (c:) hd : rest
