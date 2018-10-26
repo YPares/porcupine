@@ -33,11 +33,11 @@ import           System.TaskPipeline.Tasks.LayeredAccess
 
 data TaskRepetitionContext = TRC
   { _repetitionKey     :: RepetitionKey
-  , _repetitionKeyVal  :: T.Text
+  , _repetitionKeyVal  :: String
   , _repetitionKeyVerb :: Verbosity }
 
 instance ToJSON TaskRepetitionContext where
-  toJSON (TRC (RepetitionKey k) i _) = object [ k .= i ]
+  toJSON (TRC (RepetitionKey k) i _) = object [ T.pack k .= i ]
 instance ToObject TaskRepetitionContext
 instance LogItem TaskRepetitionContext where
   payloadKeys v (TRC _ _ v') | v >= v' = AllKeys
@@ -111,7 +111,7 @@ mappingOverStream repetitionKey mbVerb (PTask reqTree perform) = PTask reqTree' 
       VirtualFileNode $ vf & vfileSerials . serialsRepetitionKeys %~ (repetitionKey:)
     addKeyToVirtualFile emptyNode = emptyNode
 
-    addKeyValToDataAccess :: T.Text -> DataAccessNode m -> DataAccessNode m
+    addKeyValToDataAccess :: String -> DataAccessNode m -> DataAccessNode m
     addKeyValToDataAccess val (DataAccessNode l fn) =
       DataAccessNode l $ fn . HM.insert repetitionKey val
     addKeyValToDataAccess _ emptyNode = emptyNode
@@ -120,7 +120,7 @@ mappingOverStream repetitionKey mbVerb (PTask reqTree perform) = PTask reqTree' 
       Nothing   -> go
       Just verb -> katipAddContext (TRC repetitionKey val' verb) go
       where
-        val' = T.pack $ show val
+        val' = show val
         go = do
           (res, tree) <- perform ( inp, fmap (fmap (addKeyValToDataAccess val')) origTree )
           return ((val, res), tree)

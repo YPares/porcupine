@@ -399,14 +399,14 @@ resolveDataAccess (PhysicalFileNode layers vf) = do
   writeLocs <- findFunctions writers
   readLocs <- findFunctions readers
   return $ DataAccessNode layers $ \repetKeyMap input -> do
-    forM_ writeLocs $ \(WriteToLoc rkeys f, loc) ->
+    forM_ writeLocs $ \(WriteToLoc _rkeys f, loc) ->
       katipAddContext (sl "locationAccessed" $ show loc) $ do
-        loc' <- fillLoc rkeys repetKeyMap loc
+        loc' <- fillLoc repetKeyMap loc
         f input loc'
         logFM NoticeS $ logStr $ "Wrote '" ++ show loc' ++ "'"
-    layersRes <- mconcat <$> forM readLocs (\(ReadFromLoc rkeys f, loc) ->
+    layersRes <- mconcat <$> forM readLocs (\(ReadFromLoc _rkeys f, loc) ->
       katipAddContext (sl "locationAccessed" $ show loc) $ do
-        loc' <- fillLoc rkeys repetKeyMap loc
+        loc' <- fillLoc repetKeyMap loc
         r <- f loc'
         logFM DebugS $ logStr $ "Read '" ++ show loc' ++ "'"
         return r)
@@ -415,10 +415,11 @@ resolveDataAccess (PhysicalFileNode layers vf) = do
       Nothing -> layersRes
   where
     vpath = T.unpack $ toTextRepr $ LTP $ vf ^. vfilePath
-    
-    fillLoc rkeys repetKeyMap loc = do
-      rkeys' <- terminateRKeyValList $ fillRKeyValList (fmap (,Nothing) rkeys) repetKeyMap
-      traverse terminateLocString $ spliceRKeysInLoc rkeys' loc
+
+    fillLoc :: RepetitionKeyMap -> LocWithVars -> m Loc
+    fillLoc repetKeyMap loc = do
+      let varsMap = HM.fromList $ map (\(RepetitionKey k, v) -> (k,v)) $ HM.toList repetKeyMap
+      traverse terminateLocString $ spliceLocVariables varsMap loc
 
     terminateLocString (LocString [LocBitChunk s]) = return s
     terminateLocString locString = throwWithPrefix $
