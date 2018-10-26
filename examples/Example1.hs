@@ -1,22 +1,22 @@
-{-# LANGUAGE DeriveGeneric #-}
+{-# LANGUAGE DataKinds         #-}
+{-# LANGUAGE DeriveGeneric     #-}
 {-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE TypeApplications #-}
-{-# LANGUAGE TupleSections #-}
-{-# LANGUAGE DataKinds #-}
+{-# LANGUAGE TupleSections     #-}
+{-# LANGUAGE TypeApplications  #-}
 
-import Porcupine.Serials
-import Porcupine.Tasks
-import Porcupine.Run
-import Data.DocRecord
-import Data.Aeson
-import qualified Data.Text as T
+import           Data.Aeson
+import           Data.DocRecord
 import qualified Data.HashMap.Strict as HM
-import GHC.Generics
+import qualified Data.Text           as T
+import           GHC.Generics
+import           Porcupine.Run
+import           Porcupine.Serials
+import           Porcupine.Tasks
 
 
-data User = User { userName :: T.Text
+data User = User { userName    :: T.Text
                  , userSurname :: T.Text
-                 , userAge :: Int }
+                 , userAge     :: Int }
   deriving (Generic)
 instance FromJSON User
 

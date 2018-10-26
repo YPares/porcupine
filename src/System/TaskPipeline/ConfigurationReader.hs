@@ -13,11 +13,13 @@ module System.TaskPipeline.ConfigurationReader
   ) where
 
 import           Control.Applicative
+import           Control.Lens
 import           Control.Monad
 import qualified Data.Aeson                         as A
 import           Data.DocRecord
 import           Data.DocRecord.OptParse
 import qualified Data.HashMap.Lazy                  as HashMap
+import           Data.Locations.Loc
 import           Data.Locations.SerializationMethod (parseJSONEither)
 import qualified Data.Text                          as T
 import qualified Data.Text.Encoding                 as T
@@ -67,7 +69,7 @@ docRecBasedConfigurationReader defCfg = ConfigurationReader{..}
 -- display any extra documentation.
 genericAesonBasedConfigurationReader
   :: (A.FromJSON cfg)
-  => String -> [(String, Char, String)] -> ConfigurationReader cfg [String]
+  => LocalFilePath -> [(String, Char, String)] -> ConfigurationReader cfg [String]
 genericAesonBasedConfigurationReader configFile shortcuts =
   ConfigurationReader genParser null
     (\origCfg overrides ->
@@ -83,7 +85,7 @@ genericAesonBasedConfigurationReader configFile shortcuts =
       ( l,s,"A shortcut for `-o "<>p<>".yaml.path=YAML_VALUE'"
       , map ((p++".")++) )
     overrideArgs = map mkOption $
-      ("override", 'o', "Override a field value in the " <> configFile <>
+      ("override", 'o', "Override a field value in the " <> configFile ^. locFilePathAsRawFilePath <>
        " configuration.", id)
       : map mkShortcut shortcuts
 

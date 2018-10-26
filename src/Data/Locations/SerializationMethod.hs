@@ -21,15 +21,15 @@ module Data.Locations.SerializationMethod where
 
 import           Control.Lens
 import           Control.Monad.Catch
-import           Data.Aeson                    as A
+import           Data.Aeson                   as A
 import           Data.DocRecord
-import           Data.DocRecord.OptParse       (RecordUsableWithCLI)
-import qualified Data.HashMap.Strict           as HM
-import           Data.Locations.Loc            as Loc
+import           Data.DocRecord.OptParse      (RecordUsableWithCLI)
+import qualified Data.HashMap.Strict          as HM
+import           Data.Locations.Loc           as Loc
+import           Data.Locations.LocationMonad as Loc
 import           Data.Locations.LocVariable
-import           Data.Locations.LocationMonad  as Loc
-import           Data.Monoid                   (First (..))
-import qualified Data.Text                     as T
+import           Data.Monoid                  (First (..))
+import qualified Data.Text                    as T
 import           Data.Typeable
 import           Data.Void
 import           Katip

@@ -2,4 +2,4 @@ module Porcupine.Tasks
   ( module System.TaskPipeline.Tasks )
   where
 
-import System.TaskPipeline.Tasks
+import           System.TaskPipeline.Tasks

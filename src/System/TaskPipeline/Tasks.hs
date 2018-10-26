@@ -8,8 +8,8 @@ module System.TaskPipeline.Tasks
   , LocationMonad
   ) where
 
-import           Data.Locations.LogAndErrors
 import           Data.Locations.LocationMonad
+import           Data.Locations.LogAndErrors
 import           System.TaskPipeline.PTask
 import           System.TaskPipeline.ResourceTree
 import           System.TaskPipeline.Tasks.LayeredAccess

@@ -298,7 +298,7 @@ rscTreeConfigurationReader (ResourceTreeAndMappings{rtamResourceTree=defTree}) =
           where
             addOne mappings (path, locOp, loc) = HM.alter (go locOp loc) path mappings
             go AddLayer loc (Just locs) = Just $ locs ++ [loc]
-            go _        loc _ = Just [loc]
+            go _        loc _           = Just [loc]
         rtam = ResourceTreeAndMappings
           <$> traverseOf traversedTreeWithPath
                 (replaceWithDataFromConfig dataSectionContent) embeddedDataTree
