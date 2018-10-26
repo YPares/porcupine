@@ -41,7 +41,7 @@ instance Show LocBit where
   show (LocBitVarRef (LocVariable v)) = "{" ++ v ++ "}"
 
 locBitContent :: Lens' LocBit String
-locBitContent f (LocBitChunk p)  = LocBitChunk <$> f p
+locBitContent f (LocBitChunk p) = LocBitChunk <$> f p
 locBitContent f (LocBitVarRef (LocVariable v)) = LocBitVarRef . LocVariable <$> f v
 
 -- | A newtype so that we can redefine the Show instance
@@ -97,6 +97,9 @@ locFilePathAsRawFilePath = iso to_ from_
     from_ fp = let (p,e) = splitExtension' fp
                in LocFilePath (p ^. from locStringAsRawString) e
 
+instance (IsLocString a) => IsString (LocFilePath a) where
+  fromString p = p ^. from locFilePathAsRawFilePath
+
 instance (IsLocString a) => Show (LocFilePath a) where
   show p = fmap (view locStringAsRawString) p ^. locFilePathAsRawFilePath
 
@@ -133,6 +136,8 @@ type LocWithVars = Loc_ LocString
 
 -- | A 'Loc_' that can directly be accessed as is.
 type Loc = Loc_ String
+
+type LocalFilePath = LocFilePath String
 
 -- | Creates a 'Loc' from a simple litteral string
 localFile :: FilePath -> Loc
