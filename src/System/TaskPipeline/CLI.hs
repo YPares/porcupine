@@ -24,6 +24,7 @@ module System.TaskPipeline.CLI
 import           Control.Lens
 import           Control.Monad.IO.Class
 import           Data.Aeson
+import qualified Data.ByteString                         as BS
 import           Data.Char                               (toLower)
 import qualified Data.HashMap.Lazy                       as HashMap
 import           Data.Locations
@@ -34,6 +35,7 @@ import           Katip
 import           Options.Applicative
 import           System.Directory
 import           System.Environment                      (getArgs, withArgs)
+import           System.IO                               (stdin)
 import           System.TaskPipeline.ConfigurationReader
 import           System.TaskPipeline.Logger
 
@@ -100,16 +102,13 @@ cliYamlParser
   -> cmd                      -- ^ Default command
   -> IO (Parser (Maybe (cfg, cmd), LoggerScribeParams, [PostParsingAction]))
 cliYamlParser progName configFile defCfg inputParsing cmds defCmd = do
-  yamlFound <- doesFileExist configFile
-  mcfg <- if yamlFound
-    then decodeFile configFile else return Nothing
+  mcfg <- case configFile of
+    "-" -> Just <$> (BS.hGetContents stdin >>= Y.decodeThrow)
+    _ -> do
+      yamlFound <- doesFileExist configFile
+      if yamlFound
+        then Just <$> Y.decodeFileThrow configFile else return Nothing
   return $ pureCliParser progName mcfg configFile defCfg inputParsing cmds defCmd
-  where
-    decodeFile f = do
-      decodeRes <- Y.decodeFileEither f
-      pure $ case decodeRes of
-        Right x -> Just x
-        Left _  -> Nothing
 
 -- | A shortcut to run a parser and defining the program help strings
 execCliParser
@@ -317,6 +316,7 @@ tryGetConfigFileOnCLI callParser = do
     [] -> callParser Nothing
     filename : rest ->  -- If the first arg is a yaml file path, we extract it
       case map toLower (reverse filename) of
+        "-"                   -> goCmdArgs filename rest
         'l':'m':'a':'y':'.':_ -> goCmdArgs filename rest
         'l':'m':'y':'.':_     -> goCmdArgs filename rest
         _                     -> callParser Nothing
