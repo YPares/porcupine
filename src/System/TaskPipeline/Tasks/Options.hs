@@ -1,14 +1,20 @@
 {-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE TypeOperators #-}
+{-# LANGUAGE DataKinds #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 {-# OPTIONS_GHC -Wall #-}
+{-# OPTIONS_GHC -Wno-unticked-promoted-constructors #-}
 
 module System.TaskPipeline.Tasks.Options
   ( getOptions
+  , getOption
   , DocRec, Rec(..), (^^.), (^^?), (^^?!)  -- re-exporting some operators from
                                            -- DocRecords
   ) where
 
 import           Prelude                                 hiding (id, (.))
 
+import           Data.Aeson
 import           Data.DocRecord
 import           Data.DocRecord.OptParse
 import           Data.Locations.LocationMonad
@@ -16,6 +22,7 @@ import           Data.Locations.SerializationMethod
 import           Data.Locations.VirtualFile
 import           Data.Monoid                             (Last (..))
 import           Data.Typeable
+import           GHC.TypeLits                            (KnownSymbol)
 import           Katip
 import           System.TaskPipeline.PTask
 import           System.TaskPipeline.Tasks.LayeredAccess
@@ -41,3 +48,16 @@ getOptions path defOpts = arr (const defOpts') >>> accessVirtualFile vfile >>> a
       -- one
       <>
       someBidirSerial JSONSerial
+
+-- | Just like 'getOptions', but for a single field.
+getOption
+  :: ( LocationMonad m, KatipContext m
+     , KnownSymbol s, Typeable t, FromJSON t, ToJSON t, FieldFromCLI ('[s] :|: t))
+  => [LocationTreePathItem]  -- ^ The path for the option field in the LocationTree
+  -> DocField ('[s] :|: t)   -- ^ The field (created with 'docField')
+  -> PTask m () t            -- ^ A PTask that returns the new option,
+                             -- overriden by the user
+getOption path field =
+  getOptions path record >>> arr (^^?! field)
+  where
+    record = field :& RNil

@@ -36,7 +36,6 @@ import           Data.Locations.Loc
 import           Data.Locations.LocationTree
 import           Data.Locations.Mappings            (HasDefaultMappingRule (..),
                                                      LocShortcut (..))
-import           Data.Locations.RepetitionKeys
 import           Data.Locations.SerializationMethod
 import           Data.Monoid                        (First (..))
 import           Data.Profunctor                    (Profunctor (..))
@@ -77,7 +76,7 @@ instance HasDefaultMappingRule (VirtualFile a b) where
         -- LIMITATION: For now we suppose that every reading/writing function in
         -- the serials has the same repetition keys
         Just rkeys -> DeriveLocPrefixFromTree $
-          let toVar (RepetitionKey k) = LocBitVarRef $ T.unpack k
+          let toVar rkey = LocBitVarRef rkey
               ls = LocString $ (LocBitChunk "-")
                    : intersperse (LocBitChunk "-") (map toVar rkeys)
           in LocFilePath ls $ T.unpack defExt

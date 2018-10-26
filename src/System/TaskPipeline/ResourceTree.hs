@@ -85,7 +85,7 @@ instance Semigroup SomeVirtualFile where
 -- | The internal part of a 'DataAccessNode, closing over the type params of the
 -- access function.
 data SomeDataAccess m where
-  SomeDataAccess :: (Typeable a, Typeable b) => (RepetitionKeyMap -> a -> m b) -> SomeDataAccess m
+  SomeDataAccess :: (Typeable a, Typeable b) => (LocVariableMap -> a -> m b) -> SomeDataAccess m
 
 
 -- | The nodes of the ResourceTree, before mapping each 'VirtualFiles' to
@@ -209,7 +209,7 @@ embeddedDataTreeToJSONFields thisPath (LocationTree mbOpts sub) =
 data ResourceTreeAndMappings = ResourceTreeAndMappings
   { rtamResourceTree :: VirtualResourceTree
   , rtamMappings     :: Either Loc LocationMappings
-  , rtamVariables    :: HM.HashMap T.Text T.Text }
+  , rtamVariables    :: LocVariableMap }
 
 -- ResourceTreeAndMappings is only 'ToJSON' and not 'FromJSON' because we need
 -- more context to deserialize it. It is done by rscTreeConfigurationReader
@@ -233,7 +233,7 @@ instance ToJSON ResourceTreeAndMappings where
 data LayerOperator = ReplaceLayers | AddLayer
 
 type ResourceTreeAndMappingsOverrides =
-  ( HM.HashMap T.Text T.Text
+  ( LocVariableMap
     -- The map of variables and their values read from CLI too
   , [(LocationTreePath, LayerOperator, LocShortcut)]
     -- Locations mapped to new layers
@@ -259,7 +259,8 @@ rscTreeConfigurationReader (ResourceTreeAndMappings{rtamResourceTree=defTree}) =
           many (option (eitherReader varBinding)
                  (long "var"
                <> help "Set a variable already present in the config file"))
-        varBinding (T.splitOn "=" . T.pack -> [var,val]) = Right (var,val)
+        varBinding (T.splitOn "=" . T.pack -> [T.unpack -> var, T.unpack -> val]) =
+          Right (LocVariable var,val)
         varBinding _ = Left "Var binding must be of the form \"variable=value\""
         mappingsParser =
           many (option (eitherReader locBinding)
@@ -349,12 +350,11 @@ rscTreeConfigurationReader (ResourceTreeAndMappings{rtamResourceTree=defTree}) =
 
 -- | Transform a virtual file node in file node with definite physical
 -- locations. Splices in the locs the variables that can be spliced.
-applyOneRscMapping :: HM.HashMap T.Text T.Text -> [LocWithVars] -> VirtualFileNode -> Bool -> PhysicalFileNode
+applyOneRscMapping :: LocVariableMap -> [LocWithVars] -> VirtualFileNode -> Bool -> PhysicalFileNode
 applyOneRscMapping variables configLayers (VirtualFileNode vf) mappingIsExplicit =
   PhysicalFileNode layers vf
   where
-    variables' = HM.fromList $ map (\(k,v) -> (T.unpack k, T.unpack v)) $ HM.toList variables
-    configLayers' = map (spliceLocVariables variables') configLayers
+    configLayers' = map (spliceLocVariables variables) configLayers
     First defExt = vf ^. vfileSerials . serialDefaultExt
     intent = vfileDescIntent $ getVirtualFileDescription vf
     layers | not mappingIsExplicit, Just VFForCLIOptions <- intent = []
@@ -399,14 +399,14 @@ resolveDataAccess (PhysicalFileNode layers vf) = do
   writeLocs <- findFunctions writers
   readLocs <- findFunctions readers
   return $ DataAccessNode layers $ \repetKeyMap input -> do
-    forM_ writeLocs $ \(WriteToLoc rkeys f, loc) ->
+    forM_ writeLocs $ \(WriteToLoc _rkeys f, loc) ->
       katipAddContext (sl "locationAccessed" $ show loc) $ do
-        loc' <- fillLoc rkeys repetKeyMap loc
+        loc' <- fillLoc repetKeyMap loc
         f input loc'
         logFM NoticeS $ logStr $ "Wrote '" ++ show loc' ++ "'"
-    layersRes <- mconcat <$> forM readLocs (\(ReadFromLoc rkeys f, loc) ->
+    layersRes <- mconcat <$> forM readLocs (\(ReadFromLoc _rkeys f, loc) ->
       katipAddContext (sl "locationAccessed" $ show loc) $ do
-        loc' <- fillLoc rkeys repetKeyMap loc
+        loc' <- fillLoc repetKeyMap loc
         r <- f loc'
         logFM DebugS $ logStr $ "Read '" ++ show loc' ++ "'"
         return r)
@@ -415,10 +415,9 @@ resolveDataAccess (PhysicalFileNode layers vf) = do
       Nothing -> layersRes
   where
     vpath = T.unpack $ toTextRepr $ LTP $ vf ^. vfilePath
-    
-    fillLoc rkeys repetKeyMap loc = do
-      rkeys' <- terminateRKeyValList $ fillRKeyValList (fmap (,Nothing) rkeys) repetKeyMap
-      traverse terminateLocString $ spliceRKeysInLoc rkeys' loc
+
+    fillLoc repetKeyMap loc =
+      traverse terminateLocString $ spliceLocVariables repetKeyMap loc
 
     terminateLocString (LocString [LocBitChunk s]) = return s
     terminateLocString locString = throwWithPrefix $
