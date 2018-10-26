@@ -411,7 +411,7 @@ resolveDataAccess (PhysicalFileNode layers vf) = do
         logFM DebugS $ logStr $ "Read '" ++ show loc' ++ "'"
         return r)
     return $ case vf ^? vfileEmbeddedValue of
-      Just v  -> layersRes <> v
+      Just v  -> v <> layersRes
       Nothing -> layersRes
   where
     vpath = T.unpack $ toTextRepr $ LTP $ vf ^. vfilePath
