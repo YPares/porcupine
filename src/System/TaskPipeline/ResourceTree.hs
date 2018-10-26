@@ -85,7 +85,7 @@ instance Semigroup SomeVirtualFile where
 -- | The internal part of a 'DataAccessNode, closing over the type params of the
 -- access function.
 data SomeDataAccess m where
-  SomeDataAccess :: (Typeable a, Typeable b) => (RepetitionKeyMap -> a -> m b) -> SomeDataAccess m
+  SomeDataAccess :: (Typeable a, Typeable b) => (LocVariableMap -> a -> m b) -> SomeDataAccess m
 
 
 -- | The nodes of the ResourceTree, before mapping each 'VirtualFiles' to
@@ -209,7 +209,7 @@ embeddedDataTreeToJSONFields thisPath (LocationTree mbOpts sub) =
 data ResourceTreeAndMappings = ResourceTreeAndMappings
   { rtamResourceTree :: VirtualResourceTree
   , rtamMappings     :: Either Loc LocationMappings
-  , rtamVariables    :: HM.HashMap T.Text T.Text }
+  , rtamVariables    :: LocVariableMap }
 
 -- ResourceTreeAndMappings is only 'ToJSON' and not 'FromJSON' because we need
 -- more context to deserialize it. It is done by rscTreeConfigurationReader
@@ -230,11 +230,15 @@ instance ToJSON ResourceTreeAndMappings where
 
 -- ** Reading virtual resource trees from the input
 
+data LayerOperator = ReplaceLayers | AddLayer
+
 type ResourceTreeAndMappingsOverrides =
-  ( LocationTree (VirtualFileNode, Maybe (RecOfOptions SourcedDocField))
-    -- The tree containing options parsed by optparse-applicative
-  , HM.HashMap T.Text T.Text
+  ( LocVariableMap
     -- The map of variables and their values read from CLI too
+  , [(LocationTreePath, LayerOperator, LocShortcut)]
+    -- Locations mapped to new layers
+  , LocationTree (VirtualFileNode, Maybe (RecOfOptions SourcedDocField))
+    -- The tree containing options parsed by optparse-applicative
   )
 
 -- | Reads the data from the input config file. Constructs the parser for the
@@ -246,7 +250,8 @@ rscTreeConfigurationReader
 rscTreeConfigurationReader (ResourceTreeAndMappings{rtamResourceTree=defTree}) =
   ConfigurationReader overridesParser_ nullOverrides_ overrideCfgFromYamlFile_
   where
-    overridesParser_ = (,) <$> treeOfOptsParser <*> variablesParser
+    overridesParser_ =
+      (,,) <$> variablesParser <*> mappingsParser <*> treeOfOptsParser
       where
         treeOfOptsParser = traverseOf (traversed . _2 . _Just) parseOptions $
                            fmap nodeAndRecOfOptions defTree
@@ -254,8 +259,23 @@ rscTreeConfigurationReader (ResourceTreeAndMappings{rtamResourceTree=defTree}) =
           many (option (eitherReader varBinding)
                  (long "var"
                <> help "Set a variable already present in the config file"))
-        varBinding (T.splitOn "=" . T.pack -> [var,val]) = Right (var,val)
+        varBinding (T.splitOn "=" . T.pack -> [T.unpack -> var, T.unpack -> val]) =
+          Right (LocVariable var,val)
         varBinding _ = Left "Var binding must be of the form \"variable=value\""
+        mappingsParser =
+          many (option (eitherReader locBinding)
+                 (long "loc"
+               <> help "Map a virtual file path to a physical location"))
+        parseLocBinding vpath locOp loc = do
+          p <- fromTextRepr vpath
+          l <- parseJSONEither $ String loc
+          return (p,locOp,l)
+        locBinding (T.splitOn "=" . T.pack -> [vpath,loc]) =
+          parseLocBinding vpath ReplaceLayers loc
+        locBinding (T.splitOn "+=" . T.pack -> [vpath,loc]) =
+          parseLocBinding vpath AddLayer loc
+        locBinding _ =
+          Left "Location mapping must be of the form \"virtual_path(+)=physical_path\""
 
     nodeAndRecOfOptions :: VirtualFileNode -> (VirtualFileNode, Maybe DocRecOfOptions)
     nodeAndRecOfOptions n@(VirtualFileNode vf) = (n, vf ^? vfileAsBidir . vfileRecOfOptions)
@@ -264,21 +284,27 @@ rscTreeConfigurationReader (ResourceTreeAndMappings{rtamResourceTree=defTree}) =
     parseOptions (RecOfOptions r) = RecOfOptions <$>
       parseRecFromCLI (tagWithDefaultSource r)
 
-    nullOverrides_ (t,_) = allOf (traversed . _2 . _Just) nullRec t
+    nullOverrides_ (_,_,t) = allOf (traversed . _2 . _Just) nullRec t
     nullRec (RecOfOptions RNil) = True
     nullRec _                   = False
 
-    overrideCfgFromYamlFile_ (Object aesonCfg) (embeddedDataTree, cliVars) = ([], rtam)
+    overrideCfgFromYamlFile_ (Object aesonCfg) (cliVars, cliMappings, embeddedDataTree) = ([], rtam)
       where
         dataSectionContent = HM.lookup embeddedDataSection aesonCfg
         mappingsSectionContent = HM.lookup mappingsSection aesonCfg
         variablesSectionContent = HM.lookup variablesSection aesonCfg
+        addCLIMappings (LocationMappings_ yamlMappings) =
+          LocationMappings_ $ foldl addOne yamlMappings cliMappings
+          where
+            addOne mappings (path, locOp, loc) = HM.alter (go locOp loc) path mappings
+            go AddLayer loc (Just locs) = Just $ locs ++ [loc]
+            go _        loc _ = Just [loc]
         rtam = ResourceTreeAndMappings
           <$> traverseOf traversedTreeWithPath
                 (replaceWithDataFromConfig dataSectionContent) embeddedDataTree
-          <*> (case mappingsSectionContent of
-                 Just m -> Right <$> parseJSONEither m
-                 _      -> pure $ Right mempty)
+          <*> (Right . addCLIMappings <$> case mappingsSectionContent of
+                 Just m -> parseJSONEither m
+                 _      -> pure mempty)
           <*> ((cliVars <>) <$> case variablesSectionContent of
                  Just m -> parseJSONEither m
                  _      -> pure mempty)
@@ -324,12 +350,11 @@ rscTreeConfigurationReader (ResourceTreeAndMappings{rtamResourceTree=defTree}) =
 
 -- | Transform a virtual file node in file node with definite physical
 -- locations. Splices in the locs the variables that can be spliced.
-applyOneRscMapping :: HM.HashMap T.Text T.Text -> [LocWithVars] -> VirtualFileNode -> Bool -> PhysicalFileNode
+applyOneRscMapping :: LocVariableMap -> [LocWithVars] -> VirtualFileNode -> Bool -> PhysicalFileNode
 applyOneRscMapping variables configLayers (VirtualFileNode vf) mappingIsExplicit =
   PhysicalFileNode layers vf
   where
-    variables' = HM.fromList $ map (\(k,v) -> (T.unpack k, T.unpack v)) $ HM.toList variables
-    configLayers' = map (spliceLocVariables variables') configLayers
+    configLayers' = map (spliceLocVariables variables) configLayers
     First defExt = vf ^. vfileSerials . serialDefaultExt
     intent = vfileDescIntent $ getVirtualFileDescription vf
     layers | not mappingIsExplicit, Just VFForCLIOptions <- intent = []
@@ -366,27 +391,33 @@ resolveDataAccess
   => PhysicalFileNode
   -> m' (DataAccessNode m)
 resolveDataAccess (PhysicalFileNode layers vf) = do
+  case layers of
+    [] | vf ^. vfileUsage == MustBeMapped ->
+         throwM $ TaskConstructionError $
+         vpath ++ " requires to be mapped to a non-null location."
+    _ -> return ()
   writeLocs <- findFunctions writers
   readLocs <- findFunctions readers
   return $ DataAccessNode layers $ \repetKeyMap input -> do
-    forM_ writeLocs $ \(WriteToLoc rkeys f, loc) ->
+    forM_ writeLocs $ \(WriteToLoc _rkeys f, loc) ->
       katipAddContext (sl "locationAccessed" $ show loc) $ do
-        loc' <- fillLoc rkeys repetKeyMap loc
+        loc' <- fillLoc repetKeyMap loc
         f input loc'
         logFM NoticeS $ logStr $ "Wrote '" ++ show loc' ++ "'"
-    layersRes <- mconcat <$> forM readLocs (\(ReadFromLoc rkeys f, loc) ->
+    layersRes <- mconcat <$> forM readLocs (\(ReadFromLoc _rkeys f, loc) ->
       katipAddContext (sl "locationAccessed" $ show loc) $ do
-        loc' <- fillLoc rkeys repetKeyMap loc
+        loc' <- fillLoc repetKeyMap loc
         r <- f loc'
         logFM DebugS $ logStr $ "Read '" ++ show loc' ++ "'"
         return r)
     return $ case vf ^? vfileEmbeddedValue of
-      Just v  -> layersRes <> v
+      Just v  -> v <> layersRes
       Nothing -> layersRes
   where
-    fillLoc rkeys repetKeyMap loc = do
-      rkeys' <- terminateRKeyValList $ fillRKeyValList (fmap (,Nothing) rkeys) repetKeyMap
-      traverse terminateLocString $ spliceRKeysInLoc rkeys' loc
+    vpath = T.unpack $ toTextRepr $ LTP $ vf ^. vfilePath
+
+    fillLoc repetKeyMap loc =
+      traverse terminateLocString $ spliceLocVariables repetKeyMap loc
 
     terminateLocString (LocString [LocBitChunk s]) = return s
     terminateLocString locString = throwWithPrefix $
@@ -404,7 +435,8 @@ resolveDataAccess (PhysicalFileNode layers vf) = do
           Just f -> return (f, loc)
           -- TODO: add VirtualFile path to error
           Nothing -> throwM $ TaskConstructionError $
-            show loc ++ " is bound to a VirtualFile that doesn't support extension '" ++ (loc^.locExt)
-            ++ "'. Accepted file extensions here are: " ++
+            show loc ++ " is bound to " ++ vpath ++
+            " which doesn't support extension '" ++ (loc^.locExt) ++
+            "'. Accepted file extensions here are: " ++
             mconcat (intersperse "," (map T.unpack $ HM.keys hm)) ++ "."
 resolveDataAccess _ = return $ MbDataAccessNode $ First Nothing

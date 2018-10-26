@@ -9,14 +9,14 @@ module Data.Locations.VirtualFile
   ( LocationTreePathItem
   , module Data.Locations.SerializationMethod
   , Profunctor(..)
-  , VirtualFile(..)
+  , VirtualFile(..), VirtualFileUsage(..)
   , BidirVirtualFile, DataSource, DataSink
   , VirtualFileIntent(..), VirtualFileDescription(..)
   , DocRecOfOptions, RecOfOptions(..)
   , vfileBidirProof, vfileSerials
   , vfileAsBidir, vfileAsBidirE
   , vfileEmbeddedValue, vfileIntermediaryValue, vfileAesonValue
-  , vfilePath, showVFilePath
+  , vfilePath, showVFilePath, vfileUsage
   , dataSource, dataSink, bidirVirtualFile, ensureBidirFile
   , makeSink, makeSource
   , documentedFile, unusedByDefault
@@ -36,7 +36,6 @@ import           Data.Locations.Loc
 import           Data.Locations.LocationTree
 import           Data.Locations.Mappings            (HasDefaultMappingRule (..),
                                                      LocShortcut (..))
-import           Data.Locations.RepetitionKeys
 import           Data.Locations.SerializationMethod
 import           Data.Monoid                        (First (..))
 import           Data.Profunctor                    (Profunctor (..))
@@ -49,11 +48,17 @@ import           Data.Void
 
 -- * The general 'VirtualFile' type
 
+-- | Tells whether the file can remain unmapped or not
+data VirtualFileUsage = MustBeMapped
+                      | CanBeUnmapped
+                      | UnmappedByDefault
+  deriving (Eq, Show)
+
 -- | A virtual file in the location tree to which we can write @a@ and from
 -- which we can read @b@.
 data VirtualFile a b = VirtualFile
   { _vfilePath          :: [LocationTreePathItem]
-  , _vfileUsedByDefault :: Bool
+  , _vfileUsage         :: VirtualFileUsage
   , _vfileDocumentation :: Maybe T.Text
   , _vfileBidirProof    :: Maybe (a :~: b)
                     -- Temporary, necessary until we can do away with docrec
@@ -65,13 +70,13 @@ makeLenses ''VirtualFile
 -- How we derive the default configuration for mapping some VirtualFile
 instance HasDefaultMappingRule (VirtualFile a b) where
   getDefaultLocShortcut vf
-    | vf ^. vfileUsedByDefault = Just $
+    | vf ^. vfileUsage /= UnmappedByDefault = Just $
       case vf ^? vfileSerials . serialsRepetitionKeys . filtered (not . null) of
         Nothing -> DeriveWholeLocFromTree defExt
         -- LIMITATION: For now we suppose that every reading/writing function in
         -- the serials has the same repetition keys
         Just rkeys -> DeriveLocPrefixFromTree $
-          let toVar (RepetitionKey k) = LocBitVarRef $ T.unpack k
+          let toVar rkey = LocBitVarRef rkey
               ls = LocString $ (LocBitChunk "-")
                    : intersperse (LocBitChunk "-") (map toVar rkeys)
           in LocFilePath ls $ T.unpack defExt
@@ -88,7 +93,7 @@ instance Semigroup (VirtualFile a b) where
   VirtualFile p u d b s <> VirtualFile _ _ _ _ s' =
     VirtualFile p u d b (s<>s')
 instance Monoid (VirtualFile a b) where
-  mempty = VirtualFile [] False Nothing Nothing mempty
+  mempty = VirtualFile [] UnmappedByDefault Nothing Nothing mempty
 
 instance Profunctor VirtualFile where
   dimap f g (VirtualFile p u d _ s) = VirtualFile p u d Nothing $ dimap f g s
@@ -149,7 +154,7 @@ showVFilePath = T.unpack . toTextRepr .  LTP . _vfilePath
 
 -- | Indicates that the file should be mapped to 'null' by default
 unusedByDefault :: VirtualFile a b -> VirtualFile a b
-unusedByDefault = vfileUsedByDefault .~ False
+unusedByDefault = vfileUsage .~ UnmappedByDefault
 
 -- | Gives a documentation to the 'VirtualFile'
 documentedFile :: T.Text -> VirtualFile a b -> VirtualFile a b
@@ -172,7 +177,7 @@ type DataSink a = VirtualFile a ()
 -- the data. You should prefer 'dataSink' and 'dataSource' for clarity when the
 -- file is meant to be readonly or writeonly.
 virtualFile :: [LocationTreePathItem] -> Maybe (a :~: b) -> SerialsFor a b -> VirtualFile a b
-virtualFile path refl sers = VirtualFile path True Nothing refl sers
+virtualFile path refl sers = VirtualFile path CanBeUnmapped Nothing refl sers
 
 -- | Creates a virtual file from its virtual path and ways to deserialize the
 -- data.
