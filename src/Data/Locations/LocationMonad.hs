@@ -174,7 +174,7 @@ type LocationMonadReader r m =
 -- | Can be instantiated to any 'LocationMonadReader'
 newtype AnyLocationMR r a = AnyLocationMR { unAnyLocationMR :: forall m. (LocationMonadReader r m) => m a }
 
-checkLocal :: String -> (LocFilePath String -> p) -> Loc -> p
+checkLocal :: String -> (LocalFilePath -> p) -> Loc -> p
 checkLocal _ f (LocalFile fname) = f fname
 checkLocal funcName _ _ = error $ funcName ++ ": S3 location cannot be reached in IO! Need to use AWS"
 
@@ -194,7 +194,7 @@ writeText loc body =
   let bsBody = BSS.fromStrict $ TE.encodeUtf8 body in
   writeBSS loc bsBody
 
-writeBSS_Local :: MonadResource m => LocFilePath String -> BSS.ByteString m b -> m b
+writeBSS_Local :: MonadResource m => LocalFilePath -> BSS.ByteString m b -> m b
 writeBSS_Local path body = do
   let raw = path ^. locFilePathAsRawFilePath
   liftIO $ createDirectoryIfMissing True (Path.takeDirectory raw)
@@ -233,7 +233,7 @@ mapLeft _ (Right y) = Right y
 
 readBSS_Local
   :: forall f m a. (MonadCatch f, MonadResource m)
-  => LocFilePath String
+  => LocalFilePath
   -> (BSS.ByteString m () -> f a)
   -> f (Either Error a)
 readBSS_Local f k = mapLeft (Error (LocalFile f) . IOError) <$>
