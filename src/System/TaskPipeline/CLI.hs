@@ -124,7 +124,7 @@ cliYamlParser progName configFile defCfg inputParsing cmds defCmd = do
         then Just <$> Y.decodeFileThrow rawFile else return Nothing
   return $ pureCliParser progName mcfg configFile defCfg inputParsing cmds defCmd
   where
-    failLeft (Left s) = error s
+    failLeft (Left s)  = error s
     failLeft (Right x) = return x
 
 -- | A shortcut to run a parser and defining the program help strings

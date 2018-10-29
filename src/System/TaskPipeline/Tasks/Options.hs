@@ -1,7 +1,7 @@
-{-# LANGUAGE FlexibleContexts #-}
-{-# LANGUAGE TypeOperators #-}
-{-# LANGUAGE DataKinds #-}
+{-# LANGUAGE DataKinds           #-}
+{-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TypeOperators       #-}
 {-# OPTIONS_GHC -Wall #-}
 {-# OPTIONS_GHC -Wno-unticked-promoted-constructors #-}
 
@@ -57,7 +57,7 @@ getOptions path defOpts = arr (const $ error "getOptions: THIS IS VOID") >>> acc
 -- | Just like 'getOptions', but for a single field.
 getOption
   :: ( LocationMonad m, KatipContext m
-     , KnownSymbol s, Typeable t, FromJSON t, ToJSON t, FieldFromCLI ('[s] :|: t))
+     , KnownSymbol s, Typeable t, ToJSON t, FieldFromCLI ('[s] :|: t))
   => [LocationTreePathItem]  -- ^ The path for the option field in the LocationTree
   -> DocField ('[s] :|: t)   -- ^ The field (created with 'docField')
   -> PTask m () t            -- ^ A PTask that returns the new option,

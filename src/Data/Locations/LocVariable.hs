@@ -3,7 +3,7 @@
 module Data.Locations.LocVariable where
 
 import           Data.Aeson
-import           Data.Hashable       (Hashable)
+import           Data.Hashable (Hashable)
 import           Data.String
 
 

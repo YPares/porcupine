@@ -26,8 +26,8 @@ import           Prelude                          hiding (id, (.))
 
 import           Control.Lens
 import           Data.Locations
-import           Data.Typeable
 import           Data.Monoid
+import           Data.Typeable
 import           System.TaskPipeline.PTask
 import           System.TaskPipeline.ResourceTree
 
@@ -54,7 +54,7 @@ loadLast vf = loadData (rmap (Last . Just) vf') >>> arr get
   where
     vf' = vf & vfileUsage .~ MustBeMapped
     get (Last (Just x)) = x
-    get _ = error "loadLast: THIS SHOULD NOT HAPPEN" -- Won't be evaluated
+    get _               = error "loadLast: THIS SHOULD NOT HAPPEN" -- Won't be evaluated
 
 -- | Uses only the write part of a 'VirtualFile'. It is therefore considered as
 -- a pure 'DataSink'.

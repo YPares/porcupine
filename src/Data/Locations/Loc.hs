@@ -15,18 +15,18 @@ module Data.Locations.Loc where
 
 import           Control.Applicative
 import           Control.Lens
-import           Control.Monad       (foldM)
+import           Control.Monad              (foldM)
 import           Data.Aeson
-import           Data.Binary         (Binary)
-import qualified Data.HashMap.Strict as HM
+import           Data.Binary                (Binary)
+import qualified Data.HashMap.Strict        as HM
 import           Data.Locations.LocVariable
 import           Data.Representable
 import           Data.String
-import qualified Data.Text           as T
-import           GHC.Generics        (Generic)
-import qualified Network.URL         as URL
-import qualified System.Directory    as Dir (createDirectoryIfMissing)
-import qualified System.FilePath     as Path
+import qualified Data.Text                  as T
+import           GHC.Generics               (Generic)
+import qualified Network.URL                as URL
+import qualified System.Directory           as Dir (createDirectoryIfMissing)
+import qualified System.FilePath            as Path
 
 
 -- | Each location bit can be a simple chunk of string, or a variable name
@@ -37,7 +37,7 @@ data LocBit
   deriving (Eq, Generic, ToJSON, FromJSON)
 
 instance Show LocBit where
-  show (LocBitChunk s)  = s
+  show (LocBitChunk s)                = s
   show (LocBitVarRef (LocVariable v)) = "{" ++ v ++ "}"
 
 locBitContent :: Lens' LocBit String

@@ -9,6 +9,6 @@ module Porcupine.Serials
   , ensureBidirFile, makeSource, makeSink )
 where
 
-import Data.Locations.Loc
-import Data.Locations.SerializationMethod
-import Data.Locations.VirtualFile
+import           Data.Locations.Loc
+import           Data.Locations.SerializationMethod
+import           Data.Locations.VirtualFile

@@ -12,8 +12,8 @@ module Data.Locations
 import           Data.Locations.Loc
 import           Data.Locations.LocationMonad
 import           Data.Locations.LocationTree
+import           Data.Locations.LocVariable
 import           Data.Locations.LogAndErrors
 import           Data.Locations.Mappings
 import           Data.Locations.SerializationMethod
 import           Data.Locations.VirtualFile
-import           Data.Locations.LocVariable
