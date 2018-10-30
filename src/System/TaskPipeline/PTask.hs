@@ -22,6 +22,7 @@ module System.TaskPipeline.PTask
   , PTask(..)
   , RscAccess(..)
   , RscAccessTree
+  , Severity(..)
   , rscAccessed
   , tryPTask, throwPTask, clockPTask
   , unsafeLiftToPTask, unsafeRunIOTask
@@ -30,6 +31,7 @@ module System.TaskPipeline.PTask
   , voidTask
   , addContextToTask
   , addNamespaceToTask
+  , logTask
   ) where
 
 import           Prelude                          hiding (id, (.))
@@ -243,3 +245,7 @@ addNamespaceToTask
   -> PTask m a b
 addNamespaceToTask ns (PTask tree fn) =
   PTask tree $ katipAddNamespace (fromString ns) . fn
+
+-- | Logs a message during the pipeline execution
+logTask :: (KatipContext m) => PTask m (Severity, String) ()
+logTask = unsafeLiftToPTask $ \(sev, s) -> logFM sev $ logStr s

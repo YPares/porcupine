@@ -85,8 +85,8 @@ instance Semigroup SomeVirtualFile where
 -- | The internal part of a 'DataAccessNode, closing over the type params of the
 -- access function.
 data SomeDataAccess m where
-  SomeDataAccess :: (Typeable a, Typeable b) => (LocVariableMap -> a -> m b) -> SomeDataAccess m
-
+  SomeDataAccess :: (Typeable a, Typeable b)
+                 => (LocVariableMap -> a -> m b) -> SomeDataAccess m
 
 -- | The nodes of the ResourceTree, before mapping each 'VirtualFiles' to
 -- physical locations
@@ -96,17 +96,17 @@ pattern VirtualFileNode x = MbVirtualFileNode (Just (SomeVirtualFile x))
 
 -- | The nodes of the ResourceTree, after mapping each 'VirtualFiles' to
 -- physical locations
-data PhysicalFileNode = MbPhysicalFileNode (Maybe (SomeVirtualFile, [LocWithVars]))
+data PhysicalFileNode = MbPhysicalFileNode [LocWithVars] (Maybe SomeVirtualFile)
 -- | A non-empty 'PhysicalFileNode'
-pattern PhysicalFileNode l x = MbPhysicalFileNode (Just (SomeVirtualFile x, l))
+pattern PhysicalFileNode l x = MbPhysicalFileNode l (Just (SomeVirtualFile x))
 
 -- | The nodes of the LocationTree after the 'VirtualFiles' have been resolved
 -- to physical paths, and data possibly extracted from these paths
-data DataAccessNode m = MbDataAccessNode (First (SomeDataAccess m, [LocWithVars]))
+data DataAccessNode m = MbDataAccessNode [LocWithVars] (First (SomeDataAccess m))
   -- Data access function isn't a semigroup, hence the use of First here instead
   -- of Maybe.
 -- | A non-empty 'DataAccessNode'
-pattern DataAccessNode l x = MbDataAccessNode (First (Just (SomeDataAccess x, l)))
+pattern DataAccessNode l x = MbDataAccessNode l (First (Just (SomeDataAccess x)))
 
 
 instance Semigroup VirtualFileNode where
@@ -116,9 +116,9 @@ instance Monoid VirtualFileNode where
 -- TODO: It is dubious that composing DataAccessNodes is really needed in the
 -- end. Find a way to remove that.
 instance Semigroup (DataAccessNode m) where
-  MbDataAccessNode f <> MbDataAccessNode f' = MbDataAccessNode $ f <> f'
+  MbDataAccessNode locs f <> MbDataAccessNode _ f' = MbDataAccessNode locs $ f <> f'
 instance Monoid (DataAccessNode m) where
-  mempty = MbDataAccessNode mempty
+  mempty = MbDataAccessNode [] mempty
 
 instance Show VirtualFileNode where
   show (VirtualFileNode vf) = "VirtualFileNode with " ++ show (getVirtualFileDescription vf)
@@ -127,12 +127,13 @@ instance Show VirtualFileNode where
   -- TODO: Display read/written types here, since they're already Typeable
 
 instance Show PhysicalFileNode where
-  show (PhysicalFileNode layers vf) =
+  show (MbPhysicalFileNode layers mbVF) =
     T.unpack (mconcat
               (intersperse " << "
                (map toTextRepr layers)))
-    ++ " - " ++ show (getVirtualFileDescription vf)
-  show _ = "null"
+    ++ case mbVF of
+         Just (SomeVirtualFile vf) -> " - " ++ show (getVirtualFileDescription vf)
+         _ -> ""
 
 
 -- * API for manipulating resource trees globally
@@ -351,19 +352,20 @@ rscTreeConfigurationReader (ResourceTreeAndMappings{rtamResourceTree=defTree}) =
 -- | Transform a virtual file node in file node with definite physical
 -- locations. Splices in the locs the variables that can be spliced.
 applyOneRscMapping :: LocVariableMap -> [LocWithVars] -> VirtualFileNode -> Bool -> PhysicalFileNode
-applyOneRscMapping variables configLayers (VirtualFileNode vf) mappingIsExplicit =
-  PhysicalFileNode layers vf
+applyOneRscMapping variables configLayers mbVF mappingIsExplicit = buildPhysicalNode mbVF
   where
     configLayers' = map (spliceLocVariables variables) configLayers
-    First defExt = vf ^. vfileSerials . serialDefaultExt
-    intent = vfileDescIntent $ getVirtualFileDescription vf
-    layers | not mappingIsExplicit, Just VFForCLIOptions <- intent = []
+    buildPhysicalNode (VirtualFileNode vf) = PhysicalFileNode layers vf
+      where
+        First defExt = vf ^. vfileSerials . serialDefaultExt
+        intent = vfileDescIntent $ getVirtualFileDescription vf
+        layers | not mappingIsExplicit, Just VFForCLIOptions <- intent = []
              -- Options usually present in the config file need an _explicit_
              -- mapping to be present in the config file, if we want them to be
              -- read from external files instead
-           | otherwise = map resolveExt configLayers'
-    resolveExt loc = addExtToLocIfMissing loc $ T.unpack $ fromMaybe "" defExt
-applyOneRscMapping _ _ _ _ = MbPhysicalFileNode Nothing
+               | otherwise = map resolveExt configLayers'
+        resolveExt loc = addExtToLocIfMissing loc $ T.unpack $ fromMaybe "" defExt
+    buildPhysicalNode _ = MbPhysicalFileNode configLayers' Nothing
 
 -- | Binds together a 'VirtualResourceTree' with physical locations an splices
 -- in the variables read from the configuration.
@@ -439,4 +441,5 @@ resolveDataAccess (PhysicalFileNode layers vf) = do
             " which doesn't support extension '" ++ (loc^.locExt) ++
             "'. Accepted file extensions here are: " ++
             mconcat (intersperse "," (map T.unpack $ HM.keys hm)) ++ "."
-resolveDataAccess _ = return $ MbDataAccessNode $ First Nothing
+resolveDataAccess (MbPhysicalFileNode locs _) =
+  return $ MbDataAccessNode locs $ First Nothing

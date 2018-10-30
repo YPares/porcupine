@@ -10,6 +10,7 @@ module System.TaskPipeline.Tasks.Options
   , getOption
   , DocRec, Rec(..), (^^.), (^^?), (^^?!)  -- re-exporting some operators from
                                            -- DocRecords
+  , docField
   ) where
 
 import           Prelude                                 hiding (id, (.))

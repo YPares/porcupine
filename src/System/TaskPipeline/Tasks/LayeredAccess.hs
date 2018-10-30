@@ -100,6 +100,5 @@ getLocsMappedTo path = PTask mempty (\(_,tree) -> return (getLocs tree, tree))
   where
     getLocs tree =
       case tree ^? (atSubfolderRec path . locTreeNodeTag . rscAccessed) of
-        Just (DataAccessNode locs _) -> locs
-        _                            -> []
-
+        Just (MbDataAccessNode locs _) -> locs
+        _                              -> []
