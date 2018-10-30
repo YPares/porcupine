@@ -118,8 +118,41 @@ it's the default subcommand. Any option you defined inside your pipeline is also
 exposed on the CLI, and shown by `my-exe --help`. Specifying it on the CLI
 overrides the value set in the yaml config file.
 
+# Philosophy of use
+
+Porcupine's intent is to make it easy to cleanly separate the work between 3
+persons:
+
+- The _storage developer_ will be in charge of determining how the data gets read
+  and written in the end. He will target the _serials_ framework, and propose
+  new datatypes (data frames, matrices, vectors, trees, etc.) and ways to write
+  and read them to the various storage technologies.
+- The _scientist_ will determine how to carry out the data analyses, extract some
+  sense out of the data, run simulations based on that data, etc. He doesn't
+  have to know how the data is represented, just that it exists. She just reuses
+  the serials written by the storage developper and targets the _tasks_
+  framework.
+- The _software architect_ work will start once we need to bump things up a
+  bit. Once we have iterated several times over our analyses and simulations and
+  want to have things running in a bigger scale, then it's time for the pipeline
+  to move from the scientist's puny laptop and go bigger. This is time to
+  "patch" the pipeline, make it run in different context, in the cloud, behind a
+  scheduler, as jobs in a task queue reading its inputs from all kinds of
+  databases. The software architect will target the _resource tree_ framework
+  (possibly without ever recompiling the pipeline, only by adjusting its
+  configuration from the outside)
+
+Of course, these people can be the same person, and you don't need to plan on
+runnning anything in the cloud to start benefiting from porcupine. But we want
+to support workflows where these three persons are distinct people, each one
+with her different set of skills.
+
 
 # Specific features
+
+Aside from the general usage exposed previously, porcupine proposes several
+features to facilitate iterative development of pipelines and reusability of
+tasks.
 
 [TO BE FILLED]
 
