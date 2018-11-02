@@ -12,6 +12,7 @@ module System.TaskPipeline.CLI
   , PipelineConfigMethod(..)
   , LocTreeLayout(..)
   , PostParsingAction(..)
+  , PreRun(..)
   , cliYamlParser
   , execCliParser
   , withCliParser
@@ -75,28 +76,30 @@ withCliParser
   -> String
   -> (Maybe LocalFilePath
       -> IO (Parser (Maybe (a, cmd), LoggerScribeParams, [PostParsingAction])))
-  -> (a -> cmd -> LoggerScribeParams -> [(Severity, LogStr)] -> IO r)
+  -> (a -> cmd -> LoggerScribeParams -> PreRun -> IO r)
   -> IO r
 withCliParser progName progDesc_ cliParser f = do
   (mbArgs, lsp, actions) <- tryGetConfigFileOnCLI $ \yamlFile ->
     cliParser yamlFile >>= execCliParser progName progDesc_
-  logItems <- mapM processAction actions
   case mbArgs of
-    Just (cfg, cmd) -> f cfg cmd lsp logItems
-    Nothing         -> return mempty
+    Just (cfg, cmd) ->
+      f cfg cmd lsp $ PreRun $ mapM_ processAction actions
+    Nothing         -> runLogger progName lsp $ do
+      mapM_ processAction actions
+      return mempty
  where
-   processAction (PostParsingLog s l) = return (s, l)
+   processAction (PostParsingLog s l) = logFM s l
    processAction (PostParsingWrite configFile cfg) = do
      let rawFile = configFile ^. locFilePathAsRawFilePath
      case configFile of
        LocFilePath "-" _ ->
          error "Config was read from stdin, cannot overwrite it"
        LocFilePath _ "yaml" -> do
-         Y.encodeFile rawFile cfg
+         liftIO $ Y.encodeFile rawFile cfg
        LocFilePath _ "json" -> do
-         LBS.writeFile rawFile $ A.encodePretty cfg
+         liftIO $ LBS.writeFile rawFile $ A.encodePretty cfg
        _ -> error $ "Config file has unknown format"
-     return (NoticeS, logStr $ "Wrote file '" ++ rawFile ++ "'")
+     logFM NoticeS $ logStr $ "Wrote file '" ++ rawFile ++ "'"
 
 -- | Creates a command line parser that will return an action returning the
 -- configuration and the chosen subcommand or Nothing if the user simply asked
@@ -258,6 +261,9 @@ data PostParsingAction
   = PostParsingLog Severity LogStr  -- ^ Log a message
   | forall a. (ToJSON a) => PostParsingWrite LocalFilePath a
           -- ^ Write to a file and log a message about it
+
+-- | Wraps the actions to override the config file
+newtype PreRun = PreRun {unPreRun :: forall m. (KatipContext m, MonadIO m) => m ()}
 
 handleOptions
   :: forall cfg cmd overrides.

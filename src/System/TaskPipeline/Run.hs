@@ -124,12 +124,10 @@ bindResourceTreeAndRun progName (FullConfig defConfigFile defRoot) tree f =
       pipelineCliParser rscTreeConfigurationReader progName
         (fromMaybe defConfigFile mbConfigFile)
         (ResourceTreeAndMappings tree (Left defRoot) mempty)
-    run rtam@(ResourceTreeAndMappings{rtamMappings=mappings'}) cmd lsp logItems =
+    run rtam@(ResourceTreeAndMappings{rtamMappings=mappings'}) cmd lsp performConfigWrites =
       selectRun refLoc True $
         runLogger progName lsp $ do
-          katipAddNamespace "pipelineConfig" $
-            forM_ logItems $ \(lvl, msg) ->
-              $(logTM) lvl msg
+          unPreRun performConfigWrites
           f cmd $ getPhysicalResourceTreeFromMappings rtam
       where
         refLoc = case mappings' of
