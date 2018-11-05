@@ -11,7 +11,6 @@ module System.TaskPipeline.Run
   , runPipelineCommandOnPTask
   ) where
 
-import           Control.Monad
 import           Control.Monad.Catch
 import           Control.Monad.IO.Class
 import           Data.Locations
