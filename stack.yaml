@@ -36,7 +36,8 @@ resolver: lts-12.14
 #  - auto-update
 #  - wai
 packages:
-- .
+- docrecords
+- porcupine-core
 
 # Dependency packages to be pulled from upstream that are not in the resolver
 # using the same syntax as the packages field.
