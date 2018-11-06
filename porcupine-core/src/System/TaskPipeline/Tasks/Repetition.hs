@@ -141,7 +141,7 @@ mappingOverStream_ k v t =
 repeatedlyWriteData
   :: (LocationMonad m, KatipContext m, Typeable a, Show i)
   => LocVariable
-  -> VirtualFile a ignored -- ^ A 'DataSink'
+  -> VirtualFile m a ignored -- ^ A 'DataSink'
   -> ISTask m i a r
 repeatedlyWriteData rkey vf =
   mappingOverStream_ rkey (Just V1) $ writeData vf
@@ -152,7 +152,7 @@ repeatedlyWriteData rkey vf =
 repeatedlyLoadData
   :: (LocationMonad m, KatipContext m, Typeable b, Monoid b, Show i)
   => LocVariable
-  -> VirtualFile ignored b -- ^ A 'DataSource'
+  -> VirtualFile m ignored b -- ^ A 'DataSource'
   -> OSTask m i (Stream (Of i) m r) b
 repeatedlyLoadData rkey vf =
   arr (fmap (const ()) . S.map (,()))
@@ -164,7 +164,7 @@ repeatedlyLoadData rkey vf =
 repeatedlyLoadData'
   :: (LocationMonad m, KatipContext m, Typeable b, Monoid b, Show i)
   => LocVariable
-  -> VirtualFile ignore b -- ^ A 'DataSource'
+  -> VirtualFile m ignore b -- ^ A 'DataSource'
   -> OSTask m i [i] b
 repeatedlyLoadData' rkey vf =
   arr S.each >>> repeatedlyLoadData rkey vf

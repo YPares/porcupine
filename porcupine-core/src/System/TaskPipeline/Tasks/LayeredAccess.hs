@@ -39,7 +39,7 @@ import           System.TaskPipeline.ResourceTree
 -- See 'accessVirtualFile'.
 loadData
   :: (LocationMonad m, KatipContext m, Monoid a, Typeable a)
-  => VirtualFile ignored a -- ^ A 'DataSource'
+  => VirtualFile m ignored a -- ^ A 'DataSource'
   -> PTask m () a  -- ^ The resulting task
 loadData vf = arr (const $ error "loadData: THIS IS VOID")  -- Won't be evaluated
           >>> (accessVirtualFile $ makeSource vf)
@@ -48,7 +48,7 @@ loadData vf = arr (const $ error "loadData: THIS IS VOID")  -- Won't be evaluate
 -- load the last layer bound to the 'VirtualFile'.
 loadLast
   :: (LocationMonad m, KatipContext m, Typeable a)
-  => VirtualFile ignored a -- ^ A 'DataSource'
+  => VirtualFile m ignored a -- ^ A 'DataSource'
   -> PTask m () a  -- ^ The resulting task
 loadLast vf = loadData (rmap (Last . Just) vf') >>> arr get
   where
@@ -62,7 +62,7 @@ loadLast vf = loadData (rmap (Last . Just) vf') >>> arr get
 -- See 'accessVirtualFile'
 writeData
   :: (LocationMonad m, KatipContext m, Typeable a)
-  => VirtualFile a ignored  -- ^ A 'DataSink'
+  => VirtualFile m a ignored  -- ^ A 'DataSink'
   -> PTask m a ()
 writeData = accessVirtualFile . makeSink
 
@@ -71,7 +71,7 @@ writeData = accessVirtualFile . makeSink
 -- function to actually access the data.
 accessVirtualFile
   :: (LocationMonad m, KatipContext m, Typeable a, Typeable b, Monoid b)
-  => VirtualFile a b
+  => VirtualFile m a b
   -> PTask m a b
 accessVirtualFile vfile =
   liftToPTask path (Identity fname) $
@@ -88,7 +88,7 @@ accessVirtualFile vfile =
     path = init $ vfile ^. vfilePath
     fname = file (last $ vfile ^. vfilePath) $ VirtualFileNode vfile
 
-err :: (KatipContext m, MonadThrow m) => VirtualFile a1 b -> String -> m a2
+err :: (KatipContext m, MonadThrow m) => VirtualFile m a1 b -> String -> m a2
 err vfile s = throwWithPrefix $ "accessVirtualFile (" ++ showVFilePath vfile ++ "): " ++ s
 
 -- | Returns the locs mapped to some path in the location tree. It *doesn't*

@@ -18,7 +18,8 @@ import           Data.Maybe
 import           Katip
 import           System.Exit
 import           System.TaskPipeline.CLI
-import           System.TaskPipeline.Logger (defaultLoggerScribeParams,
+import           System.TaskPipeline.Logger (LoggerScribeParams,
+                                             defaultLoggerScribeParams,
                                              runLogger)
 import           System.TaskPipeline.Tasks
 
@@ -45,14 +46,12 @@ runPipelineTask
   -> i                 -- ^ The pipeline task input
   -> IO o -- , RscAccessTree (ResourceTreeNode m))
                        -- ^ The pipeline task output and the final LocationTree
-runPipelineTask progName cliUsage ptask input = do
-  let -- cliUsage' = pipelineConfigMethodChangeResult cliUsage
-      tree = getTaskTree ptask
-        -- We temporarily instanciate ptask so we can get the tree (which
-        -- doesn't depend anyway on the monad). That's just to make GHC happy.
+runPipelineTask progName cliUsage ptask input =
+  -- let cliUsage' = pipelineConfigMethodChangeResult cliUsage
   catch
-    (bindResourceTreeAndRun progName cliUsage tree $
-      runPipelineCommandOnPTask ptask input)
+    (bindResourceTreeAndRun progName cliUsage (pTaskResourceTree ptask)
+      (runPipelineCommandOnPTask ptask input)
+      (selectRun' progName))
     (\(SomeException e) -> do
         putStrLn $ displayException e
         exitWith $ ExitFailure 1)
@@ -75,18 +74,13 @@ runPipelineTask_ name cliUsage ptask =
 --   NoConfig r     -> NoConfig r
 --   FullConfig s r -> FullConfig s r
 
-getTaskTree
-  :: PTask (KatipContextT LocalM) i o
-  -> VirtualResourceTree
-getTaskTree (PTask t _) = t
-
 -- | Runs the required 'PipelineCommand' on an 'PTask'
 runPipelineCommandOnPTask
   :: (LocationMonad m, KatipContext m)
   => PTask m i o
   -> i
   -> PipelineCommand o --, RscAccessTree (ResourceTreeNode m))
-  -> PhysicalResourceTree
+  -> PhysicalResourceTree m
   -> m o --, RscAccessTree (PhysicalTreeNode m)
 runPipelineCommandOnPTask (PTask origTree taskFn) input cmd boundTree =
   -- origTree is the bare tree straight from the pipeline. boundTree is origTree
@@ -102,21 +96,24 @@ runPipelineCommandOnPTask (PTask origTree taskFn) input cmd boundTree =
       return mempty
 
 -- | Runs the cli if using FullConfig, binds every location in the resource tree
--- to its final value/path, and passes the continuation the bound resource tree.
+-- to its final value/path, and passes the bound resource tree to the
+-- continuation.
 bindResourceTreeAndRun
-  :: String   -- ^ Program name (often model name)
+  :: (KatipContext m, MonadIO m)
+  => String   -- ^ Program name (often model name)
   -> PipelineConfigMethod r -- ^ How to get CLI args from ModelOpts
-  -> VirtualResourceTree    -- ^ The tree to look for DocRecOfoptions in
-  -> (forall m. (KatipContext m, LocationMonad m, MonadIO m)
-      => PipelineCommand r -> PhysicalResourceTree -> m r)
-             -- ^ What to do with the model
+  -> VirtualResourceTree m  -- ^ The tree to look for DocRecOfoptions in
+  -> (PipelineCommand r -> PhysicalResourceTree m -> m r)
+                            -- ^ What to do with the bound resource tree
+  -> (forall a. Either Loc LocationMappings -> LoggerScribeParams -> m a -> IO a)
   -> IO r
-bindResourceTreeAndRun progName (NoConfig root) tree f =
-  selectRun root True $
-    runLogger progName defaultLoggerScribeParams $
+bindResourceTreeAndRun progName (NoConfig root) tree f runMonad =
+  -- selectRun root True $
+  --   runLogger progName defaultLoggerScribeParams $
+  runMonad (Left root) defaultLoggerScribeParams $
       f RunPipeline $
         getPhysicalResourceTreeFromMappings $ ResourceTreeAndMappings tree (Left root) mempty
-bindResourceTreeAndRun progName (FullConfig defConfigFile defRoot) tree f =
+bindResourceTreeAndRun progName (FullConfig defConfigFile defRoot) tree f runMonad =
   withCliParser progName "Run a task pipeline" getParser run
   where
     getParser mbConfigFile =
@@ -124,15 +121,28 @@ bindResourceTreeAndRun progName (FullConfig defConfigFile defRoot) tree f =
         (fromMaybe defConfigFile mbConfigFile)
         (ResourceTreeAndMappings tree (Left defRoot) mempty)
     run rtam@(ResourceTreeAndMappings{rtamMappings=mappings'}) cmd lsp performConfigWrites =
-      selectRun refLoc True $
-        runLogger progName lsp $ do
+      runMonad mappings' lsp $ do
+      -- selectRun refLoc True $
+      --   runLogger progName lsp $ do
           unPreRun performConfigWrites
           f cmd $ getPhysicalResourceTreeFromMappings rtam
-      where
-        refLoc = case mappings' of
-          Left rootLoc -> fmap (const ()) rootLoc
-          Right m      -> refLocFromMappings m
+      -- where
+      --   refLoc = case mappings' of
+      --     Left rootLoc -> fmap (const ()) rootLoc
+      --     Right m      -> refLocFromMappings m
 
+selectRun' :: String
+           -> Either Loc LocationMappings
+           -> LoggerScribeParams
+           -> (forall m. (LocationMonad m, MonadIO m) => m a)
+           -> IO a
+selectRun' progName mappings lsp f =
+  selectRun refLoc True $ runLogger progName lsp f
+  where
+    refLoc = case mappings of
+      Left rootLoc -> fmap (const ()) rootLoc
+      Right m      -> refLocFromMappings m
+  
 refLocFromMappings :: LocationMappings -> Loc_ ()
 refLocFromMappings m = foldr f (LocalFile $ LocFilePath () "")
                                (map (fmap (const ())) $ allLocsInMappings m)

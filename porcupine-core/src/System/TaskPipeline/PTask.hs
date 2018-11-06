@@ -80,7 +80,7 @@ type RscAccessTree n = LocationTree (RscAccess n)
 -- At the time of running, 'pTaskPerform' will be given the resource tree where
 -- VirtualFiles have been replaced by function to pull and write the data.
 data PTask m a b = PTask
-  { pTaskResourceTree :: LocationTree VirtualFileNode
+  { pTaskResourceTree :: LocationTree (VirtualFileNode m)
     -- ^ The tree of all resources required by task. When two tasks are
     -- sequenced, their resource tree are merged.
   , pTaskPerform      :: (a, RscAccessTree (DataAccessNode m)) -> m (b, RscAccessTree (DataAccessNode m))
@@ -187,7 +187,7 @@ clockPTask (PTask reqs fn) = PTask reqs $ \i -> do
 liftToPTask
   :: (LocationMonad m, KatipContext m, Traversable t)
   => [LocationTreePathItem]  -- ^ Path to subfolder in 'LocationTree'
-  -> t (LTPIAndSubtree VirtualFileNode)    -- ^ Items of interest in the subfolder
+  -> t (LTPIAndSubtree (VirtualFileNode m))    -- ^ Items of interest in the subfolder
   -> (i -> t (DataAccessNode m) -> m o)       -- ^ What to run with these items
   -> PTask m i o           -- ^ The resulting PTask
 liftToPTask path filesToAccess writeFn = PTask tree runAccess
