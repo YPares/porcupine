@@ -39,6 +39,7 @@ haskell_library(
             "//hackage:optparse-applicative",
 	    "//hackage:profunctors",
             "//hackage:resourcet",
+            "//hackage:retry",
             "//hackage:streaming",
             "//hackage:streaming-bytestring",
             "//hackage:streaming-conduit",

@@ -1,7 +1,9 @@
 {-# LANGUAGE FlexibleContexts      #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE OverloadedStrings     #-}
+{-# LANGUAGE RecordWildCards       #-}
 {-# LANGUAGE ScopedTypeVariables   #-}
+{-# LANGUAGE ViewPatterns          #-}
 
 module Network.AWS.S3.TaskPipelineUtils
   (
@@ -19,6 +21,8 @@ import           Control.Lens
 import           Control.Monad               (when)
 import           Control.Monad.Catch         (catch, try)
 import           Control.Monad.Trans.AWS
+import           Control.Retry               (RetryPolicyM (..), limitRetries,
+                                              retrying, rsIterNumber)
 import qualified Data.ByteString.Streaming   as BSS
 import           Data.Conduit.Binary         (sinkLbs)
 import           Data.String
@@ -33,6 +37,7 @@ runAll :: AWS b -> IO b
 runAll f = do
   env <- getEnv True
   runResourceT $ runAWS env f
+
 
 getEnv :: Bool -- ^ Verbose
        -> IO Env
@@ -96,11 +101,42 @@ streamObjInto :: (MonadAWS m, AWSConstraint r m)
                  -> ObjectKey
                  -> (BSS.ByteString m () -> m b)
                  -> m (Either Error b)
-streamObjInto srcBuck srcObj f = try $ do
+streamObjInto srcBuck srcObj f = retry (_svcRetry s3) . try $ do
   let g = getObject srcBuck srcObj
   rs <- send g
   resultingBS <- view gorsBody rs `sinkBody` sinkLbs
   f (BSS.fromLazy resultingBS)
+
+-- |
+-- Retries the given action until it succeeds or the maximum attemps has been
+-- reached.
+--
+-- Amazonka has an automatic retry mechanism, except for streaming transfers,
+-- and 'getObject' is streamed (so it doesn't have it).
+-- This means that we have to implement our own retry mechanism, which is
+-- a gross copy-paste of amazonka's internal mechanism.
+--
+-- Reference:
+--      https://github.com/brendanhay/amazonka/blob/248f7b2a7248222cc21cef6194cd1872ba99ac5d/amazonka/src/Network/AWS/Internal/HTTP.hs#L180-L189
+retry :: MonadIO m => Retry -> m (Either e a) -> m (Either e a)
+retry awsRetry action =
+  let
+    retryPolicy =
+      let
+        Exponential {..} = awsRetry
+        delay (rsIterNumber -> n)
+            | n >= 0 = Just $ truncate (grow n * 1000000)
+            | otherwise = Nothing
+        grow n = _retryBase * (fromIntegral _retryGrowth ^^ (n - 1))
+      in
+      limitRetries _retryAttempts <> RetryPolicyM (return . delay)
+    shouldRetry _ result =
+      case result of
+        Right _ -> pure False
+        Left _  -> pure True
+  in
+  retrying retryPolicy shouldRetry (const action)
+
 
 streamObjIntoExt :: (MonadAWS m, AWSConstraint r m)
                      => BucketName
