@@ -1,4 +1,5 @@
 {-# LANGUAGE DeriveFunctor       #-}
+{-# LANGUAGE DeriveGeneric       #-}
 {-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE FlexibleInstances   #-}
 {-# LANGUAGE GADTs               #-}
@@ -65,6 +66,7 @@ import           Data.Monoid                             (First (..))
 import           Data.Representable
 import qualified Data.Text                               as T
 import           Data.Typeable
+import           GHC.Generics                            (Generic)
 import           Katip
 import           Options.Applicative
 import           System.TaskPipeline.ConfigurationReader
@@ -385,6 +387,20 @@ data TaskConstructionError =
   deriving (Show)
 instance Exception TaskConstructionError
 
+data DataAccessContext = DAC
+  { locationAccessed     :: String
+  , requiredLocVariables :: [LocVariable]
+  , providedLocVariables :: LocVariableMap
+  , splicedLocation      :: String }
+  deriving (Generic)
+
+instance ToJSON DataAccessContext
+instance ToObject DataAccessContext
+instance LogItem DataAccessContext where
+  payloadKeys V3 _ = AllKeys
+  payloadKeys _  _ = SomeKeys ["locationAccessed"]
+
+
 -- | Transform a file node with physical locations in node with a data access
 -- function to run. Matches the location (esp. file extensions) to writers
 -- available in the 'VirtualFile'.
@@ -401,14 +417,14 @@ resolveDataAccess (PhysicalFileNode layers vf) = do
   writeLocs <- findFunctions writers
   readLocs <- findFunctions readers
   return $ DataAccessNode layers $ \repetKeyMap input -> do
-    forM_ writeLocs $ \(WriteToLoc _rkeys f, loc) ->
-      katipAddContext (sl "locationAccessed" $ show loc) $ do
-        loc' <- fillLoc repetKeyMap loc
+    forM_ writeLocs $ \(WriteToLoc rkeys f, loc) -> do
+      loc' <- fillLoc repetKeyMap loc
+      katipAddContext (DAC (show loc) rkeys repetKeyMap (show loc')) $ do
         f input loc'
         logFM NoticeS $ logStr $ "Wrote '" ++ show loc' ++ "'"
-    layersRes <- mconcat <$> forM readLocs (\(ReadFromLoc _rkeys f, loc) ->
-      katipAddContext (sl "locationAccessed" $ show loc) $ do
-        loc' <- fillLoc repetKeyMap loc
+    layersRes <- mconcat <$> forM readLocs (\(ReadFromLoc rkeys f, loc) -> do
+      loc' <- fillLoc repetKeyMap loc
+      katipAddContext (DAC (show loc) rkeys repetKeyMap (show loc')) $ do
         r <- f loc'
         logFM DebugS $ logStr $ "Read '" ++ show loc' ++ "'"
         return r)
