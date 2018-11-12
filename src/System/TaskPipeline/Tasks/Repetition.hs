@@ -26,6 +26,7 @@ import qualified Streaming.Prelude                       as S
 import           System.TaskPipeline.PTask
 import           System.TaskPipeline.ResourceTree
 import           System.TaskPipeline.Tasks.LayeredAccess
+import Debug.Trace
 
 
 -- * Logging context for repeated tasks
@@ -73,10 +74,6 @@ type OSTask m i a b =
 --
 -- Calls to 'mappingOverStream' can be nested, this way the underlying VirtualFiles
 -- will have one 'RepetitionKey' per loop (from outermost loop to innermost).
---
--- Note: The repeated task has to be executed on the first element of the stream
--- before the next task can consume the resulting stream. This next task will
--- receive as resource tree the one returned by this first iteration.
 mappingOverStream
   :: forall m i a b r.
      (KatipContext m, Show i)
@@ -101,10 +98,10 @@ mappingOverStream repetitionKey mbVerb (PTask reqTree perform) = PTask reqTree' 
       case firstElem of
         Left r -> return (return r, origTree)  -- Empty input stream
         Right (firstInput, inputStream') -> do
-          (firstResult, firstOutputTree) <- performOnce origTree firstInput
+          (firstResult, _) <- performOnce origTree firstInput
           let resultStream =
                 firstResult `S.cons` S.mapM (fmap fst . performOnce origTree) inputStream'
-          return (resultStream, firstOutputTree)
+          return (resultStream, origTree)
 
     addKeyToVirtualFile (VirtualFileNode vf) =
       VirtualFileNode $ vf & vfileSerials . serialsRepetitionKeys %~ (repetitionKey:)
