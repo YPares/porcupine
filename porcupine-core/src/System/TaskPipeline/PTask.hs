@@ -24,7 +24,6 @@ module System.TaskPipeline.PTask
   , Severity(..)
   , tryPTask, throwPTask, clockPTask
   , unsafeLiftToPTask, unsafeRunIOTask
-  , liftToPTask
   , ptaskInSubtree
   , voidTask
   , addContextToTask
@@ -40,15 +39,12 @@ import           Control.Category
 import           Control.DeepSeq                    (NFData (..), force)
 import           Control.Exception                  (evaluate)
 import           Control.Lens
-import           Control.Monad
 import           Control.Monad.IO.Class
-import qualified Data.Foldable                      as F
 import           Data.Locations
 import           Data.String
 import           Katip
 import           System.Clock
 import           System.TaskPipeline.PTask.Internal
-import           System.TaskPipeline.ResourceTree
 
 
 -- | a tasks that discards its inputs and returns ()
@@ -106,34 +102,6 @@ clockPTask task = proc input -> do
 -- | Logs a message during the pipeline execution
 logTask :: (KatipContext m) => PTask m (Severity, String) ()
 logTask = unsafeLiftToPTask $ \(sev, s) -> logFM sev $ logStr s
-
--- | Wraps in a task a function that needs to access some items present in a
--- subfolder of the 'LocationTree' and mark these accesses as done. This is the
--- main low-level way to create a PTask, but beware, most of the time you
--- probably want the higher-level interface of
--- System.TaskPipeline.Tasks.LayeredAccess.
-liftToPTask
-  :: (MonadThrow m, KatipContext m, Traversable t)
-  => [LocationTreePathItem]  -- ^ Path to subfolder in 'LocationTree'
-  -> t (LTPIAndSubtree VirtualFileNode)    -- ^ Items of interest in the subfolder
-  -> (i -> t (DataAccessNode m) -> m o)       -- ^ What to run with these items
-  -> PTask m i o           -- ^ The resulting PTask
-liftToPTask path filesToAccess writeFn = makePTask tree runAccess
-  where
-    tree = foldr (\pathItem subtree -> folderNode [ pathItem :/ subtree ])
-                 (folderNode $ F.toList filesToAccess) path
-    runAccess rscTree input = do
-      let mbSubtree = rscTree ^? atSubfolderRec path
-      subtree <- case mbSubtree of
-        Just s -> return s
-        Nothing -> throwWithPrefix $
-          "path '" ++ show path ++ "' not found in the LocationTree"
-      nodeTags <- forM filesToAccess $ \(filePathItem :/ _) -> do
-        case subtree ^? atSubfolder filePathItem . locTreeNodeTag of
-          Nothing -> throwWithPrefix $
-            "path '" ++ show filePathItem ++ "' not found in the LocationTree"
-          Just tag -> return tag
-      writeFn input nodeTags
 
 -- | To transform the state of the PTask when it will run
 ptaskReaderState :: Setter' (PTask m a b) (PTaskReaderState m)

@@ -14,22 +14,31 @@
 -- | This module provides some utilities for when the pipeline needs to access
 -- several files organized in layers for each location in the 'LocationTree'
 module System.TaskPipeline.Tasks.LayeredAccess
-  ( loadData
+  ( -- * Reexports
+    Typeable
+
+    -- * High-level API
+  , loadData
   , loadLast
   , writeData
+
+    -- * Lower-level API
   , accessVirtualFile
+  , getAccessFunctions
   , getLocsMappedTo
-  , Typeable
   ) where
 
 import           Prelude                            hiding (id, (.))
 
 import           Control.Lens
+import           Control.Monad                      (forM)
+import qualified Data.Foldable                      as F
 import           Data.Locations
 import           Data.Monoid
 import           Data.Typeable
 import           System.TaskPipeline.PTask
-import           System.TaskPipeline.PTask.Internal (withDataAccessTree)
+import           System.TaskPipeline.PTask.Internal (withDataAccessTree
+                                                    ,makePTask)
 import           System.TaskPipeline.ResourceTree
 
 
@@ -75,7 +84,7 @@ accessVirtualFile
   => VirtualFile a b
   -> PTask m a b
 accessVirtualFile vfile =
-  liftToPTask path (Identity fname) $
+  getAccessFunctions path (Identity fname) $
     \input (Identity mbAction) -> case mbAction of
       DataAccessNode _ action -> do
         res <- case cast input of
@@ -91,6 +100,31 @@ accessVirtualFile vfile =
 
 err :: (KatipContext m, MonadThrow m) => VirtualFile a1 b -> String -> m a2
 err vfile s = throwWithPrefix $ "accessVirtualFile (" ++ showVFilePath vfile ++ "): " ++ s
+
+-- | Wraps in a task a function that needs to access some items present in a
+-- subfolder of the 'LocationTree' and mark these accesses as done.
+getAccessFunctions
+  :: (MonadThrow m, KatipContext m, Traversable t)
+  => [LocationTreePathItem]  -- ^ Path to subfolder in 'LocationTree'
+  -> t (LTPIAndSubtree VirtualFileNode)    -- ^ Items of interest in the subfolder
+  -> (i -> t (DataAccessNode m) -> m o)       -- ^ What to run with these items
+  -> PTask m i o           -- ^ The resulting PTask
+getAccessFunctions path filesToAccess writeFn = makePTask tree runAccess
+  where
+    tree = foldr (\pathItem subtree -> folderNode [ pathItem :/ subtree ])
+                 (folderNode $ F.toList filesToAccess) path
+    runAccess rscTree input = do
+      let mbSubtree = rscTree ^? atSubfolderRec path
+      subtree <- case mbSubtree of
+        Just s -> return s
+        Nothing -> throwWithPrefix $
+          "path '" ++ show path ++ "' not found in the LocationTree"
+      nodeTags <- forM filesToAccess $ \(filePathItem :/ _) -> do
+        case subtree ^? atSubfolder filePathItem . locTreeNodeTag of
+          Nothing -> throwWithPrefix $
+            "path '" ++ show filePathItem ++ "' not found in the LocationTree"
+          Just tag -> return tag
+      writeFn input nodeTags
 
 -- | Returns the locs mapped to some path in the location tree. It *doesn't*
 -- expose this path as a requirement (hence the result list may be empty, as no
