@@ -20,7 +20,7 @@ module System.TaskPipeline.PTask
   ( module Control.Category
   , module Control.Arrow
   , MonadThrow(..)
-  , PTask(..)
+  , PTask
   , Severity(..)
   , tryPTask, throwPTask, clockPTask
   , unsafeLiftToPTask, unsafeRunIOTask
@@ -44,6 +44,7 @@ import           Control.Monad
 import           Control.Monad.IO.Class
 import qualified Data.Foldable                      as F
 import           Data.Locations
+import           Data.String
 import           Katip
 import           System.Clock
 import           System.TaskPipeline.PTask.Internal
@@ -134,3 +135,29 @@ liftToPTask path filesToAccess writeFn =
             "path '" ++ show filePathItem ++ "' not found in the LocationTree"
           Just tag -> return tag
       writeFn input nodeTags
+
+-- | To transform the state of the PTask when it will run
+ptaskReaderState :: Setter' (PTask m a b) (PTaskReaderState m)
+ptaskReaderState = splittedPTask . _2 . runnablePTaskState
+
+-- | Adds some context that will be used at logging time. See 'katipAddContext'
+addContextToTask :: (LogItem i) => i -> PTask m a b -> PTask m a b
+addContextToTask item =
+  over (ptaskReaderState . ptrsKatipContext) (<> (liftPayload item))
+
+-- | Adds a namespace to the task. See 'katipAddNamespace'
+addNamespaceToTask :: String -> PTask m a b -> PTask m a b
+addNamespaceToTask ns =
+  over (ptaskReaderState . ptrsKatipNamespace) (<> (fromString ns))
+
+-- | Moves the 'LocationTree' associated to the task deeper in the final
+-- tree. This can be used to solve conflicts between tasks that have
+-- 'LocationTree's that are identical (for instance input files for a model if
+-- you want to solve several models, in which case you'd want for instance to
+-- add an extra level at the root of the tree with the model name).
+ptaskInSubtree :: [LocationTreePathItem] -> PTask m a b -> PTask m a b
+ptaskInSubtree path = over splittedPTask $ \(reqTree, runnable) ->
+  let reqTree' = foldr (\pathItem rest -> folderNode [pathItem :/ rest]) reqTree path
+      runnable' = runnable & over (runnablePTaskState . ptrsDataAccessTree)
+                                  (view $ atSubfolderRec path)
+  in (reqTree', runnable')

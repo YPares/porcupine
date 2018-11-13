@@ -5,16 +5,16 @@
 {-# LANGUAGE TemplateHaskell            #-}
 
 module System.TaskPipeline.PTask.Internal
-  ( PTask(..)
-  , PTaskReaderState(..)
+  ( PTask
+  , PTaskReaderState
+  , ptrsKatipContext
+  , ptrsKatipNamespace
+  , ptrsDataAccessTree
   , unsafeLiftToPTask
   , splittedPTask
   , withDataAccessTree'
   , withDataAccessTree
-  , ptaskReaderState
-  , addContextToTask
-  , addNamespaceToTask
-  , ptaskInSubtree
+  , runnablePTaskState
   ) where
 
 import           Prelude                          hiding (id, (.))
@@ -26,14 +26,12 @@ import           Control.Arrow.Free               (ArrowError)
 import           Control.Category
 import           Control.Funflow
 import           Control.Lens
-import           Control.Monad.Trans
 import           Control.Monad.Trans.Reader
 import           Control.Monad.Trans.Writer
 import           Data.Default
 import           Data.Locations.LocationTree
 import           Data.Locations.LogAndErrors
-import           Data.String
-import           Katip.Core                       (Namespace, LogItem)
+import           Katip.Core                       (Namespace)
 import           Katip.Monadic
 import           System.TaskPipeline.ResourceTree
 
@@ -104,7 +102,7 @@ withDataAccessTree = withDataAccessTree' def
 -- requirements, so if the action uses files or resources, they won't appear in
 -- the LocationTree.
 unsafeLiftToPTask :: (KatipContext m) => (a -> m b) -> PTask m a b
-unsafeLiftToPTask f = wrap . AsyncA $ lift . f
+unsafeLiftToPTask f = PTask $ appArrow $ withDataAccessTree $ const f
 
 -- | An Iso to the requirements and the runnable part of a 'PTask'
 splittedPTask :: Iso' (PTask m a b) (ReqTree, RunnablePTask m a b)
@@ -116,29 +114,3 @@ splittedPTask = iso to_ from_
 
 runnablePTaskState :: Setter' (RunnablePTask m a b) (PTaskReaderState m)
 runnablePTaskState = lens unAppArrow (const AppArrow) . setting local
-
--- | To transform the state of the PTask when it will run
-ptaskReaderState :: Setter' (PTask m a b) (PTaskReaderState m)
-ptaskReaderState = splittedPTask . _2 . runnablePTaskState
-
--- | Adds some context that will be used at logging time. See 'katipAddContext'
-addContextToTask :: (LogItem i) => i -> PTask m a b -> PTask m a b
-addContextToTask item =
-  over (ptaskReaderState . ptrsKatipContext) (<> (liftPayload item))
-
--- | Adds a namespace to the task. See 'katipAddNamespace'
-addNamespaceToTask :: String -> PTask m a b -> PTask m a b
-addNamespaceToTask ns =
-  over (ptaskReaderState . ptrsKatipNamespace) (<> (fromString ns))
-
--- | Moves the 'LocationTree' associated to the task deeper in the final
--- tree. This can be used to solve conflicts between tasks that have
--- 'LocationTree's that are identical (for instance input files for a model if
--- you want to solve several models, in which case you'd want for instance to
--- add an extra level at the root of the tree with the model name).
-ptaskInSubtree :: [LocationTreePathItem] -> PTask m a b -> PTask m a b
-ptaskInSubtree path = over splittedPTask $ \(reqTree, runnable) ->
-  let reqTree' = foldr (\pathItem rest -> folderNode [pathItem :/ rest]) reqTree path
-      runnable' = runnable & over (runnablePTaskState . ptrsDataAccessTree)
-                                  (view $ atSubfolderRec path)
-  in (reqTree', runnable')
