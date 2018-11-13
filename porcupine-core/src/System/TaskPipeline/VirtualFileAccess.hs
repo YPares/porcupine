@@ -13,7 +13,7 @@
 
 -- | This module provides some utilities for when the pipeline needs to access
 -- several files organized in layers for each location in the 'LocationTree'
-module System.TaskPipeline.Tasks.LayeredAccess
+module System.TaskPipeline.VirtualFileAccess
   ( -- * Reexports
     Typeable
 

@@ -1,5 +1,5 @@
 module Porcupine.Tasks
-  ( module System.TaskPipeline.Tasks )
+  ( module System.TaskPipeline )
   where
 
-import           System.TaskPipeline.Tasks
+import           System.TaskPipeline

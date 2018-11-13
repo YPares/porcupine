@@ -2,7 +2,7 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TupleSections       #-}
 
-module System.TaskPipeline.Tasks.Repetition
+module System.TaskPipeline.Repetition
   ( STask, ISTask, OSTask
   , mappingOverStream
   , mappingOverStream_
@@ -13,19 +13,19 @@ module System.TaskPipeline.Tasks.Repetition
   , Typeable
   ) where
 
-import           Control.Lens                            hiding ((:>), (.=))
+import           Control.Lens                          hiding ((:>), (.=))
 import           Control.Monad
 import           Data.Aeson
-import qualified Data.HashMap.Strict                     as HM
+import qualified Data.HashMap.Strict                   as HM
 import           Data.Locations
 import           Data.Typeable
 import           Katip
-import           Prelude                                 hiding ((.))
-import           Streaming                               (Of (..), Stream)
-import qualified Streaming.Prelude                       as S
+import           Prelude                               hiding ((.))
+import           Streaming                             (Of (..), Stream)
+import qualified Streaming.Prelude                     as S
 import           System.TaskPipeline.PTask
 import           System.TaskPipeline.ResourceTree
-import           System.TaskPipeline.Tasks.LayeredAccess
+import           System.TaskPipeline.VirtualFileAccess
 import Debug.Trace
 
 

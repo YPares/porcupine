@@ -18,9 +18,10 @@ import           Data.Maybe
 import           Katip
 import           System.Exit
 import           System.TaskPipeline.CLI
-import           System.TaskPipeline.Logger (defaultLoggerScribeParams,
-                                             runLogger)
-import           System.TaskPipeline.Tasks
+import           System.TaskPipeline.Logger       (defaultLoggerScribeParams,
+                                                   runLogger)
+import           System.TaskPipeline.PTask
+import           System.TaskPipeline.ResourceTree
 
 
 -- | A task defining a whole pipeline, and that may run in any LocationMonad. It
