@@ -118,8 +118,7 @@ liftToPTask
   -> t (LTPIAndSubtree VirtualFileNode)    -- ^ Items of interest in the subfolder
   -> (i -> t (DataAccessNode m) -> m o)       -- ^ What to run with these items
   -> PTask m i o           -- ^ The resulting PTask
-liftToPTask path filesToAccess writeFn =
-  (tree, withDataAccessTree runAccess) ^. from splittedPTask
+liftToPTask path filesToAccess writeFn = makePTask tree runAccess
   where
     tree = foldr (\pathItem subtree -> folderNode [ pathItem :/ subtree ])
                  (folderNode $ F.toList filesToAccess) path
