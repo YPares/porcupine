@@ -31,6 +31,7 @@ dependencies:
   - exceptions
   - filepath
   - formatting
+  - funflow
   - hashable
   - katip >= 0.6.3
   - lens
@@ -45,6 +46,7 @@ dependencies:
   - template-haskell
   - temporary
   - text
+  - transformers
   - unliftio-core
   - unordered-containers
   - url
