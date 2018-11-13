@@ -4,6 +4,9 @@
 {-# LANGUAGE MultiParamTypeClasses      #-}
 {-# LANGUAGE TemplateHaskell            #-}
 
+-- | This module exposes the 'PTask' arrow along with some low-level functions
+-- to create and run a 'PTask'.
+
 module System.TaskPipeline.PTask.Internal
   ( PTask
   , PTaskReaderState
@@ -14,8 +17,9 @@ module System.TaskPipeline.PTask.Internal
   , runnablePTaskState
   , makePTask
   , makePTask'
+  , withDataAccessTree
+  , withDataAccessTree'
   , unsafeLiftToPTask
-  , unsafeLiftToPTask'
   ) where
 
 import           Prelude                          hiding (id, (.))
@@ -82,20 +86,25 @@ instance (KatipContext m) => ArrowFlow (EffectInFlow m) SomeException (PTask m) 
   external' props f = flowToPTask $ external' props f
   -- wrap' transmits the Reader state of the PTask down to the flow:
   wrap' props (AsyncA rdrAct) =
-    PTask $ appArrow $
-      withDataAccessTree props $ \tree input ->
-                                   runReaderT (rdrAct input) tree
+    withDataAccessTree' props $ \tree input ->
+                                  runReaderT (rdrAct input) tree
   putInStore f = flowToPTask $ putInStore f
   getFromStore f = flowToPTask $ getFromStore f
   internalManipulateStore f = flowToPTask $ internalManipulateStore f
 
-withDataAccessTree :: (KatipContext m)
-                    => Properties a b -> (DataAccessTree m -> a -> m b) -> RunnablePTask m a b
-withDataAccessTree props f = AppArrow $ reader $ \ptrs ->
+-- | A version of 'unsafeLiftToPTask' that can get the DataAccessTree and do
+-- caching.
+withDataAccessTree' :: (KatipContext m)
+                    => Properties a b -> (DataAccessTree m -> a -> m b) -> PTask m a b
+withDataAccessTree' props f = PTask $ appArrow $ AppArrow $ reader $ \ptrs ->
   wrap' props $ AsyncA $ \input ->
     localKatipContext (<> _ptrsKatipContext ptrs) $
       localKatipNamespace (const $ _ptrsKatipNamespace ptrs) $
         f (_ptrsDataAccessTree ptrs) input
+
+withDataAccessTree :: (KatipContext m)
+                   => (DataAccessTree m -> a -> m b) -> PTask m a b
+withDataAccessTree = withDataAccessTree' def
 
 -- | An Iso to the requirements and the runnable part of a 'PTask'
 splittedPTask :: Iso' (PTask m a b) (ReqTree, RunnablePTask m a b)
@@ -111,15 +120,9 @@ runnablePTaskState = lens unAppArrow (const AppArrow) . setting local
 -- | Turn an action into a PTask. BEWARE! The resulting 'PTask' will have NO
 -- requirements, so if the action uses files or resources, they won't appear in
 -- the LocationTree.
-unsafeLiftToPTask' :: (KatipContext m)
-                   => Properties a b -> (a -> m b) -> PTask m a b
-unsafeLiftToPTask' props f =
-  PTask $ appArrow $ withDataAccessTree props $ const f
-
--- | See 'unsafeLiftToPTask''. Doesn't do caching.
 unsafeLiftToPTask :: (KatipContext m)
                   => (a -> m b) -> PTask m a b
-unsafeLiftToPTask = unsafeLiftToPTask' def
+unsafeLiftToPTask f = withDataAccessTree $ const f
 
 -- | Makes a task from a tree of requirements and a function. The 'Properties'
 -- indicate whether we can cache this task.
@@ -129,7 +132,9 @@ makePTask' :: (KatipContext m)
            -> (DataAccessTree m -> a -> m b)
            -> PTask m a b
 makePTask' props tree f =
-  (tree, withDataAccessTree props f) ^. from splittedPTask
+  (tree, rmWriterLayer $ withDataAccessTree' props f) ^. from splittedPTask
+  where
+    rmWriterLayer (PTask (AppArrow t)) = fst $ runWriter t
 
 -- | Makes a task from a tree of requirements and a function. This is the entry
 -- point to PTasks

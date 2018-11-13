@@ -22,13 +22,14 @@ module System.TaskPipeline.Tasks.LayeredAccess
   , Typeable
   ) where
 
-import           Prelude                          hiding (id, (.))
+import           Prelude                            hiding (id, (.))
 
 import           Control.Lens
 import           Data.Locations
 import           Data.Monoid
 import           Data.Typeable
 import           System.TaskPipeline.PTask
+import           System.TaskPipeline.PTask.Internal (withDataAccessTree)
 import           System.TaskPipeline.ResourceTree
 
 
@@ -95,10 +96,11 @@ err vfile s = throwWithPrefix $ "accessVirtualFile (" ++ showVFilePath vfile ++ 
 -- expose this path as a requirement (hence the result list may be empty, as no
 -- mapping might exist). SHOULD NOT BE USED UNLESS loadData/writeData cannot do
 -- what you want.
-getLocsMappedTo :: (Monad m) => [LocationTreePathItem] -> PTask m () [LocWithVars]
-getLocsMappedTo path = PTask mempty (\(_,tree) -> return (getLocs tree, tree))
+getLocsMappedTo :: (KatipContext m)
+                => [LocationTreePathItem] -> PTask m () [LocWithVars]
+getLocsMappedTo path = withDataAccessTree $ \tree _ -> return $ getLocs tree
   where
     getLocs tree =
-      case tree ^? (atSubfolderRec path . locTreeNodeTag . rscAccessed) of
+      case tree ^? (atSubfolderRec path . locTreeNodeTag) of
         Just (MbDataAccessNode locs _) -> locs
         _                              -> []
