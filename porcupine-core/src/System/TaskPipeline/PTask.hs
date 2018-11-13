@@ -44,7 +44,6 @@ import           Control.Monad
 import           Control.Monad.IO.Class
 import qualified Data.Foldable                      as F
 import           Data.Locations
-import           Data.String                        (IsString (..))
 import           Katip
 import           System.Clock
 import           System.TaskPipeline.PTask.Internal
@@ -97,11 +96,11 @@ clockPTask
 clockPTask task = proc input -> do
   start <- unsafeRunIOTask $ const $ getTime Realtime -< ()
   output <- task -< input
-  end <- unsafeRunIOTask timeEnd -< output
-  returnA -< (output, end `diffTimeSpec` start)
+  (output', end) <- unsafeRunIOTask timeEnd -< output
+  returnA -< (output', end `diffTimeSpec` start)
   where timeEnd x = do
-          evaluate $ force x
-          getTime Realtime
+          x' <- evaluate $ force x
+          (x',) <$> getTime Realtime
 
 -- | Logs a message during the pipeline execution
 logTask :: (KatipContext m) => PTask m (Severity, String) ()
@@ -113,16 +112,17 @@ logTask = unsafeLiftToPTask $ \(sev, s) -> logFM sev $ logStr s
 -- probably want the higher-level interface of
 -- System.TaskPipeline.Tasks.LayeredAccess.
 liftToPTask
-  :: (LocationMonad m, KatipContext m, Traversable t)
+  :: (MonadThrow m, KatipContext m, Traversable t)
   => [LocationTreePathItem]  -- ^ Path to subfolder in 'LocationTree'
   -> t (LTPIAndSubtree VirtualFileNode)    -- ^ Items of interest in the subfolder
   -> (i -> t (DataAccessNode m) -> m o)       -- ^ What to run with these items
   -> PTask m i o           -- ^ The resulting PTask
-liftToPTask path filesToAccess writeFn = (tree, runAccess) ^. from splittedPTask
+liftToPTask path filesToAccess writeFn =
+  (tree, withDataAccessTree runAccess) ^. from splittedPTask
   where
     tree = foldr (\pathItem subtree -> folderNode [ pathItem :/ subtree ])
                  (folderNode $ F.toList filesToAccess) path
-    runAccess (input, rscTree) = do
+    runAccess rscTree input = do
       let mbSubtree = rscTree ^? atSubfolderRec path
       subtree <- case mbSubtree of
         Just s -> return s
