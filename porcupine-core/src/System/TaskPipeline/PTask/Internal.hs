@@ -6,6 +6,9 @@
 
 module System.TaskPipeline.PTask.Internal
   ( PTask(..)
+  , PTaskReaderState(..)
+  , splittedPTask
+  , ptaskReaderState
   , addContextToTask
   , addNamespaceToTask
   , unsafeLiftToPTask
@@ -43,6 +46,14 @@ makeLenses ''PTaskReaderState
 
 type EffectInFlow m = AsyncA (ReaderT (RunTree m) m)
 
+-- | The part of a 'PTask' that will be ran once the whole pipeline is composed
+-- and the tree of requirements has been bound to physical locations.
+type RunnablePTask m =
+  AppArrow
+    (Reader (PTaskReaderState m)) -- The reader layer contains the mapped
+                                  -- tree. Will be used only as an applicative.
+    (Flow (AsyncA m) TaskRunError)
+
 -- | A task is an Arrow than turns @a@ into @b@. It runs in some monad @m@.
 -- Each 'PTask' will expose its requirements in terms of resource it wants to
 -- access in the form of a resource tree (implemented as a 'LocationTree' of
@@ -54,11 +65,7 @@ newtype PTask m a b = PTask
   (AppArrow
     (Writer ReqTree)  -- The writer layer accumulates the requirements. It will
                       -- be used only as an applicative.
-    (AppArrow
-      (Reader (PTaskReaderState m)) -- The reader layer contains the mapped
-                                     -- tree. Will be used only as an
-                                     -- applicative too.
-      (Flow (AsyncA m) TaskRunError))
+    (RunnablePTask m)
     a b)
   deriving (Category, Arrow, ArrowError TaskRunError)
 
@@ -80,18 +87,32 @@ instance (KatipContext m) => ArrowFlow (EffectInFlow m) TaskRunError (PTask m) w
   getFromStore f = flowToPTask $ getFromStore f
   internalManipulateStore f = flowToPTask $ internalManipulateStore f
 
-ptrsLocal :: (PTaskReaderState m -> PTaskReaderState m) -> PTask m a b -> PTask m a b
-ptrsLocal f (PTask (AppArrow wrtrAct)) = PTask $ AppArrow $
-  writer (AppArrow $ local f rdrAct, w)
-  where (AppArrow rdrAct, w) = runWriter wrtrAct
+-- | A lens to the requirements and the runnable part of a 'PTask'
+splittedPTask :: Lens' (PTask m a b) (ReqTree, RunnablePTask m a b)
+splittedPTask f (PTask (AppArrow wrtrAct)) =
+  PTask . AppArrow . writer . swap <$> (f $ swap $ runWriter wrtrAct)
+  where swap (a,b) = (b,a)
 
+-- | To transform the state of the PTask when it will run
+ptaskReaderState :: Setter' (PTask m a b) (PTaskReaderState m)
+ptaskReaderState =
+  splittedPTask . _2 . lens unAppArrow (const AppArrow) . setting local
+
+-- | Adds some context that will be used at logging time. See 'katipAddContext'
 addContextToTask :: (LogItem i) => i -> PTask m a b -> PTask m a b
 addContextToTask item =
-  ptrsLocal $ over ptrsKatipContext (<> (liftPayload item))
+  over (ptaskReaderState.ptrsKatipContext) (<> (liftPayload item))
 
+-- | Adds a namespace to the task. See 'katipAddNamespace'
 addNamespaceToTask :: String -> PTask m a b -> PTask m a b
 addNamespaceToTask ns =
-  ptrsLocal $ over ptrsKatipNamespace (<> (fromString ns))
+  over (ptaskReaderState.ptrsKatipNamespace) (<> (fromString ns))
 
+-- | Turn an action into a PTask. BEWARE! The resulting 'PTask' will have NO
+-- requirements, so if the action uses files or resources, they won't appear in
+-- the LocationTree.
 unsafeLiftToPTask :: (KatipContext m) => (a -> m b) -> PTask m a b
 unsafeLiftToPTask f = wrap . AsyncA $ lift . f
+
+--ptaskInSubtree :: [LocationTreePathItem] -> PTask m a b -> PTask m a b
+--ptaskInSubtree = withSplittedPTask 
