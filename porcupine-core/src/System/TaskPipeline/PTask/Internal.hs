@@ -2,8 +2,14 @@
 {-# LANGUAGE TypeSynonymInstances       #-}
 {-# LANGUAGE FlexibleInstances          #-}
 {-# LANGUAGE MultiParamTypeClasses      #-}
+{-# LANGUAGE TemplateHaskell            #-}
 
-module System.TaskPipeline.PTask.Internal where
+module System.TaskPipeline.PTask.Internal
+  ( PTask(..)
+  , addContextToTask
+  , addNamespaceToTask
+  , unsafeLiftToPTask
+  ) where
 
 import           Control.Arrow
 import           Control.Arrow.AppArrow
@@ -11,11 +17,14 @@ import           Control.Arrow.Async
 import           Control.Arrow.Free               (ArrowError)
 import           Control.Category
 import           Control.Funflow
+import           Control.Lens
+import           Control.Monad.Trans
 import           Control.Monad.Trans.Reader
 import           Control.Monad.Trans.Writer
 import           Data.Locations.LocationTree
 import           Data.Locations.LogAndErrors
-import           Katip.Core                       (Namespace)
+import           Data.String
+import           Katip.Core                       (Namespace, LogItem)
 import           Katip.Monadic
 import           System.TaskPipeline.ResourceTree
 
@@ -26,9 +35,11 @@ type ReqTree = LocationTree VirtualFileNode
 type RunTree m = LocationTree (DataAccessNode m)
 
 data PTaskReaderState m = PTaskReaderState
-  { ptrsKatipContext   :: !LogContexts
-  , ptrsKatipNamespace :: !Namespace
-  , ptrsRunTree        :: !(RunTree m) }
+  { _ptrsKatipContext   :: !LogContexts
+  , _ptrsKatipNamespace :: !Namespace
+  , _ptrsRunTree        :: !(RunTree m) }
+
+makeLenses ''PTaskReaderState
 
 type EffectInFlow m = AsyncA (ReaderT (RunTree m) m)
 
@@ -62,9 +73,25 @@ instance (KatipContext m) => ArrowFlow (EffectInFlow m) TaskRunError (PTask m) w
   -- wrap' transmits the Reader state of the PTask down to the flow:
   wrap' props (AsyncA rdrAct) = PTask $ AppArrow $ pure $ AppArrow $ reader $ \ptrs ->
     wrap' props $ AsyncA $ \input ->
-      localKatipContext (<> ptrsKatipContext ptrs) $
-        localKatipNamespace (const $ ptrsKatipNamespace ptrs) $
-          runReaderT (rdrAct input) $ ptrsRunTree ptrs
+      localKatipContext (<> _ptrsKatipContext ptrs) $
+        localKatipNamespace (const $ _ptrsKatipNamespace ptrs) $
+          runReaderT (rdrAct input) $ _ptrsRunTree ptrs
   putInStore f = flowToPTask $ putInStore f
   getFromStore f = flowToPTask $ getFromStore f
   internalManipulateStore f = flowToPTask $ internalManipulateStore f
+
+ptrsLocal :: (PTaskReaderState m -> PTaskReaderState m) -> PTask m a b -> PTask m a b
+ptrsLocal f (PTask (AppArrow wrtrAct)) = PTask $ AppArrow $
+  writer (AppArrow $ local f rdrAct, w)
+  where (AppArrow rdrAct, w) = runWriter wrtrAct
+
+addContextToTask :: (LogItem i) => i -> PTask m a b -> PTask m a b
+addContextToTask item =
+  ptrsLocal $ over ptrsKatipContext (<> (liftPayload item))
+
+addNamespaceToTask :: String -> PTask m a b -> PTask m a b
+addNamespaceToTask ns =
+  ptrsLocal $ over ptrsKatipNamespace (<> (fromString ns))
+
+unsafeLiftToPTask :: (KatipContext m) => (a -> m b) -> PTask m a b
+unsafeLiftToPTask f = wrap . AsyncA $ lift . f
