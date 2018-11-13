@@ -7,11 +7,12 @@
 module System.TaskPipeline.PTask.Internal
   ( PTask(..)
   , PTaskReaderState(..)
+  , unsafeLiftToPTask
   , splittedPTask
   , ptaskReaderState
   , addContextToTask
   , addNamespaceToTask
-  , unsafeLiftToPTask
+  , ptaskInSubtree
   ) where
 
 import           Control.Arrow
@@ -87,32 +88,43 @@ instance (KatipContext m) => ArrowFlow (EffectInFlow m) TaskRunError (PTask m) w
   getFromStore f = flowToPTask $ getFromStore f
   internalManipulateStore f = flowToPTask $ internalManipulateStore f
 
--- | A lens to the requirements and the runnable part of a 'PTask'
-splittedPTask :: Lens' (PTask m a b) (ReqTree, RunnablePTask m a b)
-splittedPTask f (PTask (AppArrow wrtrAct)) =
-  PTask . AppArrow . writer . swap <$> (f $ swap $ runWriter wrtrAct)
-  where swap (a,b) = (b,a)
-
--- | To transform the state of the PTask when it will run
-ptaskReaderState :: Setter' (PTask m a b) (PTaskReaderState m)
-ptaskReaderState =
-  splittedPTask . _2 . lens unAppArrow (const AppArrow) . setting local
-
--- | Adds some context that will be used at logging time. See 'katipAddContext'
-addContextToTask :: (LogItem i) => i -> PTask m a b -> PTask m a b
-addContextToTask item =
-  over (ptaskReaderState.ptrsKatipContext) (<> (liftPayload item))
-
--- | Adds a namespace to the task. See 'katipAddNamespace'
-addNamespaceToTask :: String -> PTask m a b -> PTask m a b
-addNamespaceToTask ns =
-  over (ptaskReaderState.ptrsKatipNamespace) (<> (fromString ns))
-
 -- | Turn an action into a PTask. BEWARE! The resulting 'PTask' will have NO
 -- requirements, so if the action uses files or resources, they won't appear in
 -- the LocationTree.
 unsafeLiftToPTask :: (KatipContext m) => (a -> m b) -> PTask m a b
 unsafeLiftToPTask f = wrap . AsyncA $ lift . f
 
---ptaskInSubtree :: [LocationTreePathItem] -> PTask m a b -> PTask m a b
---ptaskInSubtree = withSplittedPTask 
+-- | A lens to the requirements and the runnable part of a 'PTask'
+splittedPTask :: Lens' (PTask m a b) (ReqTree, RunnablePTask m a b)
+splittedPTask f (PTask (AppArrow wrtrAct)) =
+  PTask . AppArrow . writer . swap <$> (f $ swap $ runWriter wrtrAct)
+  where swap (a,b) = (b,a)
+
+runnablePTaskState :: Setter' (RunnablePTask m a b) (PTaskReaderState m)
+runnablePTaskState = lens unAppArrow (const AppArrow) . setting local
+
+-- | To transform the state of the PTask when it will run
+ptaskReaderState :: Setter' (PTask m a b) (PTaskReaderState m)
+ptaskReaderState = splittedPTask . _2 . runnablePTaskState
+
+-- | Adds some context that will be used at logging time. See 'katipAddContext'
+addContextToTask :: (LogItem i) => i -> PTask m a b -> PTask m a b
+addContextToTask item =
+  over (ptaskReaderState . ptrsKatipContext) (<> (liftPayload item))
+
+-- | Adds a namespace to the task. See 'katipAddNamespace'
+addNamespaceToTask :: String -> PTask m a b -> PTask m a b
+addNamespaceToTask ns =
+  over (ptaskReaderState . ptrsKatipNamespace) (<> (fromString ns))
+
+-- | Moves the 'LocationTree' associated to the task deeper in the final
+-- tree. This can be used to solve conflicts between tasks that have
+-- 'LocationTree's that are identical (for instance input files for a model if
+-- you want to solve several models, in which case you'd want for instance to
+-- add an extra level at the root of the tree with the model name).
+ptaskInSubtree :: [LocationTreePathItem] -> PTask m a b -> PTask m a b
+ptaskInSubtree path = over splittedPTask $ \(reqTree, runnable) ->
+  let reqTree' = foldr (\pathItem rest -> folderNode [pathItem :/ rest]) reqTree path
+      runnable' = runnable & over (runnablePTaskState . ptrsRunTree)
+                                  (view $ atSubfolderRec path)
+  in (reqTree', runnable')
