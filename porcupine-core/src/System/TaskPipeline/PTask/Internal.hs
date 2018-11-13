@@ -9,11 +9,15 @@ module System.TaskPipeline.PTask.Internal
   , PTaskReaderState(..)
   , unsafeLiftToPTask
   , splittedPTask
+  , withDataAccessTree'
+  , withDataAccessTree
   , ptaskReaderState
   , addContextToTask
   , addNamespaceToTask
   , ptaskInSubtree
   ) where
+
+import           Prelude                          hiding (id, (.))
 
 import           Control.Arrow
 import           Control.Arrow.AppArrow
@@ -25,6 +29,7 @@ import           Control.Lens
 import           Control.Monad.Trans
 import           Control.Monad.Trans.Reader
 import           Control.Monad.Trans.Writer
+import           Data.Default
 import           Data.Locations.LocationTree
 import           Data.Locations.LogAndErrors
 import           Data.String
@@ -32,20 +37,18 @@ import           Katip.Core                       (Namespace, LogItem)
 import           Katip.Monadic
 import           System.TaskPipeline.ResourceTree
 
-import           Prelude                          hiding (id, (.))
-
 
 type ReqTree = LocationTree VirtualFileNode
-type RunTree m = LocationTree (DataAccessNode m)
+type DataAccessTree m = LocationTree (DataAccessNode m)
 
 data PTaskReaderState m = PTaskReaderState
   { _ptrsKatipContext   :: !LogContexts
   , _ptrsKatipNamespace :: !Namespace
-  , _ptrsRunTree        :: !(RunTree m) }
+  , _ptrsDataAccessTree :: !(DataAccessTree m) }
 
 makeLenses ''PTaskReaderState
 
-type EffectInFlow m = AsyncA (ReaderT (RunTree m) m)
+type EffectInFlow m = AsyncA (ReaderT (DataAccessTree m) m)
 
 -- | The part of a 'PTask' that will be ran once the whole pipeline is composed
 -- and the tree of requirements has been bound to physical locations.
@@ -53,7 +56,7 @@ type RunnablePTask m =
   AppArrow
     (Reader (PTaskReaderState m)) -- The reader layer contains the mapped
                                   -- tree. Will be used only as an applicative.
-    (Flow (AsyncA m) TaskRunError)
+    (Flow (AsyncA m) SomeException)
 
 -- | A task is an Arrow than turns @a@ into @b@. It runs in some monad @m@.
 -- Each 'PTask' will expose its requirements in terms of resource it wants to
@@ -68,25 +71,34 @@ newtype PTask m a b = PTask
                       -- be used only as an applicative.
     (RunnablePTask m)
     a b)
-  deriving (Category, Arrow, ArrowError TaskRunError)
+  deriving (Category, Arrow, ArrowError SomeException)
 
-flowToPTask :: Flow (AsyncA m) TaskRunError a b -> PTask m a b
+flowToPTask :: Flow (AsyncA m) SomeException a b -> PTask m a b
 flowToPTask = PTask . appArrow . appArrow
 
-instance (KatipContext m) => ArrowFlow (EffectInFlow m) TaskRunError (PTask m) where
+instance (KatipContext m) => ArrowFlow (EffectInFlow m) SomeException (PTask m) where
   step' props f = flowToPTask $ step' props f
   stepIO' props f = flowToPTask $ stepIO' props f
   external f = flowToPTask $ external f
   external' props f = flowToPTask $ external' props f
   -- wrap' transmits the Reader state of the PTask down to the flow:
-  wrap' props (AsyncA rdrAct) = PTask $ AppArrow $ pure $ AppArrow $ reader $ \ptrs ->
-    wrap' props $ AsyncA $ \input ->
-      localKatipContext (<> _ptrsKatipContext ptrs) $
-        localKatipNamespace (const $ _ptrsKatipNamespace ptrs) $
-          runReaderT (rdrAct input) $ _ptrsRunTree ptrs
+  wrap' props (AsyncA rdrAct) =
+    PTask $ appArrow $ withDataAccessTree' props $ \tree input -> runReaderT (rdrAct input) tree
   putInStore f = flowToPTask $ putInStore f
   getFromStore f = flowToPTask $ getFromStore f
   internalManipulateStore f = flowToPTask $ internalManipulateStore f
+
+withDataAccessTree' :: (KatipContext m)
+                    => Properties a b -> (DataAccessTree m -> a -> m b) -> RunnablePTask m a b
+withDataAccessTree' props f = AppArrow $ reader $ \ptrs ->
+  wrap' props $ AsyncA $ \input ->
+    localKatipContext (<> _ptrsKatipContext ptrs) $
+      localKatipNamespace (const $ _ptrsKatipNamespace ptrs) $
+        f (_ptrsDataAccessTree ptrs) input
+
+withDataAccessTree :: (KatipContext m)
+                   => (DataAccessTree m -> a -> m b) -> RunnablePTask m a b
+withDataAccessTree = withDataAccessTree' def
 
 -- | Turn an action into a PTask. BEWARE! The resulting 'PTask' will have NO
 -- requirements, so if the action uses files or resources, they won't appear in
@@ -94,11 +106,13 @@ instance (KatipContext m) => ArrowFlow (EffectInFlow m) TaskRunError (PTask m) w
 unsafeLiftToPTask :: (KatipContext m) => (a -> m b) -> PTask m a b
 unsafeLiftToPTask f = wrap . AsyncA $ lift . f
 
--- | A lens to the requirements and the runnable part of a 'PTask'
-splittedPTask :: Lens' (PTask m a b) (ReqTree, RunnablePTask m a b)
-splittedPTask f (PTask (AppArrow wrtrAct)) =
-  PTask . AppArrow . writer . swap <$> (f $ swap $ runWriter wrtrAct)
-  where swap (a,b) = (b,a)
+-- | An Iso to the requirements and the runnable part of a 'PTask'
+splittedPTask :: Iso' (PTask m a b) (ReqTree, RunnablePTask m a b)
+splittedPTask = iso to_ from_
+  where
+    to_ (PTask (AppArrow wrtrAct)) = swap $ runWriter wrtrAct
+    from_ = PTask . AppArrow . writer . swap
+    swap (a,b) = (b,a)
 
 runnablePTaskState :: Setter' (RunnablePTask m a b) (PTaskReaderState m)
 runnablePTaskState = lens unAppArrow (const AppArrow) . setting local
@@ -125,6 +139,6 @@ addNamespaceToTask ns =
 ptaskInSubtree :: [LocationTreePathItem] -> PTask m a b -> PTask m a b
 ptaskInSubtree path = over splittedPTask $ \(reqTree, runnable) ->
   let reqTree' = foldr (\pathItem rest -> folderNode [pathItem :/ rest]) reqTree path
-      runnable' = runnable & over (runnablePTaskState . ptrsRunTree)
+      runnable' = runnable & over (runnablePTaskState . ptrsDataAccessTree)
                                   (view $ atSubfolderRec path)
   in (reqTree', runnable')
