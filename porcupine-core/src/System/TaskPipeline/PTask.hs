@@ -86,6 +86,13 @@ throwPTask = unsafeLiftToPTask $ \i ->
     Left e  -> throwWithPrefix $ displayException e
     Right r -> return r
 
+-- | Turn an action into a PTask. BEWARE! The resulting 'PTask' will have NO
+-- requirements, so if the action uses files or resources, they won't appear in
+-- the LocationTree.
+unsafeLiftToPTask :: (KatipContext m)
+                  => (a -> m b) -> PTask m a b
+unsafeLiftToPTask = runnableWithoutReqs . toRunnable
+
 -- This orphan instance is necessary so clockPTask may work over an 'Either
 -- SomeException a'
 instance NFData SomeException where

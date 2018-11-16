@@ -19,7 +19,7 @@ module System.TaskPipeline.PTask.Internal
   , makePTask'
   , withDataAccessTree
   , withDataAccessTree'
-  , unsafeLiftToPTask
+  , toRunnable
   , runnableWithoutReqs
   ) where
 
@@ -127,12 +127,11 @@ splittedPTask = iso to_ from_
 runnablePTaskState :: Setter' (RunnablePTask m a b) (PTaskReaderState m)
 runnablePTaskState = lens unAppArrow (const AppArrow) . setting local
 
--- | Turn an action into a PTask. BEWARE! The resulting 'PTask' will have NO
--- requirements, so if the action uses files or resources, they won't appear in
--- the LocationTree.
-unsafeLiftToPTask :: (KatipContext m)
-                  => (a -> m b) -> PTask m a b
-unsafeLiftToPTask f = runnableWithoutReqs $ withDataAccessTree $ const f
+-- | Just a shortcut around 'withDataAccessTree' when you just need to run an
+-- action without accessing the tree.
+toRunnable :: (KatipContext m)
+           => (a -> m b) -> RunnablePTask m a b
+toRunnable = withDataAccessTree . const
 
 -- | Makes a task from a tree of requirements and a function. The 'Properties'
 -- indicate whether we can cache this task.
