@@ -1,8 +1,12 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE TypeSynonymInstances       #-}
 {-# LANGUAGE FlexibleInstances          #-}
+{-# LANGUAGE FlexibleContexts           #-}
 {-# LANGUAGE MultiParamTypeClasses      #-}
 {-# LANGUAGE TemplateHaskell            #-}
+{-# LANGUAGE ExistentialQuantification  #-}
+{-# LANGUAGE RecordWildCards            #-}
+{-# LANGUAGE ConstraintKinds            #-}
 
 -- | This module exposes the 'PTask' arrow along with some low-level functions
 -- to create and run a 'PTask'.
@@ -10,15 +14,19 @@
 module System.TaskPipeline.PTask.Internal
   ( PTask
   , PTaskReaderState
+  , FunflowRunConfig(..)
+  , CanRunPTask
   , ptrsKatipContext
   , ptrsKatipNamespace
+  , ptrsFunflowRunConfig
   , ptrsDataAccessTree
   , splittedPTask
   , runnablePTaskState
   , makePTask
   , makePTask'
-  , withDataAccessTree
-  , withDataAccessTree'
+  , withRunnableState
+  , withRunnableState'
+  , execRunnablePTask
   , toRunnable
   , runnableWithoutReqs
   ) where
@@ -31,7 +39,10 @@ import           Control.Arrow.Async
 import           Control.Arrow.Free               (ArrowError)
 import           Control.Category
 import           Control.Funflow
+import qualified Control.Funflow.ContentStore                as CS
+import           Control.Funflow.External.Coordinator
 import           Control.Lens
+import           Control.Monad.Trans.Control
 import           Control.Monad.Trans.Reader
 import           Control.Monad.Trans.Writer
 import           Data.Default
@@ -45,10 +56,23 @@ import           System.TaskPipeline.ResourceTree
 type ReqTree = LocationTree VirtualFileNode
 type DataAccessTree m = LocationTree (DataAccessNode m)
 
+-- | PTask functions like mappingOverStream make necessary to recursively run
+-- some flows. Until we find a better solution than to run flows in flows, this
+-- is how we do it. These are the arguments to
+-- Control.Funflow.Exec.Simple.runFlowEx
+data FunflowRunConfig = forall c. (Coordinator c) => FunflowRunConfig
+  { _ffrcCoordinator       :: !c
+  , _ffrcCoordinatorConfig :: !(Config c)
+  , _ffrcContentStore      :: !CS.ContentStore
+  , _ffrcFlowIdentity      :: !Int }
+
+-- | This is the state that will be shared by the whole PTask pipeline once it
+-- starts running.
 data PTaskReaderState m = PTaskReaderState
-  { _ptrsKatipContext   :: !LogContexts
-  , _ptrsKatipNamespace :: !Namespace
-  , _ptrsDataAccessTree :: !(DataAccessTree m) }
+  { _ptrsKatipContext     :: !LogContexts
+  , _ptrsKatipNamespace   :: !Namespace
+  , _ptrsFunflowRunConfig :: !FunflowRunConfig
+  , _ptrsDataAccessTree   :: !(DataAccessTree m) }
 
 makeLenses ''PTaskReaderState
 
@@ -61,6 +85,20 @@ type RunnablePTask m =
     (Reader (PTaskReaderState m)) -- The reader layer contains the mapped
                                   -- tree. Will be used only as an applicative.
     (Flow (AsyncA m) SomeException)
+
+-- | The constraints that must be satisfied by the base monad m so that a @PTask
+-- m@ can be run
+type CanRunPTask m = (MonadBaseControl IO m, MonadMask m, KatipContext m)
+
+-- | Runs a 'RunnablePTask' given its state
+execRunnablePTask
+  :: (CanRunPTask m)
+  => RunnablePTask m a b -> PTaskReaderState m -> a -> m b
+execRunnablePTask (AppArrow act)
+  st@(PTaskReaderState{_ptrsFunflowRunConfig=FunflowRunConfig{..}}) =
+  runFlowEx _ffrcCoordinator _ffrcCoordinatorConfig
+            _ffrcContentStore id _ffrcFlowIdentity $
+    runReader act st
 
 -- | A task is an Arrow than turns @a@ into @b@. It runs in some monad @m@.
 -- Each 'PTask' will expose its requirements in terms of resource it wants to
@@ -82,7 +120,7 @@ flowToPTask = PTask . appArrow . appArrow
 
 -- | The type of effects we can run. The reader layer is executed by 'wrap',
 -- this is why it doesn't appear in the Flow part of the 'RunnablePTask' type.
-type EffectInFlow m = AsyncA (ReaderT (DataAccessTree m) m)
+type EffectInFlow m = AsyncA (ReaderT (PTaskReaderState m) m)
 
 instance (KatipContext m) => ArrowFlow (EffectInFlow m) SomeException (PTask m) where
   step' props f = flowToPTask $ step' props f
@@ -91,25 +129,25 @@ instance (KatipContext m) => ArrowFlow (EffectInFlow m) SomeException (PTask m) 
   external' props f = flowToPTask $ external' props f
   -- wrap' transmits the Reader state of the PTask down to the flow:
   wrap' props (AsyncA rdrAct) = runnableWithoutReqs $
-    withDataAccessTree' props $ \tree input ->
-                                  runReaderT (rdrAct input) tree
+    withRunnableState' props $ \state input ->
+                              runReaderT (rdrAct input) state
   putInStore f = flowToPTask $ putInStore f
   getFromStore f = flowToPTask $ getFromStore f
   internalManipulateStore f = flowToPTask $ internalManipulateStore f
 
--- | At the 'RunnablePTask' level, access the DataAccessTree and run an action
-withDataAccessTree' :: (KatipContext m)
-                    => Properties a b -> (DataAccessTree m -> a -> m b) -> RunnablePTask m a b
-withDataAccessTree' props f = AppArrow $ reader $ \ptrs ->
+-- | At the 'RunnablePTask' level, access the reader state and run an action
+withRunnableState' :: (KatipContext m)
+                => Properties a b -> (PTaskReaderState m -> a -> m b) -> RunnablePTask m a b
+withRunnableState' props f = AppArrow $ reader $ \ptrs ->
   wrap' props $ AsyncA $ \input ->
     localKatipContext (<> _ptrsKatipContext ptrs) $
       localKatipNamespace (const $ _ptrsKatipNamespace ptrs) $
-        f (_ptrsDataAccessTree ptrs) input
+        f ptrs input
 
--- | 'withDataAccessTree'' without caching.
-withDataAccessTree :: (KatipContext m)
-                   => (DataAccessTree m -> a -> m b) -> RunnablePTask m a b
-withDataAccessTree = withDataAccessTree' def
+-- | 'withRunnableState'' without caching.
+withRunnableState :: (KatipContext m)
+               => (PTaskReaderState m -> a -> m b) -> RunnablePTask m a b
+withRunnableState = withRunnableState' def
 
 -- | Wraps a 'RunnablePTask' into a 'PTask' that declares no requirements
 runnableWithoutReqs :: RunnablePTask m a b -> PTask m a b
@@ -127,11 +165,11 @@ splittedPTask = iso to_ from_
 runnablePTaskState :: Setter' (RunnablePTask m a b) (PTaskReaderState m)
 runnablePTaskState = lens unAppArrow (const AppArrow) . setting local
 
--- | Just a shortcut around 'withDataAccessTree' when you just need to run an
+-- | Just a shortcut around 'withRunnableState' when you just need to run an
 -- action without accessing the tree.
 toRunnable :: (KatipContext m)
            => (a -> m b) -> RunnablePTask m a b
-toRunnable = withDataAccessTree . const
+toRunnable = withRunnableState . const
 
 -- | Makes a task from a tree of requirements and a function. The 'Properties'
 -- indicate whether we can cache this task.
@@ -141,7 +179,7 @@ makePTask' :: (KatipContext m)
            -> (DataAccessTree m -> a -> m b)
            -> PTask m a b
 makePTask' props tree f =
-  (tree, withDataAccessTree' props f) ^. from splittedPTask
+  (tree, withRunnableState' props (f . _ptrsDataAccessTree)) ^. from splittedPTask
 
 -- | Makes a task from a tree of requirements and a function. This is the entry
 -- point to PTasks

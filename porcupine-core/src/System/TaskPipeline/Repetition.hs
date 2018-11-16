@@ -1,6 +1,7 @@
 {-# LANGUAGE OverloadedStrings   #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TupleSections       #-}
+{-# LANGUAGE Arrows #-}
 
 module System.TaskPipeline.Repetition
   ( STask, ISTask, OSTask
@@ -13,6 +14,8 @@ module System.TaskPipeline.Repetition
   , Typeable
   ) where
 
+import           Control.Arrow
+import           Control.Category
 import           Control.Lens                          hiding ((:>), (.=))
 import           Control.Monad
 import           Data.Aeson
@@ -23,10 +26,9 @@ import           Katip
 import           Prelude                               hiding ((.))
 import           Streaming                             (Of (..), Stream)
 import qualified Streaming.Prelude                     as S
-import           System.TaskPipeline.PTask
+import           System.TaskPipeline.PTask.Internal
 import           System.TaskPipeline.ResourceTree
 import           System.TaskPipeline.VirtualFileAccess
-import Debug.Trace
 
 
 -- * Logging context for repeated tasks
@@ -76,7 +78,7 @@ type OSTask m i a b =
 -- will have one 'RepetitionKey' per loop (from outermost loop to innermost).
 mappingOverStream
   :: forall m i a b r.
-     (KatipContext m, Show i)
+     (CanRunPTask m, Show i)
   => LocVariable       -- ^ A variable name, used as a key to indicate which
                        -- repetition we're at. Used in the logger context and
                        -- exposed in the yaml file for each VirtualFile that
@@ -89,24 +91,27 @@ mappingOverStream
                        -- input is associated to a identifier that will be
                        -- appended to every Loc mapped to every leaf in the
                        -- LocationTree given to X.
-mappingOverStream repetitionKey mbVerb (PTask reqTree perform) = PTask reqTree' perform'
+mappingOverStream repetitionKey mbVerb =
+  over splittedPTask $ \(reqTree, runnable) ->
+    (fmap addKeyToVirtualFile reqTree
+    ,mappingRunnableOverStream repetitionKey mbVerb runnable)
   where
-    reqTree' = fmap addKeyToVirtualFile reqTree
+    addKeyToVirtualFile (VirtualFileNode vf) =
+      VirtualFileNode $ vf & vfileSerials . serialsRepetitionKeys %~ (repetitionKey:)
+    addKeyToVirtualFile emptyNode = emptyNode
 
-    perform' (inputStream, origTree) = do
+mappingRunnableOverStream repetitionKey mbVerb runnable =
+  withPTaskState $ \state  proc inputStream -> do
       firstElem <- S.next inputStream
       case firstElem of
-        Left r -> return (return r, origTree)  -- Empty input stream
+        Left r -> returnA -< return r  -- Empty input stream
         Right (firstInput, inputStream') -> do
           (firstResult, _) <- performOnce origTree firstInput
           let resultStream =
                 firstResult `S.cons` S.mapM (fmap fst . performOnce origTree) inputStream'
           return (resultStream, origTree)
 
-    addKeyToVirtualFile (VirtualFileNode vf) =
-      VirtualFileNode $ vf & vfileSerials . serialsRepetitionKeys %~ (repetitionKey:)
-    addKeyToVirtualFile emptyNode = emptyNode
-
+  where          
     addKeyValToDataAccess :: String -> DataAccessNode m -> DataAccessNode m
     addKeyValToDataAccess val (DataAccessNode l fn) =
       DataAccessNode l $ fn . HM.insert repetitionKey val

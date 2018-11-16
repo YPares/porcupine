@@ -22,6 +22,7 @@ import           System.TaskPipeline.Logger       (defaultLoggerScribeParams,
                                                    runLogger)
 import           System.TaskPipeline.PTask
 import           System.TaskPipeline.ResourceTree
+import           System.TaskPipeline.Repetition
 
 
 -- | A task defining a whole pipeline, and that may run in any LocationMonad. It

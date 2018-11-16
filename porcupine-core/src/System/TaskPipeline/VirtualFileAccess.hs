@@ -37,9 +37,7 @@ import           Data.Locations
 import           Data.Monoid
 import           Data.Typeable
 import           System.TaskPipeline.PTask
-import           System.TaskPipeline.PTask.Internal (withDataAccessTree
-                                                    ,runnableWithoutReqs
-                                                    ,makePTask)
+import           System.TaskPipeline.PTask.Internal
 import           System.TaskPipeline.ResourceTree
 
 
@@ -133,8 +131,8 @@ getAccessFunctions path filesToAccess writeFn = makePTask tree runAccess
 -- what you want.
 getLocsMappedTo :: (KatipContext m)
                 => [LocationTreePathItem] -> PTask m () [LocWithVars]
-getLocsMappedTo path = runnableWithoutReqs $ withDataAccessTree $
-                         \tree _ -> return $ getLocs tree
+getLocsMappedTo path = runnableWithoutReqs $ withRunnableState $
+                         \state _ -> return $ getLocs $ state^.ptrsDataAccessTree
   where
     getLocs tree =
       case tree ^? (atSubfolderRec path . locTreeNodeTag) of
