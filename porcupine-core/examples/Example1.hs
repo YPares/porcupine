@@ -55,4 +55,4 @@ computeAnalysis (User name surname _) = Analysis $
                      ++ [(c,1) | c <- T.unpack surname]
 
 main :: IO ()
-main = runPipelineTask_ "example1" (FullConfig "porcupine.yaml" "examples/data") mainTask
+main = runPipelineTask_ "example1" (FullConfig "porcupine.yaml" "porcupine-core/examples/data") mainTask
