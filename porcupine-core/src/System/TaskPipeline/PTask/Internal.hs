@@ -20,6 +20,7 @@ module System.TaskPipeline.PTask.Internal
   , withDataAccessTree
   , withDataAccessTree'
   , unsafeLiftToPTask
+  , runnableWithoutReqs
   ) where
 
 import           Prelude                          hiding (id, (.))
@@ -51,10 +52,10 @@ data PTaskReaderState m = PTaskReaderState
 
 makeLenses ''PTaskReaderState
 
-type EffectInFlow m = AsyncA (ReaderT (DataAccessTree m) m)
-
 -- | The part of a 'PTask' that will be ran once the whole pipeline is composed
--- and the tree of requirements has been bound to physical locations.
+-- and the tree of requirements has been bound to physical locations. Is is
+-- important to note that while both 'PTask' and 'RunnablePTask' are Arrows,
+-- only 'RunnablePTask' is an ArrowChoice.
 type RunnablePTask m =
   AppArrow
     (Reader (PTaskReaderState m)) -- The reader layer contains the mapped
@@ -79,32 +80,40 @@ newtype PTask m a b = PTask
 flowToPTask :: Flow (AsyncA m) SomeException a b -> PTask m a b
 flowToPTask = PTask . appArrow . appArrow
 
+-- | The type of effects we can run. The reader layer is executed by 'wrap',
+-- this is why it doesn't appear in the Flow part of the 'RunnablePTask' type.
+type EffectInFlow m = AsyncA (ReaderT (DataAccessTree m) m)
+
 instance (KatipContext m) => ArrowFlow (EffectInFlow m) SomeException (PTask m) where
   step' props f = flowToPTask $ step' props f
   stepIO' props f = flowToPTask $ stepIO' props f
   external f = flowToPTask $ external f
   external' props f = flowToPTask $ external' props f
   -- wrap' transmits the Reader state of the PTask down to the flow:
-  wrap' props (AsyncA rdrAct) =
+  wrap' props (AsyncA rdrAct) = runnableWithoutReqs $
     withDataAccessTree' props $ \tree input ->
                                   runReaderT (rdrAct input) tree
   putInStore f = flowToPTask $ putInStore f
   getFromStore f = flowToPTask $ getFromStore f
   internalManipulateStore f = flowToPTask $ internalManipulateStore f
 
--- | A version of 'unsafeLiftToPTask' that can get the DataAccessTree and do
--- caching.
+-- | At the 'RunnablePTask' level, access the DataAccessTree and run an action
 withDataAccessTree' :: (KatipContext m)
-                    => Properties a b -> (DataAccessTree m -> a -> m b) -> PTask m a b
-withDataAccessTree' props f = PTask $ appArrow $ AppArrow $ reader $ \ptrs ->
+                    => Properties a b -> (DataAccessTree m -> a -> m b) -> RunnablePTask m a b
+withDataAccessTree' props f = AppArrow $ reader $ \ptrs ->
   wrap' props $ AsyncA $ \input ->
     localKatipContext (<> _ptrsKatipContext ptrs) $
       localKatipNamespace (const $ _ptrsKatipNamespace ptrs) $
         f (_ptrsDataAccessTree ptrs) input
 
+-- | 'withDataAccessTree'' without caching.
 withDataAccessTree :: (KatipContext m)
-                   => (DataAccessTree m -> a -> m b) -> PTask m a b
+                   => (DataAccessTree m -> a -> m b) -> RunnablePTask m a b
 withDataAccessTree = withDataAccessTree' def
+
+-- | Wraps a 'RunnablePTask' into a 'PTask' that declares no requirements
+runnableWithoutReqs :: RunnablePTask m a b -> PTask m a b
+runnableWithoutReqs = PTask . appArrow
 
 -- | An Iso to the requirements and the runnable part of a 'PTask'
 splittedPTask :: Iso' (PTask m a b) (ReqTree, RunnablePTask m a b)
@@ -114,6 +123,7 @@ splittedPTask = iso to_ from_
     from_ = PTask . AppArrow . writer . swap
     swap (a,b) = (b,a)
 
+-- | Permits to apply a function to the state of a 'RunnablePTask' when in runs.
 runnablePTaskState :: Setter' (RunnablePTask m a b) (PTaskReaderState m)
 runnablePTaskState = lens unAppArrow (const AppArrow) . setting local
 
@@ -122,7 +132,7 @@ runnablePTaskState = lens unAppArrow (const AppArrow) . setting local
 -- the LocationTree.
 unsafeLiftToPTask :: (KatipContext m)
                   => (a -> m b) -> PTask m a b
-unsafeLiftToPTask f = withDataAccessTree $ const f
+unsafeLiftToPTask f = runnableWithoutReqs $ withDataAccessTree $ const f
 
 -- | Makes a task from a tree of requirements and a function. The 'Properties'
 -- indicate whether we can cache this task.
@@ -132,9 +142,7 @@ makePTask' :: (KatipContext m)
            -> (DataAccessTree m -> a -> m b)
            -> PTask m a b
 makePTask' props tree f =
-  (tree, rmWriterLayer $ withDataAccessTree' props f) ^. from splittedPTask
-  where
-    rmWriterLayer (PTask (AppArrow t)) = fst $ runWriter t
+  (tree, withDataAccessTree' props f) ^. from splittedPTask
 
 -- | Makes a task from a tree of requirements and a function. This is the entry
 -- point to PTasks
@@ -143,3 +151,4 @@ makePTask :: (KatipContext m)
           -> (DataAccessTree m -> a -> m b)
           -> PTask m a b
 makePTask = makePTask' def
+

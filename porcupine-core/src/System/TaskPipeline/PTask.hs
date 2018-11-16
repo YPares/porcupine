@@ -24,6 +24,8 @@ module System.TaskPipeline.PTask
   , Severity(..)
   , tryPTask, throwPTask, clockPTask
   , unsafeLiftToPTask, unsafeRunIOTask
+  , ptaskRequirements
+  , ptaskDataAccessTree
   , ptaskInSubtree
   , voidTask
   , addContextToTask
@@ -45,6 +47,8 @@ import           Data.String
 import           Katip
 import           System.Clock
 import           System.TaskPipeline.PTask.Internal
+import           System.TaskPipeline.ResourceTree   (VirtualFileNode
+                                                    ,DataAccessNode)
 
 
 -- | a tasks that discards its inputs and returns ()
@@ -102,6 +106,15 @@ clockPTask task = proc input -> do
 -- | Logs a message during the pipeline execution
 logTask :: (KatipContext m) => PTask m (Severity, String) ()
 logTask = unsafeLiftToPTask $ \(sev, s) -> logFM sev $ logStr s
+
+-- | To access and transform the requirements of the PTask before it runs
+ptaskRequirements :: Lens' (PTask m a b) (LocationTree VirtualFileNode)
+ptaskRequirements = splittedPTask . _1
+
+-- | To transform the 'DataAccessTree' of the PTask when it will run
+ptaskDataAccessTree :: Setter' (PTask m a b) (LocationTree (DataAccessNode m))
+ptaskDataAccessTree = ptaskReaderState . ptrsDataAccessTree
+
 
 -- | To transform the state of the PTask when it will run
 ptaskReaderState :: Setter' (PTask m a b) (PTaskReaderState m)
