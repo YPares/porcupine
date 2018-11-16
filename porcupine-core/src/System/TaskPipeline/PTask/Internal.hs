@@ -7,6 +7,7 @@
 {-# LANGUAGE ExistentialQuantification  #-}
 {-# LANGUAGE RecordWildCards            #-}
 {-# LANGUAGE ConstraintKinds            #-}
+{-# LANGUAGE QuasiQuotes                #-}
 
 -- | This module exposes the 'PTask' arrow along with some low-level functions
 -- to create and run a 'PTask'.
@@ -30,6 +31,7 @@ module System.TaskPipeline.PTask.Internal
   , execRunnablePTask
   , toRunnable
   , runnableWithoutReqs
+  , withPTaskReaderState
   ) where
 
 import           Prelude                          hiding (id, (.))
@@ -42,7 +44,9 @@ import           Control.Category
 import           Control.Funflow
 import qualified Control.Funflow.ContentStore                as CS
 import           Control.Funflow.External.Coordinator
+import           Control.Funflow.External.Coordinator.SQLite
 import           Control.Lens
+import           Control.Monad.IO.Class
 import           Control.Monad.Trans.Control
 import           Control.Monad.Trans.Reader
 import           Control.Monad.Trans.Writer
@@ -52,6 +56,7 @@ import           Data.Locations.LogAndErrors
 import           Katip.Core                       (Namespace)
 import           Katip.Monadic
 import           System.TaskPipeline.ResourceTree
+import           Path
 
 
 type ReqTree = LocationTree VirtualFileNode
@@ -141,7 +146,7 @@ withRunnableState' :: (KatipContext m)
                    => Properties a b -> (PTaskReaderState m -> a -> m b) -> RunnablePTask m a b
 withRunnableState' props f = AppArrow $ reader $ \ptrs ->
   wrap' props $ AsyncA $ \input ->
-    localKatipContext (<> _ptrsKatipContext ptrs) $
+    localKatipContext (const $ _ptrsKatipContext ptrs) $
       localKatipNamespace (const $ _ptrsKatipNamespace ptrs) $
         f ptrs input
 
@@ -192,3 +197,18 @@ makePTask :: (KatipContext m)
           -> PTask m a b
 makePTask = makePTask' def
 
+
+withFunflowRunConfig :: (MonadIO m, MonadMask m) => (FunflowRunConfig -> m r) -> m r
+withFunflowRunConfig f = do
+  CS.withStore [absdir|/tmp/_ffstore|] $ \store -> do
+    f $ FunflowRunConfig SQLite [absdir|/tmp/_ffcoordinator.db|] store 23090341
+
+-- | Given a 'KatipContext' and a 'DataAccessTree', gets the initial state to
+-- give to 'execRunnablePTask'
+withPTaskReaderState :: (MonadIO m, MonadMask m, KatipContext m)
+                     => DataAccessTree m
+                     -> (PTaskReaderState m -> m r) -> m r
+withPTaskReaderState tree f = withFunflowRunConfig $ \ffconfig -> do
+  ctx <- getKatipContext
+  ns  <- getKatipNamespace
+  f $ PTaskReaderState ctx ns ffconfig tree

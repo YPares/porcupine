@@ -38,6 +38,7 @@ dependencies:
   - monad-control
   - mtl
   - optparse-applicative
+  - path
   - profunctors
   - resourcet
   - streaming
@@ -47,6 +48,7 @@ dependencies:
   - temporary
   - text
   - transformers
+  - transformers-base
   - unliftio-core
   - unordered-containers
   - url

@@ -1,16 +1,19 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RankNTypes        #-}
 {-# LANGUAGE TemplateHaskell   #-}
+{-# LANGUAGE FlexibleContexts  #-}
 
 module System.TaskPipeline.Run
   ( PipelineConfigMethod(..)
   , PipelineCommand(..)
   , PipelineTask
+  , CanRunPTask
   , runPipelineTask
   , runPipelineTask_
   , runPipelineCommandOnPTask
   ) where
 
+import           Control.Lens
 import           Control.Monad.Catch
 import           Control.Monad.IO.Class
 import           Data.Locations
@@ -21,15 +24,17 @@ import           System.TaskPipeline.CLI
 import           System.TaskPipeline.Logger       (defaultLoggerScribeParams,
                                                    runLogger)
 import           System.TaskPipeline.PTask
+import           System.TaskPipeline.PTask.Internal
 import           System.TaskPipeline.ResourceTree
-import           System.TaskPipeline.Repetition
+
+import           Prelude                          hiding (id, (.))
 
 
 -- | A task defining a whole pipeline, and that may run in any LocationMonad. It
 -- is an Arrow, which means you obtain it by composing subtasks either
 -- sequentially with '(>>>)' (or '(.)'), or in parallel with '(***)'.
 type PipelineTask i o =
-     forall m. (KatipContext m, LocationMonad m, MonadIO m)
+     forall m. (CanRunPTask m, LocationMonad m)
   => PTask m i o
   -- MonadIO constraint is meant to be temporary (that's needed for the
   -- pipelines who do time tracking for instance, but that shouldn't be done
@@ -80,23 +85,25 @@ runPipelineTask_ name cliUsage ptask =
 getTaskTree
   :: PTask (KatipContextT LocalM) i o
   -> VirtualResourceTree
-getTaskTree (PTask t _) = t
+getTaskTree = view $ splittedPTask . _1
 
 -- | Runs the required 'PipelineCommand' on an 'PTask'
 runPipelineCommandOnPTask
-  :: (LocationMonad m, KatipContext m)
+  :: (CanRunPTask m, LocationMonad m)
   => PTask m i o
   -> i
   -> PipelineCommand o --, RscAccessTree (ResourceTreeNode m))
   -> PhysicalResourceTree
   -> m o --, RscAccessTree (PhysicalTreeNode m)
-runPipelineCommandOnPTask (PTask origTree taskFn) input cmd boundTree =
+runPipelineCommandOnPTask ptask input cmd boundTree = do
+  let (origTree, runnable) = ptask ^. splittedPTask
   -- origTree is the bare tree straight from the pipeline. boundTree is origTree
   -- after configuration, with embedded data and mappings updated
   case cmd of
     RunPipeline -> do
       dataTree <- traverse resolveDataAccess boundTree
-      fst <$> taskFn (input, fmap (RscAccess 0) dataTree)
+      withPTaskReaderState dataTree $ \initState ->
+        execRunnablePTask runnable initState input
     ShowLocTree mode -> do
       liftIO $ putStrLn $ case mode of
         NoMappings   -> prettyLocTree origTree
@@ -109,7 +116,7 @@ bindResourceTreeAndRun
   :: String   -- ^ Program name (often model name)
   -> PipelineConfigMethod r -- ^ How to get CLI args from ModelOpts
   -> VirtualResourceTree    -- ^ The tree to look for DocRecOfoptions in
-  -> (forall m. (KatipContext m, LocationMonad m, MonadIO m)
+  -> (forall m. (CanRunPTask m, LocationMonad m)
       => PipelineCommand r -> PhysicalResourceTree -> m r)
              -- ^ What to do with the model
   -> IO r
