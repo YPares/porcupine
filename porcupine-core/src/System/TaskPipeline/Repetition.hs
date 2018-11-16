@@ -1,7 +1,7 @@
 {-# LANGUAGE OverloadedStrings   #-}
-{-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TupleSections       #-}
-{-# LANGUAGE Arrows #-}
+{-# LANGUAGE Arrows              #-}
+{-# LANGUAGE FlexibleContexts    #-}
 
 module System.TaskPipeline.Repetition
   ( STask, ISTask, OSTask
@@ -26,6 +26,7 @@ import           Katip
 import           Prelude                               hiding ((.))
 import           Streaming                             (Of (..), Stream)
 import qualified Streaming.Prelude                     as S
+import           System.TaskPipeline.PTask             (unsafeLiftToPTask)
 import           System.TaskPipeline.PTask.Internal
 import           System.TaskPipeline.ResourceTree
 import           System.TaskPipeline.VirtualFileAccess
@@ -77,8 +78,7 @@ type OSTask m i a b =
 -- Calls to 'mappingOverStream' can be nested, this way the underlying VirtualFiles
 -- will have one 'RepetitionKey' per loop (from outermost loop to innermost).
 mappingOverStream
-  :: forall m i a b r.
-     (CanRunPTask m, Show i)
+  :: (CanRunPTask m, Show i)
   => LocVariable       -- ^ A variable name, used as a key to indicate which
                        -- repetition we're at. Used in the logger context and
                        -- exposed in the yaml file for each VirtualFile that
@@ -100,36 +100,45 @@ mappingOverStream repetitionKey mbVerb =
       VirtualFileNode $ vf & vfileSerials . serialsRepetitionKeys %~ (repetitionKey:)
     addKeyToVirtualFile emptyNode = emptyNode
 
+mappingRunnableOverStream
+  :: (CanRunPTask m, Show i)
+  => LocVariable
+  -> Maybe Verbosity
+  -> RunnablePTask m a b
+  -> RunnablePTask m
+       (Stream (Of (i, a)) m r)
+       (Stream (Of (i, b)) m r)
 mappingRunnableOverStream repetitionKey mbVerb runnable =
-  withPTaskState $ \state  proc inputStream -> do
-      firstElem <- S.next inputStream
-      case firstElem of
-        Left r -> returnA -< return r  -- Empty input stream
-        Right (firstInput, inputStream') -> do
-          (firstResult, _) <- performOnce origTree firstInput
-          let resultStream =
-                firstResult `S.cons` S.mapM (fmap fst . performOnce origTree) inputStream'
-          return (resultStream, origTree)
-
-  where          
-    addKeyValToDataAccess :: String -> DataAccessNode m -> DataAccessNode m
+  withRunnableState $ \state inputStream -> do
+    firstElem <- S.next inputStream
+    case firstElem of
+      Left r -> return (return r)  -- Empty input stream
+      Right (firstInput, inputStream') -> do
+        firstResult <- performOnce state firstInput
+        return $
+          firstResult `S.cons` S.mapM (performOnce state) inputStream'
+  where
     addKeyValToDataAccess val (DataAccessNode l fn) =
       DataAccessNode l $ fn . HM.insert repetitionKey val
     addKeyValToDataAccess _ emptyNode = emptyNode
 
-    performOnce origTree (val, inp) = case mbVerb of
+    performOnce state (val, input) = case mbVerb of
       Nothing   -> go
       Just verb -> katipAddContext (TRC repetitionKey val' verb) go
       where
         val' = show val
+        state' = state & (ptrsDataAccessTree.traversed) %~ addKeyValToDataAccess val'
         go = do
-          (res, tree) <- perform ( inp, fmap (fmap (addKeyValToDataAccess val')) origTree )
-          return ((val, res), tree)
+          -- NOTE: We "cheat" here: we run the funflow layer of the inner
+          -- task. We should find a way not to have to do that, but when using
+          -- Streaming (which delays effects in a monad) it's really problematic.
+          res <- execRunnablePTask runnable state' input
+          return (val, res)
 
 -- | See 'mappingOverStream'. Just runs the resulting stream and returns its end
 -- result.
 mappingOverStream_
-  :: (KatipContext m, Show i)
+  :: (CanRunPTask m, Show i)
   => LocVariable
   -> Maybe Verbosity
   -> PTask m a b
@@ -141,7 +150,7 @@ mappingOverStream_ k v t =
 -- changing each time the value associated to a repetition key (so the physical
 -- file will be different each time). Returns the result of the input stream.
 repeatedlyWriteData
-  :: (LocationMonad m, KatipContext m, Typeable a, Show i)
+  :: (LocationMonad m, CanRunPTask m, Typeable a, Show i)
   => LocVariable
   -> VirtualFile a ignored -- ^ A 'DataSink'
   -> ISTask m i a r
@@ -152,7 +161,7 @@ repeatedlyWriteData rkey vf =
 -- changing each time the value associated to a repetition key (so the physical
 -- file will be different each time).
 repeatedlyLoadData
-  :: (LocationMonad m, KatipContext m, Typeable b, Monoid b, Show i)
+  :: (LocationMonad m, CanRunPTask m, Typeable b, Monoid b, Show i)
   => LocVariable
   -> VirtualFile ignored b -- ^ A 'DataSource'
   -> OSTask m i (Stream (Of i) m r) b
@@ -164,7 +173,7 @@ repeatedlyLoadData rkey vf =
 -- | Like 'repeatedlyLoadData', except the stream of indices to read is obtained
 -- from a list whose elements can be Shown.
 repeatedlyLoadData'
-  :: (LocationMonad m, KatipContext m, Typeable b, Monoid b, Show i)
+  :: (LocationMonad m, CanRunPTask m, Typeable b, Monoid b, Show i)
   => LocVariable
   -> VirtualFile ignore b -- ^ A 'DataSource'
   -> OSTask m i [i] b
@@ -175,7 +184,7 @@ repeatedlyLoadData' rkey vf =
 -- * Helper functions to create and run streams
 
 -- | Runs the input stream, forgets all its elements and just returns its result
-runStreamTask :: (Monad m)
+runStreamTask :: (KatipContext m)
               => PTask m
                        (Stream (Of t) m r)
                        r
@@ -193,7 +202,7 @@ listToStreamTask = arr S.each
 -- evaluated. This function is provided only for compatibility with existing
 -- tasks expecting lists. Please consider switching to processing streams
 -- directly. See 'S.toList' for more details.
-streamToListTask :: (Monad m)
+streamToListTask :: (KatipContext m)
                  => PTask m
                           (Stream (Of t) m r)
                           [t]

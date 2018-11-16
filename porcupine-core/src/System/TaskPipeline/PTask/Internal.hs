@@ -14,6 +14,7 @@
 module System.TaskPipeline.PTask.Internal
   ( PTask
   , PTaskReaderState
+  , RunnablePTask
   , FunflowRunConfig(..)
   , CanRunPTask
   , ptrsKatipContext
@@ -137,7 +138,7 @@ instance (KatipContext m) => ArrowFlow (EffectInFlow m) SomeException (PTask m) 
 
 -- | At the 'RunnablePTask' level, access the reader state and run an action
 withRunnableState' :: (KatipContext m)
-                => Properties a b -> (PTaskReaderState m -> a -> m b) -> RunnablePTask m a b
+                   => Properties a b -> (PTaskReaderState m -> a -> m b) -> RunnablePTask m a b
 withRunnableState' props f = AppArrow $ reader $ \ptrs ->
   wrap' props $ AsyncA $ \input ->
     localKatipContext (<> _ptrsKatipContext ptrs) $
@@ -146,7 +147,7 @@ withRunnableState' props f = AppArrow $ reader $ \ptrs ->
 
 -- | 'withRunnableState'' without caching.
 withRunnableState :: (KatipContext m)
-               => (PTaskReaderState m -> a -> m b) -> RunnablePTask m a b
+                  => (PTaskReaderState m -> a -> m b) -> RunnablePTask m a b
 withRunnableState = withRunnableState' def
 
 -- | Wraps a 'RunnablePTask' into a 'PTask' that declares no requirements
@@ -154,7 +155,9 @@ runnableWithoutReqs :: RunnablePTask m a b -> PTask m a b
 runnableWithoutReqs = PTask . appArrow
 
 -- | An Iso to the requirements and the runnable part of a 'PTask'
-splittedPTask :: Iso' (PTask m a b) (ReqTree, RunnablePTask m a b)
+splittedPTask :: Iso (PTask m a b) (PTask m a' b')
+                     (ReqTree, RunnablePTask m a b)
+                     (ReqTree, RunnablePTask m a' b')
 splittedPTask = iso to_ from_
   where
     to_ (PTask (AppArrow wrtrAct)) = swap $ runWriter wrtrAct
