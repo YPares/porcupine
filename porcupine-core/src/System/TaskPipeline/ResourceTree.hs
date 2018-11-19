@@ -67,7 +67,6 @@ import           Data.Representable
 import qualified Data.Text                               as T
 import           Data.Typeable
 import           GHC.Generics                            (Generic)
-import           GHC.Generics                            (Generic)
 import           Katip
 import           Options.Applicative
 import           System.TaskPipeline.ConfigurationReader

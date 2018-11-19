@@ -53,7 +53,7 @@ import           System.TaskPipeline.ResourceTree   (DataAccessNode,
 
 
 -- | a tasks that discards its inputs and returns ()
-voidTask :: (Monad m) => PTask m a ()
+voidTask :: PTask m a ()
 voidTask = arr (const ())
 
 -- | Runs an IO action. IT MUST NOT BE PERFORMING READS OR WRITES.
