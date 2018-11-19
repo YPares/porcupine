@@ -8,16 +8,21 @@
 {-# LANGUAGE RankNTypes           #-}
 {-# LANGUAGE ScopedTypeVariables  #-}
 {-# LANGUAGE TypeSynonymInstances #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE TypeFamilies #-}
 {-# OPTIONS_GHC -Wall #-}
+{-# OPTIONS_GHC -fno-warn-orphans #-}
 
 module Data.Locations.LocationMonad where
 
 import           Control.Lens
+import           Control.Monad.Base
 import           Control.Monad.Catch
 import           Control.Monad.IO.Class
 import           Control.Monad.Reader
-import           Control.Monad.Trans.Resource     (MonadResource, MonadUnliftIO,
-                                                   ResourceT)
+import           Control.Monad.Trans.Control
+import           Control.Monad.Trans.Resource     (MonadResource)
+import           Control.Monad.Trans.Resource.Internal (ResourceT(..))
 import qualified Data.ByteString.Lazy             as LBS
 import qualified Data.ByteString.Streaming        as BSS
 import           Data.Locations.Loc
@@ -71,7 +76,7 @@ instance Show RetrievingError where
 
 
 -- | Runs computations accessing 'Loc's
-class (MonadMask m, MonadUnliftIO m) => LocationMonad m where
+class (MonadMask m, MonadIO m) => LocationMonad m where
   writeBSS :: Loc -> BSS.ByteString m () -> m ()
 
   -- | Read a (streaming) bytestring from a location.
@@ -139,7 +144,7 @@ instance (LocationMonad m) => LocationMonad (KatipContextT m) where
 -- switch and the verbosity level from the given context
 selectRun :: Loc_ t  -- ^ A Loc to use as switch (RunContext root or file)
           -> Bool -- ^ Verbosity
-          -> (forall m. (LocationMonad m, MonadIO m) => m a)
+          -> (forall m. (LocationMonad m, MonadIO m, MonadBaseControl IO m) => m a)
              -- ^ The action to run, either in AWS or IO
           -> IO a
 selectRun (LocalFile{}) _verbose act =
@@ -148,6 +153,16 @@ selectRun (S3Obj{}) verbose act = do
   putStrLn "Opening AWS connection"
   awsEnv <- S3.getEnv verbose
   runResourceT $ runAWS awsEnv act
+
+-- These instances have been removed from resourcet in version 1.2.0
+instance MonadBase IO (ResourceT IO) where
+    liftBase = lift . liftBase
+instance MonadBaseControl IO (ResourceT IO) where
+     type StM (ResourceT IO) a = StM IO a
+     liftBaseWith f = ResourceT $ \reader' ->
+         liftBaseWith $ \runInBase ->
+             f $ runInBase . (\(ResourceT r) -> r reader'  )
+     restoreM = ResourceT . const . restoreM
 
 instance LocationMonad AWS where
   writeBSS (LocalFile l) = writeBSS_Local l

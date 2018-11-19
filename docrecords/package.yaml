@@ -1,0 +1,33 @@
+name: docrecords
+version: 0.0.1.0
+synopsis: Vinyl-based records with hierarchical field names, default values and documentation
+description: See README at <https://github.com/tweag/porcupine#README.md>
+maintainer: Yves Parès <yves.pares@tweag.io>
+github: tweag/porcupine
+category: Data, Records
+copyright: 2018 EURL Tweag, NovaDiscovery
+
+ghc-options: -Wall
+
+dependencies:
+  - base
+  - aeson
+  - data-default
+  - lens
+  - optparse-applicative
+  - text
+  - unordered-containers
+  - vinyl
+  - yaml
+
+library:
+  source-dirs: src
+
+tests:
+  doctest:
+    source-dirs: test
+    main: DocTest.hs
+    dependencies:
+      - doctest
+      - text
+      - unordered-containers

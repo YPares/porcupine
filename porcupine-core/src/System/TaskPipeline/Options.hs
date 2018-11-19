@@ -5,7 +5,7 @@
 {-# OPTIONS_GHC -Wall #-}
 {-# OPTIONS_GHC -Wno-unticked-promoted-constructors #-}
 
-module System.TaskPipeline.Tasks.Options
+module System.TaskPipeline.Options
   ( getOptions
   , getOption
   , DocRec, Rec(..), (^^.), (^^?), (^^?!)  -- re-exporting some operators from
@@ -13,7 +13,7 @@ module System.TaskPipeline.Tasks.Options
   , docField
   ) where
 
-import           Prelude                                 hiding (id, (.))
+import           Prelude                               hiding (id, (.))
 
 import           Control.Lens
 import           Data.Aeson
@@ -22,12 +22,12 @@ import           Data.DocRecord.OptParse
 import           Data.Locations.LocationMonad
 import           Data.Locations.SerializationMethod
 import           Data.Locations.VirtualFile
-import           Data.Monoid                             (Last (..))
+import           Data.Monoid                           (Last (..))
 import           Data.Typeable
-import           GHC.TypeLits                            (KnownSymbol)
+import           GHC.TypeLits                          (KnownSymbol)
 import           Katip
 import           System.TaskPipeline.PTask
-import           System.TaskPipeline.Tasks.LayeredAccess
+import           System.TaskPipeline.VirtualFileAccess
 
 
 -- | Add a set of options (as a DocRec) to the 'LocationTree', in order to

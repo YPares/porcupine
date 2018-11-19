@@ -1,4 +1,4 @@
-name: porcupine
+name: porcupine-core
 version: 0.0.1.0
 synopsis: A tool to express portable, composable and reusable datascience task pipelines
 description: See README at <https://github.com/tweag/porcupine#README.md>
@@ -27,15 +27,18 @@ dependencies:
   - data-default
   - deepseq
   - directory
+  - docrecords
   - exceptions
   - filepath
   - formatting
+  - funflow
   - hashable
   - katip >= 0.6.3
   - lens
   - monad-control
   - mtl
   - optparse-applicative
+  - path
   - profunctors
   - resourcet
   - streaming
@@ -44,28 +47,20 @@ dependencies:
   - template-haskell
   - temporary
   - text
+  - transformers
+  - transformers-base
   - unliftio-core
   - unordered-containers
   - url
-  - vinyl
   - void
   - yaml
 
 library:
   source-dirs: src
-  
-tests:
-  doctest:
-    source-dirs: test
-    main: DocTest.hs
-    dependencies:
-      - doctest
-      - text
-      - unordered-containers
 
 executables:
   example1:
     source-dirs: examples
     main: Example1.hs
     dependencies:
-      - porcupine
+      - porcupine-core

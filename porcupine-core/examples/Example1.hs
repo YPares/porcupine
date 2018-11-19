@@ -3,6 +3,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE TupleSections     #-}
 {-# LANGUAGE TypeApplications  #-}
+{-# LANGUAGE FlexibleContexts  #-}
 
 import           Data.Aeson
 import           Data.DocRecord
@@ -36,7 +37,7 @@ analyseOneUser :: (LocationMonad m, KatipContext m) => PTask m () ()
 analyseOneUser =
   loadLast userFile >>> arr computeAnalysis >>> writeData analysisFile
 
-mainTask :: (LocationMonad m, KatipContext m) => PTask m () ()
+mainTask :: (LocationMonad m, CanRunPTask m) => PTask m () ()
 mainTask =
   -- First we get the ids of the users that we want to analyse (we need only one
   -- field that will contain the list of the ids):
@@ -54,4 +55,4 @@ computeAnalysis (User name surname _) = Analysis $
                      ++ [(c,1) | c <- T.unpack surname]
 
 main :: IO ()
-main = runPipelineTask_ "example1" (FullConfig "porcupine.yaml" "examples/data") mainTask
+main = runPipelineTask_ "example1" (FullConfig "porcupine.yaml" "porcupine-core/examples/data") mainTask
