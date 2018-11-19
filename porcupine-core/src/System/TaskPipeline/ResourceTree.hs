@@ -8,7 +8,6 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TupleSections       #-}
 {-# LANGUAGE ViewPatterns        #-}
-{-# LANGUAGE DeriveGeneric       #-}
 {-# OPTIONS_GHC -fno-warn-missing-pattern-synonym-signatures #-}
 
 -- | This file describes the ResourceTree API. The ResourceTree is central to
@@ -68,10 +67,10 @@ import           Data.Representable
 import qualified Data.Text                               as T
 import           Data.Typeable
 import           GHC.Generics                            (Generic)
+import           GHC.Generics                            (Generic)
 import           Katip
 import           Options.Applicative
 import           System.TaskPipeline.ConfigurationReader
-import GHC.Generics (Generic)
 
 
 -- * API for manipulating resource tree _nodes_
@@ -425,7 +424,7 @@ resolveDataAccess (PhysicalFileNode layers vf) = do
         f input loc'
         logFM NoticeS $ logStr $ "Wrote '" ++ show loc' ++ "'"
     layersRes <- mconcat <$> forM readLocs (\(ReadFromLoc rkeys f, loc) -> do
-      loc' <- fillLoc repetKeyMap loc                                               
+      loc' <- fillLoc repetKeyMap loc
       katipAddContext (DAC (show loc) rkeys repetKeyMap (show loc')) $ do
         r <- f loc'
         logFM DebugS $ logStr $ "Read '" ++ show loc' ++ "'"

@@ -1,13 +1,13 @@
-{-# LANGUAGE GeneralizedNewtypeDeriving #-}
-{-# LANGUAGE TypeSynonymInstances       #-}
-{-# LANGUAGE FlexibleInstances          #-}
-{-# LANGUAGE FlexibleContexts           #-}
-{-# LANGUAGE MultiParamTypeClasses      #-}
-{-# LANGUAGE TemplateHaskell            #-}
-{-# LANGUAGE ExistentialQuantification  #-}
-{-# LANGUAGE RecordWildCards            #-}
 {-# LANGUAGE ConstraintKinds            #-}
+{-# LANGUAGE ExistentialQuantification  #-}
+{-# LANGUAGE FlexibleContexts           #-}
+{-# LANGUAGE FlexibleInstances          #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE MultiParamTypeClasses      #-}
 {-# LANGUAGE QuasiQuotes                #-}
+{-# LANGUAGE RecordWildCards            #-}
+{-# LANGUAGE TemplateHaskell            #-}
+{-# LANGUAGE TypeSynonymInstances       #-}
 
 -- | This module exposes the 'PTask' arrow along with some low-level functions
 -- to create and run a 'PTask'.
@@ -34,12 +34,12 @@ module System.TaskPipeline.PTask.Internal
   , withPTaskReaderState
   ) where
 
-import           Prelude                          hiding (id, (.))
+import           Prelude                                     hiding (id, (.))
 
 import           Control.Arrow
 import           Control.Arrow.AppArrow
 import           Control.Arrow.Async
-import           Control.Arrow.Free               (ArrowError)
+import           Control.Arrow.Free                          (ArrowError)
 import           Control.Category
 import           Control.Funflow
 import qualified Control.Funflow.ContentStore                as CS
@@ -53,10 +53,10 @@ import           Control.Monad.Trans.Writer
 import           Data.Default
 import           Data.Locations.LocationTree
 import           Data.Locations.LogAndErrors
-import           Katip.Core                       (Namespace)
+import           Katip.Core                                  (Namespace)
 import           Katip.Monadic
-import           System.TaskPipeline.ResourceTree
 import           Path
+import           System.TaskPipeline.ResourceTree
 
 
 type ReqTree = LocationTree VirtualFileNode

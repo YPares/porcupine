@@ -1,7 +1,7 @@
+{-# LANGUAGE FlexibleContexts  #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RankNTypes        #-}
 {-# LANGUAGE TemplateHaskell   #-}
-{-# LANGUAGE FlexibleContexts  #-}
 
 module System.TaskPipeline.Run
   ( PipelineConfigMethod(..)
@@ -21,13 +21,13 @@ import           Data.Maybe
 import           Katip
 import           System.Exit
 import           System.TaskPipeline.CLI
-import           System.TaskPipeline.Logger       (defaultLoggerScribeParams,
-                                                   runLogger)
+import           System.TaskPipeline.Logger         (defaultLoggerScribeParams,
+                                                     runLogger)
 import           System.TaskPipeline.PTask
 import           System.TaskPipeline.PTask.Internal
 import           System.TaskPipeline.ResourceTree
 
-import           Prelude                          hiding (id, (.))
+import           Prelude                            hiding (id, (.))
 
 
 -- | A task defining a whole pipeline, and that may run in any LocationMonad. It

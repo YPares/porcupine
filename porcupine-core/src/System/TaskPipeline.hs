@@ -10,8 +10,8 @@ module System.TaskPipeline
 
 import           Data.Locations.LocationMonad
 import           Data.Locations.LogAndErrors
+import           System.TaskPipeline.Options
 import           System.TaskPipeline.PTask
+import           System.TaskPipeline.Repetition
 import           System.TaskPipeline.ResourceTree
 import           System.TaskPipeline.VirtualFileAccess
-import           System.TaskPipeline.Options
-import           System.TaskPipeline.Repetition

@@ -1,3 +1,4 @@
+{-# LANGUAGE Arrows                     #-}
 {-# LANGUAGE ConstraintKinds            #-}
 {-# LANGUAGE DataKinds                  #-}
 {-# LANGUAGE DeriveFunctor              #-}
@@ -11,7 +12,6 @@
 {-# LANGUAGE TypeFamilies               #-}
 {-# LANGUAGE TypeOperators              #-}
 {-# LANGUAGE UndecidableInstances       #-}
-{-# LANGUAGE Arrows                     #-}
 {-# OPTIONS_GHC -Wall #-}
 {-# OPTIONS_GHC -fno-warn-orphans       #-}
 
@@ -47,8 +47,8 @@ import           Data.String
 import           Katip
 import           System.Clock
 import           System.TaskPipeline.PTask.Internal
-import           System.TaskPipeline.ResourceTree   (VirtualFileNode
-                                                    ,DataAccessNode)
+import           System.TaskPipeline.ResourceTree   (DataAccessNode,
+                                                     VirtualFileNode)
 
 
 -- | a tasks that discards its inputs and returns ()

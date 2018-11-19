@@ -1,7 +1,7 @@
-{-# LANGUAGE OverloadedStrings   #-}
-{-# LANGUAGE TupleSections       #-}
-{-# LANGUAGE Arrows              #-}
-{-# LANGUAGE FlexibleContexts    #-}
+{-# LANGUAGE Arrows            #-}
+{-# LANGUAGE FlexibleContexts  #-}
+{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE TupleSections     #-}
 
 module System.TaskPipeline.Repetition
   ( STask, ISTask, OSTask

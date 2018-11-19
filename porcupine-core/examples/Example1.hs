@@ -1,9 +1,9 @@
 {-# LANGUAGE DataKinds         #-}
 {-# LANGUAGE DeriveGeneric     #-}
+{-# LANGUAGE FlexibleContexts  #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE TupleSections     #-}
 {-# LANGUAGE TypeApplications  #-}
-{-# LANGUAGE FlexibleContexts  #-}
 
 import           Data.Aeson
 import           Data.DocRecord

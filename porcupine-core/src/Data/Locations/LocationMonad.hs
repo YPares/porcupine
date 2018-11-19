@@ -1,15 +1,15 @@
-{-# LANGUAGE ConstraintKinds      #-}
-{-# LANGUAGE DefaultSignatures    #-}
-{-# LANGUAGE DeriveGeneric        #-}
-{-# LANGUAGE FlexibleContexts     #-}
-{-# LANGUAGE FlexibleInstances    #-}
-{-# LANGUAGE NamedFieldPuns       #-}
-{-# LANGUAGE OverloadedStrings    #-}
-{-# LANGUAGE RankNTypes           #-}
-{-# LANGUAGE ScopedTypeVariables  #-}
-{-# LANGUAGE TypeSynonymInstances #-}
+{-# LANGUAGE ConstraintKinds       #-}
+{-# LANGUAGE DefaultSignatures     #-}
+{-# LANGUAGE DeriveGeneric         #-}
+{-# LANGUAGE FlexibleContexts      #-}
+{-# LANGUAGE FlexibleInstances     #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
-{-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE NamedFieldPuns        #-}
+{-# LANGUAGE OverloadedStrings     #-}
+{-# LANGUAGE RankNTypes            #-}
+{-# LANGUAGE ScopedTypeVariables   #-}
+{-# LANGUAGE TypeFamilies          #-}
+{-# LANGUAGE TypeSynonymInstances  #-}
 {-# OPTIONS_GHC -Wall #-}
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 
@@ -21,27 +21,27 @@ import           Control.Monad.Catch
 import           Control.Monad.IO.Class
 import           Control.Monad.Reader
 import           Control.Monad.Trans.Control
-import           Control.Monad.Trans.Resource     (MonadResource)
-import           Control.Monad.Trans.Resource.Internal (ResourceT(..))
-import qualified Data.ByteString.Lazy             as LBS
-import qualified Data.ByteString.Streaming        as BSS
+import           Control.Monad.Trans.Resource          (MonadResource)
+import           Control.Monad.Trans.Resource.Internal (ResourceT (..))
+import qualified Data.ByteString.Lazy                  as LBS
+import qualified Data.ByteString.Streaming             as BSS
 import           Data.Locations.Loc
 import           Data.String
-import qualified Data.Text                        as Text
-import qualified Data.Text.Encoding               as TE
+import qualified Data.Text                             as Text
+import qualified Data.Text.Encoding                    as TE
 import           Formatting
 import           Formatting.Clock
-import           GHC.Generics                     (Generic)
+import           GHC.Generics                          (Generic)
 import           Katip.Monadic
-import           Network.AWS                      hiding (Error)
-import qualified Network.AWS                      as AWS
+import           Network.AWS                           hiding (Error)
+import qualified Network.AWS                           as AWS
 import           Network.AWS.S3
-import qualified Network.AWS.S3.TaskPipelineUtils as S3
+import qualified Network.AWS.S3.TaskPipelineUtils      as S3
 import           Streaming
 import           System.Clock
-import           System.Directory                 (createDirectoryIfMissing)
-import qualified System.FilePath                  as Path
-import qualified System.IO.Temp                   as Tmp
+import           System.Directory                      (createDirectoryIfMissing)
+import qualified System.FilePath                       as Path
+import qualified System.IO.Temp                        as Tmp
 
 
 -- | Alias for the constraints needed to manipulate remote files
