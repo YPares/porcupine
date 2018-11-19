@@ -41,6 +41,7 @@ dependencies:
   - path
   - profunctors
   - resourcet
+  - retry
   - streaming
   - streaming-bytestring
   - streaming-conduit

@@ -22,6 +22,7 @@ module System.TaskPipeline.PTask
   , MonadThrow(..)
   , PTask
   , Severity(..)
+  , CanRunPTask
   , tryPTask, throwPTask, clockPTask
   , unsafeLiftToPTask, unsafeRunIOTask
   , ptaskRequirements
@@ -61,16 +62,6 @@ unsafeRunIOTask
   => (i -> IO o)
   -> PTask m i o
 unsafeRunIOTask f = unsafeLiftToPTask (liftIO . f)
-
--- instance (Functor m) => Functor (PTask m a) where
---   fmap f (PTask tree fn) = PTask tree (fmap (\(a,tt) -> (f a,tt)) . fn)
-
--- instance (Applicative m) => Applicative (PTask m a) where
---   pure a = PTask mempty $ \(_,tt) -> pure (a, tt)
---   PTask t1 fn1 <*> PTask t2 fn2 = PTask (t1 <> t2) $
---     \i -> combine <$> fn1 i <*> fn2 i
---     where
---       combine (fn1', tt1) (b, tt2) = (fn1' b, tt1 <> tt2)
 
 -- | Catches an error happening in a task. Leaves the tree intact if an error
 -- occured.

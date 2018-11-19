@@ -6,10 +6,12 @@
 {-# OPTIONS_GHC -Wno-unticked-promoted-constructors #-}
 
 module System.TaskPipeline.Options
-  ( getOptions
+  ( -- * API
+    getOptions
   , getOption
-  , DocRec, Rec(..), (^^.), (^^?), (^^?!)  -- re-exporting some operators from
-                                           -- DocRecords
+  -- * Re-exports from docrecords
+  , DocRec, Rec(..), (^^.), (^^?), (^^?!)
+  , PathWithType(..)
   , docField
   ) where
 

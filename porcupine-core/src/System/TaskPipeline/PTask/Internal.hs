@@ -119,7 +119,7 @@ newtype PTask m a b = PTask
                       -- be used only as an applicative.
     (RunnablePTask m)
     a b)
-  deriving (Category, Arrow, ArrowError SomeException)
+  deriving (Category, Arrow, ArrowError SomeException, Functor, Applicative)
 
 flowToPTask :: Flow (AsyncA m) SomeException a b -> PTask m a b
 flowToPTask = PTask . appArrow . appArrow

@@ -5,6 +5,8 @@ load(
     "haskell_library",
 )
 
+alias(name = "pipeline-tools", actual = ":porcupine-core")
+
 haskell_library(
     name = "docrecords",
     srcs = glob(["docrecords/src/**/*.hs"]),
@@ -24,7 +26,7 @@ haskell_library(
 )
 
 haskell_library(
-    name = "pipeline-tools",
+    name = "porcupine-core",
     srcs = glob(["porcupine-core/src/**/*.hs"]),
     src_strip_prefix = "porcupine-core/src",
     deps =
