@@ -31,20 +31,25 @@ dependencies:
   - exceptions
   - filepath
   - formatting
+  - funflow
   - hashable
   - katip >= 0.6.3
   - lens
   - monad-control
   - mtl
   - optparse-applicative
+  - path
   - profunctors
   - resourcet
+  - retry
   - streaming
   - streaming-bytestring
   - streaming-conduit
   - template-haskell
   - temporary
   - text
+  - transformers
+  - transformers-base
   - unliftio-core
   - unordered-containers
   - url

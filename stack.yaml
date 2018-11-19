@@ -52,6 +52,10 @@ extra-deps:
     - amazonka
     - core
     - amazonka-s3
+- git: https://github.com/tweag/funflow
+  commit: aa7d393206bae6e58a4b3988a20e76b42f41cbb5
+  subdirs:
+    - funflow
 
 # Override default flag values for local packages and extra-deps
 # flags: {}

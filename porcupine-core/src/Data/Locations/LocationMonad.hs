@@ -1,42 +1,47 @@
-{-# LANGUAGE ConstraintKinds      #-}
-{-# LANGUAGE DefaultSignatures    #-}
-{-# LANGUAGE DeriveGeneric        #-}
-{-# LANGUAGE FlexibleContexts     #-}
-{-# LANGUAGE FlexibleInstances    #-}
-{-# LANGUAGE NamedFieldPuns       #-}
-{-# LANGUAGE OverloadedStrings    #-}
-{-# LANGUAGE RankNTypes           #-}
-{-# LANGUAGE ScopedTypeVariables  #-}
-{-# LANGUAGE TypeSynonymInstances #-}
+{-# LANGUAGE ConstraintKinds       #-}
+{-# LANGUAGE DefaultSignatures     #-}
+{-# LANGUAGE DeriveGeneric         #-}
+{-# LANGUAGE FlexibleContexts      #-}
+{-# LANGUAGE FlexibleInstances     #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE NamedFieldPuns        #-}
+{-# LANGUAGE OverloadedStrings     #-}
+{-# LANGUAGE RankNTypes            #-}
+{-# LANGUAGE ScopedTypeVariables   #-}
+{-# LANGUAGE TypeFamilies          #-}
+{-# LANGUAGE TypeSynonymInstances  #-}
 {-# OPTIONS_GHC -Wall #-}
+{-# OPTIONS_GHC -fno-warn-orphans #-}
 
 module Data.Locations.LocationMonad where
 
 import           Control.Lens
+import           Control.Monad.Base
 import           Control.Monad.Catch
 import           Control.Monad.IO.Class
 import           Control.Monad.Reader
-import           Control.Monad.Trans.Resource     (MonadResource, MonadUnliftIO,
-                                                   ResourceT)
-import qualified Data.ByteString.Lazy             as LBS
-import qualified Data.ByteString.Streaming        as BSS
+import           Control.Monad.Trans.Control
+import           Control.Monad.Trans.Resource          (MonadResource)
+import           Control.Monad.Trans.Resource.Internal (ResourceT (..))
+import qualified Data.ByteString.Lazy                  as LBS
+import qualified Data.ByteString.Streaming             as BSS
 import           Data.Locations.Loc
 import           Data.String
-import qualified Data.Text                        as Text
-import qualified Data.Text.Encoding               as TE
+import qualified Data.Text                             as Text
+import qualified Data.Text.Encoding                    as TE
 import           Formatting
 import           Formatting.Clock
-import           GHC.Generics                     (Generic)
+import           GHC.Generics                          (Generic)
 import           Katip.Monadic
-import           Network.AWS                      hiding (Error)
-import qualified Network.AWS                      as AWS
+import           Network.AWS                           hiding (Error)
+import qualified Network.AWS                           as AWS
 import           Network.AWS.S3
-import qualified Network.AWS.S3.TaskPipelineUtils as S3
+import qualified Network.AWS.S3.TaskPipelineUtils      as S3
 import           Streaming
 import           System.Clock
-import           System.Directory                 (createDirectoryIfMissing)
-import qualified System.FilePath                  as Path
-import qualified System.IO.Temp                   as Tmp
+import           System.Directory                      (createDirectoryIfMissing)
+import qualified System.FilePath                       as Path
+import qualified System.IO.Temp                        as Tmp
 
 
 -- | Alias for the constraints needed to manipulate remote files
@@ -71,7 +76,7 @@ instance Show RetrievingError where
 
 
 -- | Runs computations accessing 'Loc's
-class (MonadMask m, MonadUnliftIO m) => LocationMonad m where
+class (MonadMask m, MonadIO m) => LocationMonad m where
   writeBSS :: Loc -> BSS.ByteString m () -> m ()
 
   -- | Read a (streaming) bytestring from a location.
@@ -139,7 +144,7 @@ instance (LocationMonad m) => LocationMonad (KatipContextT m) where
 -- switch and the verbosity level from the given context
 selectRun :: Loc_ t  -- ^ A Loc to use as switch (RunContext root or file)
           -> Bool -- ^ Verbosity
-          -> (forall m. (LocationMonad m, MonadIO m) => m a)
+          -> (forall m. (LocationMonad m, MonadIO m, MonadBaseControl IO m) => m a)
              -- ^ The action to run, either in AWS or IO
           -> IO a
 selectRun (LocalFile{}) _verbose act =
@@ -148,6 +153,16 @@ selectRun (S3Obj{}) verbose act = do
   putStrLn "Opening AWS connection"
   awsEnv <- S3.getEnv verbose
   runResourceT $ runAWS awsEnv act
+
+-- These instances have been removed from resourcet in version 1.2.0
+instance MonadBase IO (ResourceT IO) where
+    liftBase = lift . liftBase
+instance MonadBaseControl IO (ResourceT IO) where
+     type StM (ResourceT IO) a = StM IO a
+     liftBaseWith f = ResourceT $ \reader' ->
+         liftBaseWith $ \runInBase ->
+             f $ runInBase . (\(ResourceT r) -> r reader'  )
+     restoreM = ResourceT . const . restoreM
 
 instance LocationMonad AWS where
   writeBSS (LocalFile l) = writeBSS_Local l

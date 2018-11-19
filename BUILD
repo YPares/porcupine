@@ -5,10 +5,30 @@ load(
     "haskell_library",
 )
 
+alias(name = "pipeline-tools", actual = ":porcupine-core")
+
 haskell_library(
-    name = "pipeline-tools",
-    srcs = glob(["src/**/*.hs"]),
-    src_strip_prefix = "src",
+    name = "docrecords",
+    srcs = glob(["docrecords/src/**/*.hs"]),
+    src_strip_prefix = "docrecords/src",
+    deps =
+        [
+            "//hackage:base",
+            "//hackage:aeson",
+            "//hackage:data-default",
+            "//hackage:lens",
+	    "//hackage:optparse-applicative",
+	    "//hackage:text",
+	    "//hackage:unordered-containers",
+	    "//hackage:vinyl",
+	    "//hackage:yaml",
+        ],
+)
+
+haskell_library(
+    name = "porcupine-core",
+    srcs = glob(["porcupine-core/src/**/*.hs"]),
+    src_strip_prefix = "porcupine-core/src",
     deps =
         [
             "//hackage:aeson",
@@ -30,6 +50,7 @@ haskell_library(
             "//hackage:directory",
             "//hackage:exceptions",
             "//hackage:filepath",
+            "//hackage:funflow",
             "//hackage:formatting",
             "//hackage:hashable",
             "//hackage:katip",
@@ -37,19 +58,23 @@ haskell_library(
             "//hackage:monad-control",
             "//hackage:mtl",
             "//hackage:optparse-applicative",
+	    "//hackage:path",
 	    "//hackage:profunctors",
             "//hackage:resourcet",
+            "//hackage:retry",
             "//hackage:streaming",
             "//hackage:streaming-bytestring",
             "//hackage:streaming-conduit",
             "//hackage:template-haskell",
             "//hackage:temporary",
             "//hackage:text",
+	    "//hackage:transformers",
+	    "//hackage:transformers-base",
             "//hackage:unliftio-core",
             "//hackage:unordered-containers",
             "//hackage:url",
-            "//hackage:vinyl",
 	    "//hackage:void",
             "//hackage:yaml",
+            ":docrecords",
         ],
 )
