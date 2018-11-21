@@ -1,5 +1,6 @@
 package(default_visibility = ["//visibility:public"])
 
+load("//:simwork/simwork_binary.bzl", "haskell_benchmark", "jinko_haskell_library")
 load(
     "@io_tweag_rules_haskell//haskell:haskell.bzl",
     "haskell_library",
@@ -7,7 +8,7 @@ load(
 
 alias(name = "pipeline-tools", actual = ":porcupine-core")
 
-haskell_library(
+jinko_haskell_library(
     name = "docrecords",
     srcs = glob(["docrecords/src/**/*.hs"]),
     src_strip_prefix = "docrecords/src",
@@ -74,6 +75,8 @@ haskell_library(
             "@hackage//:unordered-containers",
             "@hackage//:url",
             "@hackage//:void",
+            "@hackage//:vinyl",
+	    "@hackage//:void",
             "@hackage//:yaml",
             ":docrecords",
         ],
