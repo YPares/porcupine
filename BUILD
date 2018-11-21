@@ -75,8 +75,6 @@ jinko_haskell_library(
             "@hackage//:unordered-containers",
             "@hackage//:url",
             "@hackage//:void",
-            "@hackage//:vinyl",
-            "@hackage//:void",
             "@hackage//:yaml",
             ":docrecords",
         ],
