@@ -26,7 +26,7 @@ jinko_haskell_library(
         ],
 )
 
-haskell_library(
+jinko_haskell_library(
     name = "porcupine-core",
     srcs = glob(["porcupine-core/src/**/*.hs"]),
     src_strip_prefix = "porcupine-core/src",
@@ -76,7 +76,7 @@ haskell_library(
             "@hackage//:url",
             "@hackage//:void",
             "@hackage//:vinyl",
-	    "@hackage//:void",
+            "@hackage//:void",
             "@hackage//:yaml",
             ":docrecords",
         ],
