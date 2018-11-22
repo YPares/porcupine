@@ -5,12 +5,9 @@
 
 module System.TaskPipeline.Repetition.Fold where
 
--- import           Control.Arrow
 import           Control.Arrow.FoldA
--- import           Control.Category
 import           Control.Lens
 import           Data.Locations
-import           Katip
 import           Prelude                               hiding (id, (.))
 import           System.TaskPipeline.PTask
 import           System.TaskPipeline.PTask.Internal
@@ -31,13 +28,14 @@ unsafeGeneralizeM (FoldM step start done) =
 ptaskFold :: (Show idx, Monad m)
           => LocVariable
           -> Maybe Verbosity
-          -> PTask m (a,b) b
-          -> b
-          -> FoldA (PTask m) (idx,a) b
+          -> PTask m (x,acc) acc
+          -> acc
+          -> FoldA (PTask m) (idx,x) acc
 ptaskFold rk mv step init =
-  FoldA (arr onInput >>> makeRepeatable rk mv step) (pure init) id
+  FoldA (arr onInput >>> makeRepeatable rk mv step >>> arr snd)
+        (pure init) id
   where
-    onInput (Pair b (idx,a)) = (idx,(a,b))
+    onInput (Pair acc (idx,x)) = (idx,(x,acc))
 
 -- | Runs a 'FoldA' created with 'ptaskFold', 'generalizeA',
 -- 'unsafeGeneralizeM', or a composition of such folds.

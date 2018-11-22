@@ -1,4 +1,9 @@
-module System.TaskPipeline.Repetition.Internal where
+module System.TaskPipeline.Repetition.Internal
+  ( TaskRepetitionContext(..)
+  , LocVariable
+  , Verbosity(..)
+  , makeRepeatable
+  ) where
 
 import           Control.Category
 import           Control.Lens                          hiding ((:>), (.=))
@@ -33,16 +38,18 @@ instance LogItem TaskRepetitionContext where
 -- will appear in the configuration file in the default bindings for the
 -- VirtualFiles accessed by this task. The second one controls whether we want
 -- to add to the logging context which repetition is currently running.
+--
+-- The index is just passed through, to facilitate composition.
 makeRepeatable
-  :: (Show i, Monad m)
+  :: (Show idx, Monad m)
   => LocVariable
   -> Maybe Verbosity
   -> PTask m a b
-  -> PTask m (i,a) b
+  -> PTask m (idx,a) (idx,b)
 makeRepeatable repetitionKey mbVerb =
   over splittedPTask $ \(reqTree, runnable) ->
     ( fmap addKeyToVirtualFile reqTree
-    , modifyingRuntimeState alterState snd runnable )
+    , keepingIndex $ modifyingRuntimeState alterState snd runnable )
   where
     addKeyToVirtualFile (VirtualFileNode vf) =
       VirtualFileNode $ vf &
@@ -61,3 +68,6 @@ makeRepeatable repetitionKey mbVerb =
         addKeyValToDataAccess (DataAccessNode l fn) =
           DataAccessNode l $ fn . HM.insert repetitionKey idxStr
         addKeyValToDataAccess emptyNode = emptyNode
+
+    keepingIndex t =
+      id &&& t >>> arr (\((idx,_),o) -> (idx, o))

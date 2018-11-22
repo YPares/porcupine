@@ -77,11 +77,7 @@ mappingOverStream
                        -- LocationTree given to X.
 mappingOverStream repetitionKey mbVerb =
     over ptaskRunnable mappingRunnableOverStream
-  . keepIndex
   . makeRepeatable repetitionKey mbVerb
-  where
-    keepIndex t =
-      id &&& t >>> arr (\((idx,_),o) -> (idx, o))
 
 -- | IMPORTANT: That requires the RunnablePTask to be repeatable. See
 -- 'makeRepeatable'.
