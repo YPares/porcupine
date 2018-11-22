@@ -102,7 +102,7 @@ runPipelineCommandOnPTask ptask input cmd boundTree = do
   case cmd of
     RunPipeline -> do
       dataTree <- traverse resolveDataAccess boundTree
-      withPTaskReaderState dataTree $ \initState ->
+      withPTaskState dataTree $ \initState ->
         execRunnablePTask runnable initState input
     ShowLocTree mode -> do
       liftIO $ putStrLn $ case mode of

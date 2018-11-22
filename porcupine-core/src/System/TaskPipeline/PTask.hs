@@ -115,7 +115,7 @@ ptaskDataAccessTree = ptaskReaderState . ptrsDataAccessTree
 
 
 -- | To transform the state of the PTask when it will run
-ptaskReaderState :: Setter' (PTask m a b) (PTaskReaderState m)
+ptaskReaderState :: Setter' (PTask m a b) (PTaskState m)
 ptaskReaderState = splittedPTask . _2 . runnablePTaskState
 
 -- | Adds some context that will be used at logging time. See 'katipAddContext'
