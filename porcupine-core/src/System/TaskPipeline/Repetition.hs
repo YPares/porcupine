@@ -4,7 +4,8 @@
 {-# LANGUAGE TupleSections     #-}
 
 module System.TaskPipeline.Repetition
-  ( STask, ISTask, OSTask
+  ( makeRepeatable
+  , STask, ISTask, OSTask
   , mappingOverStream
   , mappingOverStream_
   , repeatedlyWriteData
@@ -15,6 +16,7 @@ module System.TaskPipeline.Repetition
   ) where
 
 import           Control.Arrow
+import           Control.Arrow.FoldA
 import           Control.Category
 import           Control.Lens                          hiding ((:>), (.=))
 import           Control.Monad
@@ -45,6 +47,69 @@ instance ToObject TaskRepetitionContext
 instance LogItem TaskRepetitionContext where
   payloadKeys v (TRC _ _ v') | v >= v' = AllKeys
                              | otherwise = SomeKeys []
+
+-- * Folding data with a PTask
+
+-- | Turns a fold in some monad to a fold compatible with 'foldTask'
+unsafeGeneralizeM :: (KatipContext m)
+                  => FoldM m a b -> FoldA (PTask m) a b
+unsafeGeneralizeM (FoldM step start done) =
+  FoldA (unsafeLiftToPTask $ \(Pair a x) -> step a x)
+        (unsafeLiftToPTask $ const start)
+        (unsafeLiftToPTask done)
+
+-- data RepeatablePTask m a b =
+--   RPT (LocationTree VirtualFile) (FoldA (RunnablePTask m) a b)
+
+-- -- | Turns a 'FoldA' of PTask into something that can be safely repeated.
+-- makeRepeatable
+--   :: LocVariable
+--   -> Maybe Verbosity
+--   -> FoldA (PTask m) a b
+--   -> RepeatablePTask m a b
+-- makeRepeatable repetitionKey mbVerb =
+--   where
+--     (reqs, perform) = 
+
+-- | Turns a task into one that can be called several times, each time with a
+-- different index value @i@. This index will be used to alter every path
+-- accessed by the task. The first argument gives a name to that index, that
+-- will appear in the configuration file in the default bindings for the
+-- VirtualFiles accessed by this task. The second one controls whether we want
+-- to add to the logging context which repetition is currently running.
+makeRepeatable
+  :: (Show i, Monad m)
+  => LocVariable
+  -> Maybe Verbosity
+  -> PTask m a b
+  -> PTask m (i,a) b
+makeRepeatable repetitionKey mbVerb = over splittedPTask $ \(reqTree, runnable) ->
+  (fmap addKeyToVirtualFile reqTree
+  ,modifyingRuntimeState alterState snd runnable)
+  where
+    addKeyToVirtualFile (VirtualFileNode vf) =
+      VirtualFileNode $ vf &
+        over (vfileSerials.serialsRepetitionKeys) (repetitionKey:)
+    addKeyToVirtualFile emptyNode = emptyNode
+
+    alterState (index,_) =
+        over ptrsKatipContext alterContext
+      . over (ptrsDataAccessTree.traversed) addKeyValToDataAccess
+      where
+        indexStr = show index
+        newCtxItem = TRC repetitionKey indexStr <$> mbVerb
+        alterContext ctx = case newCtxItem of
+          Nothing   -> ctx
+          Just item -> ctx <> liftPayload item
+        addKeyValToDataAccess (DataAccessNode l fn) =
+          DataAccessNode l $ fn . HM.insert repetitionKey indexStr
+        addKeyValToDataAccess emptyNode = emptyNode
+
+foldTask
+  :: (Foldable f)
+  => FoldA (PTask m) a b
+  -> PTask m (f a) b
+foldTask = undefined
 
 -- * Type aliases for tasks over streams
 

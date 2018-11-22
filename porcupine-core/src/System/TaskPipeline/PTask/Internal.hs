@@ -26,7 +26,7 @@ module System.TaskPipeline.PTask.Internal
   , runnablePTaskState
   , makePTask
   , makePTask'
-  , modifyingRunnableState
+  , modifyingRuntimeState
   , withRunnableState
   , withRunnableState'
   , execRunnablePTask
@@ -148,7 +148,7 @@ type OuterEffect m =
 
 -- | The effects ran inside the flow have to handle some dynamic modifications
 -- of the state (for instance from task inputs) that have to be applied to each
--- state passed to 'wrap'
+-- state passed to 'wrap'. We store these modifications as a stack of functions.
 type InnerEffect m =
   AsyncA (StateT [PTaskState m -> PTaskState m] m)
 
@@ -176,18 +176,21 @@ withOuterState props f =
     wrap' props $ AsyncA $ \input ->
       f outerState input
 
--- | Pushes a new state modifier on the stack
-modifyingRunnableState
+-- | The task will be executed with a new state modifier pushed on the modifiers
+-- stack.
+modifyingRuntimeState
   :: (Monad m)
   => (a -> PTaskState m -> PTaskState m)
+  -> (a -> a')
+  -> RunnablePTask m a' b
   -> RunnablePTask m a b
-  -> RunnablePTask m a b
-modifyingRunnableState f ar = pushState >>> ar >>> popState
+modifyingRuntimeState alterState alterInput ar = pushState >>> ar >>> popState
   where
     pushState =
-      withOuterState def $ \_ input -> modify (f input :) >> return input
+      withOuterState def $ \_ x ->
+        modify (alterState x :) >> return (alterInput x)
     popState =
-      withOuterState def $ \_ input -> modify popMod >> return input
+      withOuterState def $ \_ x -> modify popMod >> return x
     popMod [] = error $
       "modifyingRunnableState: Modifiers list shouldn't be empty!"
     popMod (_:ms) = ms
