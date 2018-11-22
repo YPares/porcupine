@@ -1,6 +1,7 @@
 module System.TaskPipeline.Repetition
   ( module System.TaskPipeline.Repetition.Streaming
   , parMapTask
+  , RepetitionInfo, withRepKey
   ) where
 
 import Control.Arrow.Free (mapA)
@@ -15,9 +16,8 @@ import Prelude hiding (id, (.))
 -- | Makes a 'PTask' repeatable and maps it in parallel over a list
 parMapTask
   :: (Show idx, Monad m)
-  => LocVariable
-  -> Maybe Verbosity
+  => RepetitionInfo
   -> PTask m a b
   -> PTask m [(idx,a)] [(idx,b)]
-parMapTask rk mv =
-  over ptaskRunnable mapA . makeRepeatable rk mv
+parMapTask ri =
+  over ptaskRunnable mapA . makeRepeatable ri

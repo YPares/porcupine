@@ -1,7 +1,7 @@
 module System.TaskPipeline.Repetition.Internal
   ( TaskRepetitionContext(..)
-  , LocVariable
-  , Verbosity(..)
+  , RepetitionInfo(..)
+  , withRepKey
   , makeRepeatable
   ) where
 
@@ -17,6 +17,23 @@ import           System.TaskPipeline.PTask
 import           System.TaskPipeline.PTask.Internal
 import           System.TaskPipeline.ResourceTree
 
+
+-- | Gives information about how a task will be repeated
+data RepetitionInfo = RepetitionInfo
+  { repKey        :: LocVariable
+  -- ^ A variable name, used as a key to indicate which repetition we're
+  -- at. Used in the logger context and exposed in the yaml file for each
+  -- VirtualFile that will be repeated by this task
+  , repKeyLogging :: Maybe Verbosity
+  -- ^ The minimal vebosity level at which to display the value associated with
+  -- the repetition key in the logger context. Nothing if we don't want to add
+  -- context.
+  } deriving (Eq, Show)
+
+-- | Creates a 'RepetitionInfo' that will log the repetition key at verbosity
+-- level 1 and above.
+withRepKey :: LocVariable -> RepetitionInfo
+withRepKey lv = RepetitionInfo lv (Just V1)
 
 -- | Logging context for repeated tasks
 data TaskRepetitionContext = TRC
@@ -42,11 +59,10 @@ instance LogItem TaskRepetitionContext where
 -- The index is just passed through, to facilitate composition.
 makeRepeatable
   :: (Show idx, Monad m)
-  => LocVariable
-  -> Maybe Verbosity
+  => RepetitionInfo
   -> PTask m a b
   -> PTask m (idx,a) (idx,b)
-makeRepeatable repetitionKey mbVerb =
+makeRepeatable (RepetitionInfo repetitionKey mbVerb) =
   over splittedPTask $ \(reqTree, runnable) ->
     ( fmap addKeyToVirtualFile reqTree
     , keepingIndex $ modifyingRuntimeState alterState snd runnable )

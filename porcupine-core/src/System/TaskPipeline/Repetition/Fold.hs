@@ -26,14 +26,13 @@ unsafeGeneralizeM (FoldM step start done) =
 
 -- | Creates a 'FoldA' from a 'PTask'.
 ptaskFold :: (Show idx, Monad m)
-          => LocVariable
-          -> Maybe Verbosity
+          => RepetitionInfo
           -> PTask m (x,acc) acc
           -> acc
           -> FoldA (PTask m) (idx,x) acc
-ptaskFold rk mv step init =
-  FoldA (arr onInput >>> makeRepeatable rk mv step >>> arr snd)
-        (pure init) id
+ptaskFold ri step initAcc =
+  FoldA (arr onInput >>> makeRepeatable ri step >>> arr snd)
+        (pure initAcc) id
   where
     onInput (Pair acc (idx,x)) = (idx,(x,acc))
 
@@ -55,8 +54,8 @@ foldTask (FoldA step start done) =
     reqs = reqsStart <> reqsStep <> reqsDone
     runnable =
       id &&&& (pure () >>> runnableStart) >>> loopStep >>> runnableDone
-    loopStep = proc (Pair list acc) -> do
-      case list of
+    loopStep = proc (Pair l acc) -> do
+      case l of
         []     -> returnA -< acc
         (a:as) -> do
           acc' <- runnableStep -< Pair acc a
