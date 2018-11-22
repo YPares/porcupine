@@ -10,6 +10,9 @@ module Control.Arrow.FoldA
   , Pair(..)
   , generalizeA
   , specializeA
+  , premapA
+  , postmapA
+  , prefilterA
   ) where
 
 import Prelude hiding (id, (.))
@@ -51,6 +54,9 @@ a1 **** a2 =
 a1 &&&& a2 = a1 &&& a2 >>> arr fromTup
 {-# INLINE (&&&&) #-}
 
+secondP :: (Arrow a) => a c c' -> a (Pair b c) (Pair b c')
+secondP ar =
+  arr toTup >>> second ar >>> arr fromTup
 
 -- | If arr is (->), then 'FoldA' is just 'Fold'
 data FoldA arr a b =
@@ -62,7 +68,7 @@ generalizeA (Fold step start done) =
 
 specializeA :: FoldA (->) a b -> Fold a b
 specializeA (FoldA step start done) =
-  Fold (\a x -> step $ Pair a x) (start ()) done
+  Fold (\x a -> step $ Pair x a) (start ()) done
 
 instance (Arrow arr) => Functor (FoldA arr a) where
   fmap f (FoldA step start done) = FoldA step start done'
@@ -75,10 +81,12 @@ instance (Arrow arr) => Applicative (FoldA arr a) where
   {-# INLINE pure #-}
   
   FoldA stepL startL doneL <*> FoldA stepR startR doneR =
-    let step  = proc (Pair (Pair xL xR) a) -> do
-          (stepL **** stepR) -< Pair (Pair xL a) (Pair xR a)
+    let step =
+          arr (\(Pair (Pair xL xR) a) ->
+                 Pair (Pair xL a) (Pair xR a))
+          >>> (stepL **** stepR)
         start = startL &&&& startR
-        done  = (doneL **** doneR) >>> arr applyP
+        done = (doneL **** doneR) >>> arr applyP
     in FoldA step start done
   {-# INLINE (<*>) #-}
 
@@ -86,5 +94,29 @@ instance (Arrow arr) => Profunctor (FoldA arr) where
   rmap = fmap
   lmap f (FoldA step start done) = FoldA step' start done
     where
-      step' = arr (\(Pair a x) -> Pair a (f x)) >>> step
+      step' = arr (\(Pair x a) -> Pair x (f a)) >>> step
   {-# INLINE lmap #-}
+
+premapA :: (Arrow arr)
+        => arr a b -> FoldA arr b r -> FoldA arr a r
+premapA ar (FoldA step start done) =
+  FoldA (secondP ar >>> step) start done
+{-# INLINABLE premapA #-}
+
+postmapA :: (Category arr)
+         => FoldA arr a b -> arr b r -> FoldA arr a r
+postmapA (FoldA step start done) ar =
+  FoldA step start (done >>> ar)
+{-# INLINABLE postmapA #-}
+
+prefilterA :: (ArrowChoice arr)
+           => arr a Bool -> FoldA arr a r -> FoldA arr a r
+prefilterA fltr (FoldA step start done) =
+  FoldA (proc (Pair x a) -> do
+            b <- fltr -< a
+            if b
+              then step -< Pair x a
+              else returnA -< x)
+        start
+        done
+{-# INLINABLE prefilterA #-}
