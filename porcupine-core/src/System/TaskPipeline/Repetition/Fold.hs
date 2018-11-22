@@ -8,10 +8,13 @@ module System.TaskPipeline.Repetition.Fold where
 -- import           Control.Arrow
 import           Control.Arrow.FoldA
 -- import           Control.Category
+import           Control.Lens
 import           Data.Locations
+import           Katip
 import           Prelude                               hiding (id, (.))
 import           System.TaskPipeline.PTask
--- import           System.TaskPipeline.Repetition.Internal
+import           System.TaskPipeline.PTask.Internal
+import           System.TaskPipeline.Repetition.Internal
 
 
 -- * Folding data with a PTask
@@ -24,21 +27,39 @@ unsafeGeneralizeM (FoldM step start done) =
         (unsafeLiftToPTask $ const start)
         (unsafeLiftToPTask done)
 
--- data RepeatablePTask m a b =
---   RPT (LocationTree VirtualFile) (FoldA (RunnablePTask m) a b)
+-- | Creates a 'FoldA' from a 'PTask'.
+ptaskFold :: (Show idx, Monad m)
+          => LocVariable
+          -> Maybe Verbosity
+          -> PTask m (a,b) b
+          -> b
+          -> FoldA (PTask m) (idx,a) b
+ptaskFold rk mv step init =
+  FoldA (arr onInput >>> makeRepeatable rk mv step) (pure init) id
+  where
+    onInput (Pair b (idx,a)) = (idx,(a,b))
 
--- -- | Turns a 'FoldA' of PTask into something that can be safely repeated.
--- makeRepeatable
---   :: LocVariable
---   -> Maybe Verbosity
---   -> FoldA (PTask m) a b
---   -> RepeatablePTask m a b
--- makeRepeatable repetitionKey mbVerb =
---   where
---     (reqs, perform) = 
-
--- foldTask
---   :: (Foldable f)
---   => FoldA (PTask m) a b
---   -> PTask m (f a) b
--- foldTask = undefined
+-- | Runs a 'FoldA' created with 'ptaskFold', 'generalizeA',
+-- 'unsafeGeneralizeM', or a composition of such folds.
+--
+-- IMPORTANT : If you created the 'FoldA' yourself, this is safe only if the
+-- step PTask in the fold has been made repeatable, else files might be
+-- overwritten. See 'makeRepeatable'.
+foldTask
+  :: FoldA (PTask m) a b
+  -> PTask m [a] b
+foldTask (FoldA step start done) =
+  (reqs, runnable) ^. from splittedPTask
+  where
+    (reqsStep, runnableStep)   = step ^. splittedPTask
+    (reqsStart, runnableStart) = start ^. splittedPTask
+    (reqsDone, runnableDone)   = done ^. splittedPTask
+    reqs = reqsStart <> reqsStep <> reqsDone
+    runnable =
+      id &&&& (pure () >>> runnableStart) >>> loopStep >>> runnableDone
+    loopStep = proc (Pair list acc) -> do
+      case list of
+        []     -> returnA -< acc
+        (a:as) -> do
+          acc' <- runnableStep -< Pair acc a
+          loopStep -< Pair as acc'

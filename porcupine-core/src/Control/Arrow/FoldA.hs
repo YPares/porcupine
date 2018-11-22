@@ -13,6 +13,11 @@ module Control.Arrow.FoldA
   , premapA
   , postmapA
   , prefilterA
+
+  , toTup
+  , fromTup
+  , (&&&&)
+  , (****)
   ) where
 
 import Prelude hiding (id, (.))
