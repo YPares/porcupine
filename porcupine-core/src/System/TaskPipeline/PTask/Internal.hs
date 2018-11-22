@@ -103,14 +103,15 @@ type CanRunPTask m = (MonadBaseControl IO m, MonadMask m, KatipContext m)
 execRunnablePTask
   :: (CanRunPTask m)
   => RunnablePTask m a b -> PTaskState m -> a -> m b
-execRunnablePTask (AppArrow act)
-  st@(PTaskState{_ptrsFunflowRunConfig=FunflowRunConfig{..}}) =
-  runFlowEx _ffrcCoordinator _ffrcCoordinatorConfig
-            _ffrcContentStore evalInnerEffect _ffrcFlowIdentity $
-    runReader act st
-  where
-    evalInnerEffect (AsyncA f) = AsyncA $
-      \input -> evalStateT (f input) []
+execRunnablePTask
+  (AppArrow act)
+  st@(PTaskState{_ptrsFunflowRunConfig=FunflowRunConfig{..}})
+  input =
+  flip evalStateT [] $
+    runFlowEx _ffrcCoordinator _ffrcCoordinatorConfig
+              _ffrcContentStore id _ffrcFlowIdentity
+              (runReader act st)
+              input
 
 -- | A task is an Arrow than turns @a@ into @b@. It runs in some monad @m@.
 -- Each 'PTask' will expose its requirements in terms of resource it wants to
@@ -187,10 +188,13 @@ modifyingRuntimeState
 modifyingRuntimeState alterState alterInput ar = pushState >>> ar >>> popState
   where
     pushState =
-      withOuterState def $ \_ x ->
-        modify (alterState x :) >> return (alterInput x)
+      withOuterState def $ \_ x -> do
+        modify (alterState x :)
+        return (alterInput x)
     popState =
-      withOuterState def $ \_ x -> modify popMod >> return x
+      withOuterState def $ \_ x -> do
+        modify popMod
+        return x
     popMod [] = error $
       "modifyingRunnableState: Modifiers list shouldn't be empty!"
     popMod (_:ms) = ms

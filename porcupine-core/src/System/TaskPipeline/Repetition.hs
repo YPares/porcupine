@@ -25,10 +25,10 @@ import qualified Data.HashMap.Strict                   as HM
 import           Data.Locations
 import           Data.Typeable
 import           Katip
-import           Prelude                               hiding ((.))
+import           Prelude                               hiding (id, (.))
 import           Streaming                             (Of (..), Stream)
 import qualified Streaming.Prelude                     as S
-import           System.TaskPipeline.PTask             (unsafeLiftToPTask)
+import           System.TaskPipeline.PTask
 import           System.TaskPipeline.PTask.Internal
 import           System.TaskPipeline.ResourceTree
 import           System.TaskPipeline.VirtualFileAccess
@@ -83,33 +83,34 @@ makeRepeatable
   -> Maybe Verbosity
   -> PTask m a b
   -> PTask m (i,a) b
-makeRepeatable repetitionKey mbVerb = over splittedPTask $ \(reqTree, runnable) ->
-  (fmap addKeyToVirtualFile reqTree
-  ,modifyingRuntimeState alterState snd runnable)
+makeRepeatable repetitionKey mbVerb =
+  over splittedPTask $ \(reqTree, runnable) ->
+    ( fmap addKeyToVirtualFile reqTree
+    , modifyingRuntimeState alterState snd runnable )
   where
     addKeyToVirtualFile (VirtualFileNode vf) =
       VirtualFileNode $ vf &
         over (vfileSerials.serialsRepetitionKeys) (repetitionKey:)
     addKeyToVirtualFile emptyNode = emptyNode
 
-    alterState (index,_) =
+    alterState (idx,_) =
         over ptrsKatipContext alterContext
       . over (ptrsDataAccessTree.traversed) addKeyValToDataAccess
       where
-        indexStr = show index
-        newCtxItem = TRC repetitionKey indexStr <$> mbVerb
+        idxStr = show idx
+        newCtxItem = TRC repetitionKey idxStr <$> mbVerb
         alterContext ctx = case newCtxItem of
           Nothing   -> ctx
           Just item -> ctx <> liftPayload item
         addKeyValToDataAccess (DataAccessNode l fn) =
-          DataAccessNode l $ fn . HM.insert repetitionKey indexStr
+          DataAccessNode l $ fn . HM.insert repetitionKey idxStr
         addKeyValToDataAccess emptyNode = emptyNode
 
-foldTask
-  :: (Foldable f)
-  => FoldA (PTask m) a b
-  -> PTask m (f a) b
-foldTask = undefined
+-- foldTask
+--   :: (Foldable f)
+--   => FoldA (PTask m) a b
+--   -> PTask m (f a) b
+-- foldTask = undefined
 
 -- * Type aliases for tasks over streams
 
@@ -157,48 +158,35 @@ mappingOverStream
                        -- appended to every Loc mapped to every leaf in the
                        -- LocationTree given to X.
 mappingOverStream repetitionKey mbVerb =
-  over splittedPTask $ \(reqTree, runnable) ->
-    (fmap addKeyToVirtualFile reqTree
-    ,mappingRunnableOverStream repetitionKey mbVerb runnable)
+    over ptaskRunnable mappingRunnableOverStream
+  . keepIndex
+  . makeRepeatable repetitionKey mbVerb
   where
-    addKeyToVirtualFile (VirtualFileNode vf) =
-      VirtualFileNode $ vf & vfileSerials . serialsRepetitionKeys %~ (repetitionKey:)
-    addKeyToVirtualFile emptyNode = emptyNode
+    keepIndex t =
+      id &&& t >>> arr (\((idx,_),o) -> (idx, o))
 
+-- | IMPORTANT: That requires the RunnablePTask to be repeatable. See
+-- 'makeRepeatable'.
 mappingRunnableOverStream
-  :: (CanRunPTask m, Show i)
-  => LocVariable
-  -> Maybe Verbosity
-  -> RunnablePTask m a b
+  :: (CanRunPTask m)
+  => RunnablePTask m a b
   -> RunnablePTask m
-       (Stream (Of (i, a)) m r)
-       (Stream (Of (i, b)) m r)
-mappingRunnableOverStream repetitionKey mbVerb runnable =
+       (Stream (Of a) m r)
+       (Stream (Of b) m r)
+mappingRunnableOverStream runnable =
   withRunnableState $ \state inputStream -> do
     firstElem <- S.next inputStream
     case firstElem of
       Left r -> return (return r)  -- Empty input stream
       Right (firstInput, inputStream') -> do
-        firstResult <- performOnce state firstInput
+        firstResult <- go state firstInput
         return $
-          firstResult `S.cons` S.mapM (performOnce state) inputStream'
+          firstResult `S.cons` S.mapM (go state) inputStream'
   where
-    addKeyValToDataAccess val (DataAccessNode l fn) =
-      DataAccessNode l $ fn . HM.insert repetitionKey val
-    addKeyValToDataAccess _ emptyNode = emptyNode
-
-    performOnce state (val, input) = case mbVerb of
-      Nothing   -> go
-      Just verb -> katipAddContext (TRC repetitionKey val' verb) go
-      where
-        val' = show val
-        state' = state & (ptrsDataAccessTree.traversed) %~ addKeyValToDataAccess val'
-        go = do
-          -- NOTE: We "cheat" here: we run the funflow layer of the inner
-          -- task. We should find a way not to have to do that, but when using
-          -- Streaming (which delays effects in a monad) it's really problematic.
-          res <- execRunnablePTask runnable state' input
-          return (val, res)
+    go = execRunnablePTask runnable
+         -- NOTE: We "cheat" here: we run the funflow layer of the inner
+         -- task. We should find a way not to have to do that, but when using
+         -- Streaming (which delays effects in a monad) it's really problematic.
 
 -- | See 'mappingOverStream'. Just runs the resulting stream and returns its end
 -- result.
