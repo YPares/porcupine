@@ -1,7 +1,10 @@
+{-# LANGUAGE TupleSections     #-}
+
 module System.TaskPipeline.Repetition
   ( module System.TaskPipeline.Repetition.Streaming
-  , parMapTask
   , RepetitionInfo, withRepKey
+  , parMapTask
+  , parMapTask_
   ) where
 
 import Control.Arrow.Free (mapA)
@@ -21,3 +24,14 @@ parMapTask
   -> PTask m [(idx,a)] [(idx,b)]
 parMapTask ri =
   over ptaskRunnable mapA . makeRepeatable ri
+
+-- | Simply repeats a task which takes no input over a list of indices, and
+-- ignores the end result. See 'RepetitionInfo' for how these indices are
+-- used. See 'parMapTask' for a more complete version.
+parMapTask_
+  :: (Show idx, Monad m)
+  => RepetitionInfo
+  -> PTask m () b
+  -> PTask m [idx] ()
+parMapTask_ ri task =
+   arr (map (, ())) >>> parMapTask ri task >>> arr (const ())

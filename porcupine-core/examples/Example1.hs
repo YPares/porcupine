@@ -2,7 +2,6 @@
 {-# LANGUAGE DeriveGeneric     #-}
 {-# LANGUAGE FlexibleContexts  #-}
 {-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE TupleSections     #-}
 {-# LANGUAGE TypeApplications  #-}
 
 import           Data.Aeson
@@ -33,21 +32,20 @@ analysisFile :: DataSink Analysis
 analysisFile = dataSink ["Outputs", "Analysis"]
                         (somePureSerial JSONSerial)
 
+-- This task may look very opaque from the outside, having no parameters and no
+-- return value... But we will be able to reuse it over different users without
+-- having to change it at all.
 analyseOneUser :: (LocationMonad m, KatipContext m) => PTask m () ()
 analyseOneUser =
   loadLast userFile >>> arr computeAnalysis >>> writeData analysisFile
 
-mainTask :: (LocationMonad m, CanRunPTask m) => PTask m () ()
+mainTask :: (LocationMonad m, KatipContext m) => PTask m () ()
 mainTask =
   -- First we get the ids of the users that we want to analyse (we need only one
   -- field that will contain the list of the ids):
   getOption ["Settings"] (docField @"userIds" [0::Int] "The user ids to load") >>>
-  arr (map (, ())) >>>  -- The input of analyseOneUser is (), so we need a
-                        -- stream of (Int, ()) pairs
-  listToStreamTask >>>  -- Just a utility if you don't want to explicitly import Streaming
-  -- Finally, we just loop over these ids and call analyseOneUser each time:
-  mappingOverStream_ "userId" Nothing
-    analyseOneUser
+  -- Then we just map over these ids and call analyseOneUser each time:
+  parMapTask_ (withRepKey "userId") analyseOneUser
 
 computeAnalysis :: User -> Analysis
 computeAnalysis (User name surname _) = Analysis $
@@ -55,4 +53,6 @@ computeAnalysis (User name surname _) = Analysis $
                      ++ [(c,1) | c <- T.unpack surname]
 
 main :: IO ()
-main = runPipelineTask_ "example1" (FullConfig "porcupine.yaml" "porcupine-core/examples/data") mainTask
+main = runPipelineTask_ "example1"
+                        (FullConfig "porcupine.yaml" "porcupine-core/examples/data")
+                        mainTask
