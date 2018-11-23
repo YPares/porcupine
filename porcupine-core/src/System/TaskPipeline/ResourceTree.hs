@@ -398,7 +398,10 @@ instance ToJSON DataAccessContext
 instance ToObject DataAccessContext
 instance LogItem DataAccessContext where
   payloadKeys V3 _ = AllKeys
-  payloadKeys _  _ = SomeKeys ["locationAccessed"]
+  payloadKeys V2 _ = SomeKeys ["locationAccessed"]
+  payloadKeys V1 _ = SomeKeys ["locationAccessed"]
+  --  payloadKeys v _ | v >= V1 = SomeKeys ["locationAccessed"]
+  payloadKeys V0 _ = SomeKeys []
 
 
 -- | Transform a file node with physical locations in node with a data access

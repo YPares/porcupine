@@ -53,6 +53,7 @@ jinko_haskell_library(
             "@hackage//:filepath",
             "@hackage//:funflow",
             "@hackage//:formatting",
+	    "@hackage//:foldl",
             "@hackage//:hashable",
             "@hackage//:katip",
             "@hackage//:lens",

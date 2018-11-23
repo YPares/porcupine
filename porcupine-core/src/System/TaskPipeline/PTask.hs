@@ -26,6 +26,7 @@ module System.TaskPipeline.PTask
   , tryPTask, throwPTask, clockPTask
   , unsafeLiftToPTask, unsafeRunIOTask
   , ptaskRequirements
+  , ptaskRunnable
   , ptaskDataAccessTree
   , ptaskInSubtree
   , voidTask
@@ -109,14 +110,17 @@ logTask = unsafeLiftToPTask $ \(sev, s) -> logFM sev $ logStr s
 ptaskRequirements :: Lens' (PTask m a b) (LocationTree VirtualFileNode)
 ptaskRequirements = splittedPTask . _1
 
+ptaskRunnable :: Lens (PTask m a b) (PTask m a' b')
+                      (RunnablePTask m a b) (RunnablePTask m a' b')
+ptaskRunnable = splittedPTask . _2
+
 -- | To transform the 'DataAccessTree' of the PTask when it will run
 ptaskDataAccessTree :: Setter' (PTask m a b) (LocationTree (DataAccessNode m))
 ptaskDataAccessTree = ptaskReaderState . ptrsDataAccessTree
 
-
 -- | To transform the state of the PTask when it will run
-ptaskReaderState :: Setter' (PTask m a b) (PTaskReaderState m)
-ptaskReaderState = splittedPTask . _2 . runnablePTaskState
+ptaskReaderState :: Setter' (PTask m a b) (PTaskState m)
+ptaskReaderState = ptaskRunnable . runnablePTaskState
 
 -- | Adds some context that will be used at logging time. See 'katipAddContext'
 addContextToTask :: (LogItem i) => i -> PTask m a b -> PTask m a b

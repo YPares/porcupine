@@ -14,7 +14,7 @@
 
 module System.TaskPipeline.PTask.Internal
   ( PTask
-  , PTaskReaderState
+  , PTaskState
   , RunnablePTask
   , FunflowRunConfig(..)
   , CanRunPTask
@@ -27,12 +27,13 @@ module System.TaskPipeline.PTask.Internal
   , runnablePTaskState
   , makePTask
   , makePTask'
+  , modifyingRuntimeState
   , withRunnableState
   , withRunnableState'
   , execRunnablePTask
   , toRunnable
   , runnableWithoutReqs
-  , withPTaskReaderState
+  , withPTaskState
   ) where
 
 import           Prelude                                     hiding (id, (.))
@@ -48,8 +49,10 @@ import           Control.Funflow.External.Coordinator
 import           Control.Funflow.External.Coordinator.SQLite
 import           Control.Lens
 import           Control.Monad.IO.Class
+import           Control.Monad.Trans
 import           Control.Monad.Trans.Control
 import           Control.Monad.Trans.Reader
+import           Control.Monad.Trans.State
 import           Control.Monad.Trans.Writer
 import           Data.Default
 import           Data.Locations.LocationTree
@@ -75,13 +78,13 @@ data FunflowRunConfig = forall c. (Coordinator c) => FunflowRunConfig
 
 -- | This is the state that will be shared by the whole PTask pipeline once it
 -- starts running.
-data PTaskReaderState m = PTaskReaderState
+data PTaskState m = PTaskState
   { _ptrsKatipContext     :: !LogContexts
   , _ptrsKatipNamespace   :: !Namespace
   , _ptrsFunflowRunConfig :: !FunflowRunConfig
   , _ptrsDataAccessTree   :: !(DataAccessTree m) }
 
-makeLenses ''PTaskReaderState
+makeLenses ''PTaskState
 
 -- | The part of a 'PTask' that will be ran once the whole pipeline is composed
 -- and the tree of requirements has been bound to physical locations. Is is
@@ -89,9 +92,9 @@ makeLenses ''PTaskReaderState
 -- only 'RunnablePTask' is an ArrowChoice.
 type RunnablePTask m =
   AppArrow
-    (Reader (PTaskReaderState m)) -- The reader layer contains the mapped
+    (Reader (PTaskState m)) -- The reader layer contains the mapped
                                   -- tree. Will be used only as an applicative.
-    (Flow (AsyncA m) SomeException)
+    (Flow (InnerEffect m) SomeException)
 
 -- | The constraints that must be satisfied by the base monad m so that a @PTask
 -- m@ can be run
@@ -100,12 +103,16 @@ type CanRunPTask m = (MonadBaseControl IO m, MonadMask m, KatipContext m)
 -- | Runs a 'RunnablePTask' given its state
 execRunnablePTask
   :: (CanRunPTask m)
-  => RunnablePTask m a b -> PTaskReaderState m -> a -> m b
-execRunnablePTask (AppArrow act)
-  st@(PTaskReaderState{_ptrsFunflowRunConfig=FunflowRunConfig{..}}) =
-  runFlowEx _ffrcCoordinator _ffrcCoordinatorConfig
-            _ffrcContentStore id _ffrcFlowIdentity $
-    runReader act st
+  => RunnablePTask m a b -> PTaskState m -> a -> m b
+execRunnablePTask
+  (AppArrow act)
+  st@(PTaskState{_ptrsFunflowRunConfig=FunflowRunConfig{..}})
+  input =
+  flip evalStateT [] $
+    runFlowEx _ffrcCoordinator _ffrcCoordinatorConfig
+              _ffrcContentStore id _ffrcFlowIdentity
+              (runReader act st)
+              input
 
 -- | A task is an Arrow than turns @a@ into @b@. It runs in some monad @m@.
 -- Each 'PTask' will expose its requirements in terms of resource it wants to
@@ -121,39 +128,92 @@ newtype PTask m a b = PTask
     (RunnablePTask m)
     a b)
   deriving (Category, Arrow, ArrowError SomeException, Functor, Applicative)
+  -- PTask doesn't instanciate ArrowChoice. That's intentional, even if an
+  -- instance could be automatically derived. The ArrowChoice implementation for
+  -- `AppArrow (Writer x) arr` isn't sane for PTasks, as the monoid state (the
+  -- PTask requirements) will be accumulated by (|||) in a way that's
+  -- indistiguishable from (>>>), that is to say that doesn't differentiate
+  -- VirtualFiles that _will_ be used from those that _may_ be used. Maybe in
+  -- the future we will implement ArrowChoice/ArrowPlus/ArrowZero in a saner way (it
+  -- should even be necessary if we want to implement serialization methods with
+  -- PTask themselves, and have serial method selection based on file format or
+  -- mapping metadata), but in that case it's necessary that the pipeline
+  -- configuration file reflects this "either-or" nature of VirtualFiles.
 
-flowToPTask :: Flow (AsyncA m) SomeException a b -> PTask m a b
+flowToPTask :: Flow (InnerEffect m) SomeException a b -> PTask m a b
 flowToPTask = PTask . appArrow . appArrow
 
 -- | The type of effects we can run. The reader layer is executed by 'wrap',
 -- this is why it doesn't appear in the Flow part of the 'RunnablePTask' type.
-type EffectInFlow m = AsyncA (ReaderT (PTaskReaderState m) m)
+type OuterEffect m =
+  AsyncA (ReaderT (PTaskState m) m)
 
-instance (KatipContext m) => ArrowFlow (EffectInFlow m) SomeException (PTask m) where
+-- | The effects ran inside the flow have to handle some dynamic modifications
+-- of the state (for instance from task inputs) that have to be applied to each
+-- state passed to 'wrap'. We store these modifications as a stack of functions.
+type InnerEffect m =
+  AsyncA (StateT [PTaskState m -> PTaskState m] m)
+
+instance (KatipContext m)
+      => ArrowFlow (OuterEffect m) SomeException (PTask m) where
   step' props f = flowToPTask $ step' props f
   stepIO' props f = flowToPTask $ stepIO' props f
   external f = flowToPTask $ external f
   external' props f = flowToPTask $ external' props f
   -- wrap' transmits the Reader state of the PTask down to the flow:
   wrap' props (AsyncA rdrAct) = runnableWithoutReqs $
-    withRunnableState' props $ \state input ->
-                              runReaderT (rdrAct input) state
+    withRunnableState' props $ \outerState input ->
+      runReaderT (rdrAct input) outerState
   putInStore f = flowToPTask $ putInStore f
   getFromStore f = flowToPTask $ getFromStore f
   internalManipulateStore f = flowToPTask $ internalManipulateStore f
 
+withOuterState
+  :: (ArrowFlow (AsyncA m) ex arr)
+  => Properties a b
+  -> (t -> a -> m b)
+  -> AppArrow (Reader t) arr a b
+withOuterState props f =
+  AppArrow $ reader $ \outerState ->
+    wrap' props $ AsyncA $ \input ->
+      f outerState input
+
+-- | The task will be executed with a new state modifier pushed on the modifiers
+-- stack.
+modifyingRuntimeState
+  :: (Monad m)
+  => (a -> PTaskState m -> PTaskState m)
+  -> (a -> a')
+  -> RunnablePTask m a' b
+  -> RunnablePTask m a b
+modifyingRuntimeState alterState alterInput ar = pushState >>> ar >>> popState
+  where
+    pushState =
+      withOuterState def $ \_ x -> do
+        modify (alterState x :)
+        return (alterInput x)
+    popState =
+      withOuterState def $ \_ x -> do
+        modify popMod
+        return x
+    popMod [] = error $
+      "modifyingRunnableState: Modifiers list shouldn't be empty!"
+    popMod (_:ms) = ms
+
 -- | At the 'RunnablePTask' level, access the reader state and run an action
 withRunnableState' :: (KatipContext m)
-                   => Properties a b -> (PTaskReaderState m -> a -> m b) -> RunnablePTask m a b
-withRunnableState' props f = AppArrow $ reader $ \ptrs ->
-  wrap' props $ AsyncA $ \input ->
+                   => Properties a b -> (PTaskState m -> a -> m b) -> RunnablePTask m a b
+withRunnableState' props f = withOuterState props $ \outerState input -> do
+  mods <- get
+  let ptrs = foldr ($) outerState mods
+  lift $
     localKatipContext (const $ _ptrsKatipContext ptrs) $
       localKatipNamespace (const $ _ptrsKatipNamespace ptrs) $
         f ptrs input
 
 -- | 'withRunnableState'' without caching.
 withRunnableState :: (KatipContext m)
-                  => (PTaskReaderState m -> a -> m b) -> RunnablePTask m a b
+                  => (PTaskState m -> a -> m b) -> RunnablePTask m a b
 withRunnableState = withRunnableState' def
 
 -- | Wraps a 'RunnablePTask' into a 'PTask' that declares no requirements
@@ -171,7 +231,7 @@ splittedPTask = iso to_ from_
     swap (a,b) = (b,a)
 
 -- | Permits to apply a function to the state of a 'RunnablePTask' when in runs.
-runnablePTaskState :: Setter' (RunnablePTask m a b) (PTaskReaderState m)
+runnablePTaskState :: Setter' (RunnablePTask m a b) (PTaskState m)
 runnablePTaskState = lens unAppArrow (const AppArrow) . setting local
 
 -- | Just a shortcut around 'withRunnableState' when you just need to run an
@@ -214,12 +274,12 @@ withFunflowRunConfig ffPaths f = do
 
 -- | Given a 'KatipContext' and a 'DataAccessTree', gets the initial state to
 -- give to 'execRunnablePTask'
-withPTaskReaderState :: (MonadIO m, MonadMask m, KatipContext m)
-                     => FunflowPaths
-                     -> DataAccessTree m
-                     -> (PTaskReaderState m -> m r) -> m r
-withPTaskReaderState ffPaths tree f =
+withPTaskState :: (MonadIO m, MonadMask m, KatipContext m)
+               => FunflowPaths
+               -> DataAccessTree m
+               -> (PTaskState m -> m r) -> m r
+withPTaskState ffPaths tree f =
   withFunflowRunConfig ffPaths $ \ffconfig -> do
     ctx <- getKatipContext
     ns  <- getKatipNamespace
-    f $ PTaskReaderState ctx ns ffconfig tree
+    f $ PTaskState ctx ns ffconfig tree

@@ -109,7 +109,7 @@ runPipelineCommandOnPTask ptask input cmd boundTree = do
         FunflowPaths
           <$> (fromMaybe (pwd </> "_funflow/store") <$> lookupEnv "FUNFLOW_STORE")
           <*> (fromMaybe (pwd </> "_funflow/coordinator.db") <$> lookupEnv "FUNFLOW_COORDINATOR")
-      withPTaskReaderState ffPaths dataTree $ \initState -> do
+      withPTaskState ffPaths dataTree $ \initState -> do
         $(logTM) DebugS $ logStr $ "Using funflow store in '" ++ storePath ffPaths
               ++ "' and coordinator '" ++ coordPath ffPaths ++ "'."
         execRunnablePTask runnable initState input
