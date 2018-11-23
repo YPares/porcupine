@@ -56,7 +56,7 @@ mainTask =
   -- field that will contain the list of the ids):
   getOption ["Settings"] (docField @"userIds" [0::Int] "The user ids to load") >>>
   -- Then we just map over these ids and call analyseOneUser each time:
-  parMapTask_ (withRepKey "userId") analyseOneUser
+  parMapTask_ (repIndex "userId") analyseOneUser
 
 main :: IO ()
 main = runPipelineTask_ "example1"

@@ -2,7 +2,7 @@
 
 module System.TaskPipeline.Repetition
   ( module System.TaskPipeline.Repetition.Streaming
-  , RepInfo(..), withRepKey
+  , RepInfo(..), repIndex
   , parMapTask
   , parMapTask_
   ) where
@@ -15,7 +15,7 @@ import System.TaskPipeline.Repetition.Streaming
 import Prelude hiding (id, (.))
 
 
--- | Makes a 'PTask' repeatable and maps it in parallel over a list
+-- | Makes a 'PTask' repeatable and maps it in parallel over a list.
 parMapTask
   :: (Show idx, Monad m)
   => RepInfo

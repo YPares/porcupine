@@ -1,7 +1,7 @@
 module System.TaskPipeline.Repetition.Internal
   ( TaskRepetitionContext(..)
   , RepInfo(..)
-  , withRepKey
+  , repIndex
   , makeRepeatable
   ) where
 
@@ -32,8 +32,8 @@ data RepInfo = RepInfo
 
 -- | Creates a 'RepetitionInfo' that will log the repetition key at verbosity
 -- level 1 and above.
-withRepKey :: LocVariable -> RepInfo
-withRepKey lv = RepInfo lv (Just V1)
+repIndex :: LocVariable -> RepInfo
+repIndex lv = RepInfo lv (Just V1)
 
 -- | Logging context for repeated tasks
 data TaskRepetitionContext = TRC
