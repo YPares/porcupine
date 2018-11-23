@@ -9,7 +9,6 @@ import           Data.DocRecord
 import qualified Data.HashMap.Strict as HM
 import qualified Data.Text           as T
 import           GHC.Generics
-import           Katip
 import           Porcupine.Run
 import           Porcupine.Serials
 import           Porcupine.Tasks
@@ -52,11 +51,14 @@ analyseOneUser =
 
 mainTask :: (LocationMonad m, KatipContext m) => PTask m () ()
 mainTask =
-  -- First we get the ids of the users that we want to analyse (we need only one
-  -- field that will contain the list of the ids):
-  getOption ["Settings"] (docField @"userIds" [0::Int] "The user ids to load") >>>
+  -- First we get the ids of the users that we want to analyse. We need only one
+  -- field that will contain a range of values, see IndexRange. By default, this
+  -- range contains just one value, zero.
+  getOption ["Settings"] (docField @"users" (oneIndex (0::Int)) "The user ids to load")
+  -- We turn the range we read into a full lazy list:
+  >>> arr enumIndices
   -- Then we just map over these ids and call analyseOneUser each time:
-  parMapTask_ (repIndex "userId") analyseOneUser
+  >>> parMapTask_ (repIndex "userId") analyseOneUser
 
 main :: IO ()
 main = runPipelineTask_ "example1"
