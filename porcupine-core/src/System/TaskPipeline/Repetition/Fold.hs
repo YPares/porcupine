@@ -26,7 +26,7 @@ unsafeGeneralizeM (FoldM step start done) =
 
 -- | Creates a 'FoldA' from a 'PTask'.
 ptaskFold :: (Show idx, Monad m)
-          => RepetitionInfo
+          => RepInfo
           -> PTask m (x,acc) acc
           -> acc
           -> FoldA (PTask m) (idx,x) acc

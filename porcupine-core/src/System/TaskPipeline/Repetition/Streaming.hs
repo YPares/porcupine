@@ -77,7 +77,7 @@ mappingOverStream
                        -- LocationTree given to X.
 mappingOverStream repetitionKey mbVerb =
     over ptaskRunnable mappingRunnableOverStream
-  . makeRepeatable (RepetitionInfo repetitionKey mbVerb)
+  . makeRepeatable (RepInfo repetitionKey mbVerb)
 
 -- | IMPORTANT: That requires the RunnablePTask to be repeatable. See
 -- 'makeRepeatable'.

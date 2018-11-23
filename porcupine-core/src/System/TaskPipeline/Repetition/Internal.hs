@@ -1,6 +1,6 @@
 module System.TaskPipeline.Repetition.Internal
   ( TaskRepetitionContext(..)
-  , RepetitionInfo(..)
+  , RepInfo(..)
   , withRepKey
   , makeRepeatable
   ) where
@@ -19,7 +19,7 @@ import           System.TaskPipeline.ResourceTree
 
 
 -- | Gives information about how a task will be repeated
-data RepetitionInfo = RepetitionInfo
+data RepInfo = RepInfo
   { repKey        :: LocVariable
   -- ^ A variable name, used as a key to indicate which repetition we're
   -- at. Used in the logger context and exposed in the yaml file for each
@@ -32,8 +32,8 @@ data RepetitionInfo = RepetitionInfo
 
 -- | Creates a 'RepetitionInfo' that will log the repetition key at verbosity
 -- level 1 and above.
-withRepKey :: LocVariable -> RepetitionInfo
-withRepKey lv = RepetitionInfo lv (Just V1)
+withRepKey :: LocVariable -> RepInfo
+withRepKey lv = RepInfo lv (Just V1)
 
 -- | Logging context for repeated tasks
 data TaskRepetitionContext = TRC
@@ -59,10 +59,10 @@ instance LogItem TaskRepetitionContext where
 -- The index is just passed through, to facilitate composition.
 makeRepeatable
   :: (Show idx, Monad m)
-  => RepetitionInfo
+  => RepInfo
   -> PTask m a b
   -> PTask m (idx,a) (idx,b)
-makeRepeatable (RepetitionInfo repetitionKey mbVerb) =
+makeRepeatable (RepInfo repetitionKey mbVerb) =
   over splittedPTask $ \(reqTree, runnable) ->
     ( fmap addKeyToVirtualFile reqTree
     , keepingIndex $ modifyingRuntimeState alterState snd runnable )
