@@ -1,6 +1,5 @@
 module System.TaskPipeline.Repetition.Internal
-  ( TaskRepetitionContext(..)
-  , RepInfo(..)
+  ( RepInfo(..)
   , repIndex
   , makeRepeatable
   ) where
@@ -20,17 +19,17 @@ import           System.TaskPipeline.ResourceTree
 
 -- | Gives information about how a task will be repeated
 data RepInfo = RepInfo
-  { repKey        :: LocVariable
-  -- ^ A variable name, used as a key to indicate which repetition we're
-  -- at. Used in the logger context and exposed in the yaml file for each
-  -- VirtualFile that will be repeated by this task
-  , repKeyLogging :: Maybe Verbosity
+  { repInfoIndex   :: LocVariable
+  -- ^ A name that will be used as a metavariable in the config file. It may
+  -- also be used by the logger as a context key, to indicate which repetition
+  -- is currently running.
+  , repInfoLogging :: Maybe Verbosity
   -- ^ The minimal vebosity level at which to display the value associated with
-  -- the repetition key in the logger context. Nothing if we don't want to add
+  -- the repetition index in the logger context. Nothing if we don't want to add
   -- context.
   } deriving (Eq, Show)
 
--- | Creates a 'RepetitionInfo' that will log the repetition key at verbosity
+-- | Creates a 'RepetitionInfo' that will log the repetition index at verbosity
 -- level 1 and above.
 repIndex :: LocVariable -> RepInfo
 repIndex lv = RepInfo lv (Just V1)
