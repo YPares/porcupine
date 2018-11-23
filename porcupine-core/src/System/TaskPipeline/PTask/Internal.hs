@@ -18,6 +18,7 @@ module System.TaskPipeline.PTask.Internal
   , RunnablePTask
   , FunflowRunConfig(..)
   , CanRunPTask
+  , FunflowPaths(..)
   , ptrsKatipContext
   , ptrsKatipNamespace
   , ptrsFunflowRunConfig
@@ -257,18 +258,28 @@ makePTask :: (KatipContext m)
           -> PTask m a b
 makePTask = makePTask' def
 
+data FunflowPaths = FunflowPaths
+  { storePath :: FilePath, coordPath :: FilePath }
 
-withFunflowRunConfig :: (MonadIO m, MonadMask m) => (FunflowRunConfig -> m r) -> m r
-withFunflowRunConfig f = do
-  CS.withStore [absdir|/tmp/_ffstore|] $ \store -> do
-    f $ FunflowRunConfig SQLite [absdir|/tmp/_ffcoordinator.db|] store 23090341
+withFunflowRunConfig
+  :: (MonadIO m, MonadMask m)
+  => FunflowPaths
+  -> (FunflowRunConfig -> m r)
+  -> m r
+withFunflowRunConfig ffPaths f = do
+  storePath' <- parseAbsDir $ storePath ffPaths
+  coordPath' <- parseAbsDir $ coordPath ffPaths
+  CS.withStore storePath' (\store -> do
+    f $ FunflowRunConfig SQLite coordPath' store 23090341)
 
 -- | Given a 'KatipContext' and a 'DataAccessTree', gets the initial state to
 -- give to 'execRunnablePTask'
 withPTaskState :: (MonadIO m, MonadMask m, KatipContext m)
-               => DataAccessTree m
-               -> (PTaskState m -> m r) -> m r
-withPTaskState tree f = withFunflowRunConfig $ \ffconfig -> do
-  ctx <- getKatipContext
-  ns  <- getKatipNamespace
-  f $ PTaskState ctx ns ffconfig tree
+                     => FunflowPaths
+                     -> DataAccessTree m
+                     -> (PTaskState m -> m r) -> m r
+withPTaskState ffPaths tree f =
+  withFunflowRunConfig ffPaths $ \ffconfig -> do
+    ctx <- getKatipContext
+    ns  <- getKatipNamespace
+    f $ PTaskState ctx ns ffconfig tree
