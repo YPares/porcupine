@@ -66,10 +66,10 @@ loadData vf = arr (\_ -> S.yield ([] :: [Int]))
 -- | Loads a stream of repeated occurences of a VirtualFile, from a stream of
 -- indices. The process is lazy: the data will actually be read when the
 -- resulting stream is consumed.
-loadDataStream :: (Show i, LocationMonad m, KatipContext m, Monoid a, Typeable a)
+loadDataStream :: (Show idx, LocationMonad m, KatipContext m, Monoid a, Typeable a)
                => [LocVariable]
                -> VirtualFile ignored a -- ^ A 'DataSource'
-               -> PTask m (Stream (Of [i]) m r) (Stream (Of ([i], a)) m r)
+               -> PTask m (Stream (Of [idx]) m r) (Stream (Of ([idx], a)) m r)
 loadDataStream repIndices vf =
       arr (S.map (, error "loadDataStream: THIS IS VOID"))
   >>> accessVirtualFile repIndices (makeSource vf)
@@ -95,10 +95,14 @@ writeData
 writeData vf = arr (\a -> S.yield ([] :: [Int], a))
            >>> writeDataStream [] vf
 
-writeDataStream :: (Show i, LocationMonad m, KatipContext m, Typeable a)
+-- | The simplest way to consume a stream of data inside a pipeline. Just write
+-- it to repeated occurences of a VirtualFile. See
+-- System.TaskPipeline.Repetition.Fold for more complex ways to consume a
+-- Stream.
+writeDataStream :: (Show idx, LocationMonad m, KatipContext m, Typeable a)
                 => [LocVariable]
                 -> VirtualFile a ignored -- ^ A 'DataSink'
-                -> PTask m (Stream (Of ([i], a)) m r) r
+                -> PTask m (Stream (Of ([idx], a)) m r) r
 writeDataStream repIndices vf =
   accessVirtualFile repIndices (makeSink vf) >>> unsafeLiftToPTask S.effects
 
@@ -107,11 +111,11 @@ writeDataStream repIndices vf =
 -- instances of this ressource corresponding to the values of some repetition
 -- indices.
 accessVirtualFile
-  :: forall m a b i r.
-     (LocationMonad m, KatipContext m, Typeable a, Typeable b, Monoid b, Show i)
+  :: forall m a b idx r.
+     (LocationMonad m, KatipContext m, Typeable a, Typeable b, Monoid b, Show idx)
   => [LocVariable]
   -> VirtualFile a b
-  -> PTask m (Stream (Of ([i], a)) m r) (Stream (Of ([i], b)) m r)
+  -> PTask m (Stream (Of ([idx], a)) m r) (Stream (Of ([idx], b)) m r)
 accessVirtualFile repIndices vfile =
   getAccessFunctions path (Identity fname) $
     \inputStream (Identity mbAction) -> case mbAction of
@@ -122,7 +126,7 @@ accessVirtualFile repIndices vfile =
           _ -> err vfile' "input or output types don't match"
       _ -> err vfile' "no access action available"
   where
-    runOnce :: (LocVariableMap -> a -> m b) -> ([i], a) -> m ([i], b)
+    runOnce :: (LocVariableMap -> a -> m b) -> ([idx], a) -> m ([idx], b)
     runOnce action (ixVals, input) = (ixVals,) <$> action lvMap input
       where lvMap = HM.fromList $ zip repIndices $ map show ixVals
     vfile' = case repIndices of

@@ -3,12 +3,19 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE TupleSections     #-}
 
-module System.TaskPipeline.Repetition.Fold where
+module System.TaskPipeline.Repetition.Fold
+  ( ptaskFold
+  , unsafeGeneralizeM
+  , foldlTask
+  , foldStreamTask
+  ) where
 
 import           Control.Arrow.FoldA
 import           Control.Lens
 import           Data.Locations
 import           Prelude                                 hiding (id, (.))
+import           Streaming                               (Of (..), Stream)
+import qualified Streaming.Prelude                       as S
 import           System.TaskPipeline.PTask
 import           System.TaskPipeline.PTask.Internal
 import           System.TaskPipeline.Repetition.Internal
@@ -36,16 +43,17 @@ ptaskFold ri step initAcc =
   where
     onInput (Pair acc (idx,x)) = (idx,(x,acc))
 
--- | Runs a 'FoldA' created with 'ptaskFold', 'generalizeA',
+-- | Consumes a Stream with a 'FoldA' created with 'ptaskFold', 'generalizeA',
 -- 'unsafeGeneralizeM', or a composition of such folds.
 --
 -- IMPORTANT : If you created the 'FoldA' yourself, this is safe only if the
--- step PTask in the fold has been made repeatable, else files might be
+-- `step` PTask in the fold has been made repeatable, else files might be
 -- overwritten. See 'makeRepeatable'.
-foldTask
-  :: FoldA (PTask m) a b
-  -> PTask m [a] b
-foldTask (FoldA step start done) =
+foldStreamTask
+  :: (KatipContext m)
+  => FoldA (PTask m) a b
+  -> PTask m (Stream (Of a) m r) (b, r)
+foldStreamTask (FoldA step start done) =
   (reqs, runnable) ^. from splittedPTask
   where
     (reqsStep, runnableStep)   = step ^. splittedPTask
@@ -53,10 +61,18 @@ foldTask (FoldA step start done) =
     (reqsDone, runnableDone)   = done ^. splittedPTask
     reqs = reqsStart <> reqsStep <> reqsDone
     runnable =
-      id &&&& (pure () >>> runnableStart) >>> loopStep >>> runnableDone
-    loopStep = proc (Pair l acc) -> do
-      case l of
-        []     -> returnA -< acc
-        (a:as) -> do
+      id &&&& (pure () >>> runnableStart) >>> loopStep >>> first runnableDone
+    loopStep = proc (Pair stream acc) -> do
+      firstElem <- toRunnable S.next -< stream
+      case firstElem of
+        Left r -> returnA -< (acc, r)
+        Right (a, stream') -> do
           acc' <- runnableStep -< Pair acc a
-          loopStep -< Pair as acc'
+          loopStep -< Pair stream' acc'
+
+-- | Consumes a list with a 'FoldA' over 'PTask'
+foldlTask
+  :: (KatipContext m)
+  => FoldA (PTask m) a b
+  -> PTask m [a] b
+foldlTask fld = arr S.each >>> foldStreamTask fld >>> arr fst
