@@ -28,6 +28,7 @@ import           Data.Monoid                           (Last (..))
 import           Data.Typeable
 import           GHC.TypeLits                          (KnownSymbol)
 import           Katip
+import qualified Streaming.Prelude                     as S
 import           System.TaskPipeline.PTask
 import           System.TaskPipeline.VirtualFileAccess
 
@@ -41,7 +42,11 @@ getOptions
                              -- docs and default values
   -> PTask m () (DocRec rs)  -- ^ A PTask that returns the new options values,
                              -- overriden by the user
-getOptions path defOpts = arr (const $ error "getOptions: THIS IS VOID") >>> accessVirtualFile vfile >>> arr post
+getOptions path defOpts =
+      arr (\_ -> S.yield ([] :: [Int], error "getOptions: THIS IS VOID"))
+  >>> accessVirtualFile [] vfile
+  >>> streamHeadTask
+  >>> arr post
   where
     defOpts' = Last $ Just defOpts
     post (Last Nothing)  = defOpts

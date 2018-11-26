@@ -19,13 +19,16 @@ module System.TaskPipeline.VirtualFileAccess
 
     -- * High-level API
   , loadData
+  , loadDataStream
   , loadLast
   , writeData
+  , writeDataStream
 
     -- * Lower-level API
   , accessVirtualFile
   , getAccessFunctions
   , getLocsMappedTo
+  , streamHeadTask
   ) where
 
 import           Prelude                            hiding (id, (.))
@@ -33,25 +36,43 @@ import           Prelude                            hiding (id, (.))
 import           Control.Lens
 import           Control.Monad                      (forM)
 import qualified Data.Foldable                      as F
+import qualified Data.HashMap.Strict                as HM
 import           Data.Locations
+import           Data.Maybe                         (maybe)
 import           Data.Monoid
 import           Data.Typeable
+import           Streaming                          (Of (..), Stream)
+import qualified Streaming.Prelude                  as S
 import           System.TaskPipeline.PTask
 import           System.TaskPipeline.PTask.Internal
 import           System.TaskPipeline.ResourceTree
 
 
+streamHeadTask :: (KatipContext m) => PTask m (Stream (Of (i, a)) m r) a
+streamHeadTask = unsafeLiftToPTask $ \s ->
+  maybe (error $ "streamHeadTask: No value in the output stream") snd <$> S.head_ s
+
 -- | Uses only the read part of a 'VirtualFile'. It is therefore considered as a
 -- pure 'DataSource'. For practical reasons the task input is () rather than
 -- Void.
---
--- See 'accessVirtualFile'.
 loadData
   :: (LocationMonad m, KatipContext m, Monoid a, Typeable a)
   => VirtualFile ignored a -- ^ A 'DataSource'
   -> PTask m () a  -- ^ The resulting task
-loadData vf = arr (const $ error "loadData: THIS IS VOID")  -- Won't be evaluated
-          >>> (accessVirtualFile $ makeSource vf)
+loadData vf = arr (\_ -> S.yield ([] :: [Int]))
+          >>> loadDataStream [] vf
+          >>> streamHeadTask
+
+-- | Loads a stream of repeated occurences of a VirtualFile, from a stream of
+-- indices. The process is lazy: the data will actually be read when the
+-- resulting stream is consumed.
+loadDataStream :: (Show i, LocationMonad m, KatipContext m, Monoid a, Typeable a)
+               => [LocVariable]
+               -> VirtualFile ignored a -- ^ A 'DataSource'
+               -> PTask m (Stream (Of [i]) m r) (Stream (Of ([i], a)) m r)
+loadDataStream repIndices vf =
+      arr (S.map (, error "loadDataStream: THIS IS VOID"))
+  >>> accessVirtualFile repIndices (makeSource vf)
 
 -- | Like 'loadData', but doesn't require your data to be a monoid. Will always
 -- load the last layer bound to the 'VirtualFile'.
@@ -67,35 +88,48 @@ loadLast vf = loadData (rmap (Last . Just) vf') >>> arr get
 
 -- | Uses only the write part of a 'VirtualFile'. It is therefore considered as
 -- a pure 'DataSink'.
---
--- See 'accessVirtualFile'
 writeData
   :: (LocationMonad m, KatipContext m, Typeable a)
   => VirtualFile a ignored  -- ^ A 'DataSink'
   -> PTask m a ()
-writeData = accessVirtualFile . makeSink
+writeData vf = arr (\a -> S.yield ([] :: [Int], a))
+           >>> writeDataStream [] vf
+
+writeDataStream :: (Show i, LocationMonad m, KatipContext m, Typeable a)
+                => [LocVariable]
+                -> VirtualFile a ignored -- ^ A 'DataSink'
+                -> PTask m (Stream (Of ([i], a)) m r) r
+writeDataStream repIndices vf =
+  accessVirtualFile repIndices (makeSink vf) >>> unsafeLiftToPTask S.effects
 
 -- | When building the pipeline, stores into the location tree the way to read
--- or write the required resource. When running the pipeline, it is handed the
--- function to actually access the data.
+-- or write the required resource. When running the pipeline, access the
+-- instances of this ressource corresponding to the values of some repetition
+-- indices.
 accessVirtualFile
-  :: (LocationMonad m, KatipContext m, Typeable a, Typeable b, Monoid b)
-  => VirtualFile a b
-  -> PTask m a b
-accessVirtualFile vfile =
+  :: forall m a b i r.
+     (LocationMonad m, KatipContext m, Typeable a, Typeable b, Monoid b, Show i)
+  => [LocVariable]
+  -> VirtualFile a b
+  -> PTask m (Stream (Of ([i], a)) m r) (Stream (Of ([i], b)) m r)
+accessVirtualFile repIndices vfile =
   getAccessFunctions path (Identity fname) $
-    \input (Identity mbAction) -> case mbAction of
-      DataAccessNode _ action -> do
-        res <- case cast input of
-          Just input' -> action mempty input'
-          Nothing     -> err vfile "input types don't match"
-        case cast res of
-          Just res' -> return res'
-          Nothing   -> err vfile "output types don't match"
-      _ -> err vfile "no access action available"
+    \inputStream (Identity mbAction) -> case mbAction of
+      DataAccessNode _ (action :: LocVariableMap -> a' -> m b') ->
+        case (eqT :: Maybe (a :~: a'), eqT :: Maybe (b :~: b')) of
+          (Just Refl, Just Refl)
+            -> return $ S.mapM (runOnce action) inputStream
+          _ -> err vfile' "input or output types don't match"
+      _ -> err vfile' "no access action available"
   where
-    path = init $ vfile ^. vfilePath
-    fname = file (last $ vfile ^. vfilePath) $ VirtualFileNode vfile
+    runOnce :: (LocVariableMap -> a -> m b) -> ([i], a) -> m ([i], b)
+    runOnce action (ixVals, input) = (ixVals,) <$> action lvMap input
+      where lvMap = HM.fromList $ zip repIndices $ map show ixVals
+    vfile' = case repIndices of
+      [] -> vfile
+      _  -> vfile & over (vfileSerials.serialsRepetitionKeys) (repIndices++)
+    path = init $ vfile' ^. vfilePath
+    fname = file (last $ vfile' ^. vfilePath) $ VirtualFileNode vfile'
 
 err :: (KatipContext m, MonadThrow m) => VirtualFile a1 b -> String -> m a2
 err vfile s = throwWithPrefix $ "accessVirtualFile (" ++ showVFilePath vfile ++ "): " ++ s
