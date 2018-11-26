@@ -26,7 +26,8 @@ module System.TaskPipeline.VirtualFileAccess
 
     -- * Lower-level API
   , accessVirtualFile
-  , getAccessFunctions
+  , withVFileAccessFunction
+  , withFolderAccessNodes
   , getLocsMappedTo
   , streamHeadTask
   ) where
@@ -117,14 +118,8 @@ accessVirtualFile
   -> VirtualFile a b
   -> PTask m (Stream (Of ([idx], a)) m r) (Stream (Of ([idx], b)) m r)
 accessVirtualFile repIndices vfile =
-  getAccessFunctions path (Identity fname) $
-    \inputStream (Identity mbAction) -> case mbAction of
-      DataAccessNode _ (action :: LocVariableMap -> a' -> m b') ->
-        case (eqT :: Maybe (a :~: a'), eqT :: Maybe (b :~: b')) of
-          (Just Refl, Just Refl)
-            -> return $ S.mapM (runOnce action) inputStream
-          _ -> err vfile' "input or output types don't match"
-      _ -> err vfile' "no access action available"
+  withVFileAccessFunction vfile' $ \_ action inputStream ->
+    return $ S.mapM (runOnce action) inputStream
   where
     runOnce :: (LocVariableMap -> a -> m b) -> ([idx], a) -> m ([idx], b)
     runOnce action (ixVals, input) = (ixVals,) <$> action lvMap input
@@ -132,21 +127,40 @@ accessVirtualFile repIndices vfile =
     vfile' = case repIndices of
       [] -> vfile
       _  -> vfile & over (vfileSerials.serialsRepetitionKeys) (repIndices++)
-    path = init $ vfile' ^. vfilePath
-    fname = file (last $ vfile' ^. vfilePath) $ VirtualFileNode vfile'
 
-err :: (KatipContext m, MonadThrow m) => VirtualFile a1 b -> String -> m a2
-err vfile s = throwWithPrefix $ "accessVirtualFile (" ++ showVFilePath vfile ++ "): " ++ s
+-- | Executes as a task a function that needs to access the content of the
+-- DataAccessNode of a VirtualFile.
+withVFileAccessFunction
+  :: forall m i o a b.
+     (MonadThrow m, KatipContext m, Typeable a, Typeable b, Monoid b)
+  => VirtualFile a b
+  -> ([LocWithVars] -> (LocVariableMap -> a -> m b) -> i -> m o)
+  -> PTask m i o
+withVFileAccessFunction vfile f =
+  withFolderAccessNodes path (Identity fname) $
+    \(Identity n) input -> case n of
+      DataAccessNode locs (action :: LocVariableMap -> a' -> m b') ->
+        case (eqT :: Maybe (a :~: a'), eqT :: Maybe (b :~: b')) of
+          (Just Refl, Just Refl)
+            -> f locs action input
+          _ -> err "input or output types don't match"
+      _ -> err "no access action is present in the tree"
+  where
+    path = init $ vfile ^. vfilePath
+    fname = file (last $ vfile ^. vfilePath) $ VirtualFileNode vfile
+    err s = throwWithPrefix $
+      "withVFileAccessFunction (" ++ showVFilePath vfile ++ "): " ++ s
 
 -- | Wraps in a task a function that needs to access some items present in a
 -- subfolder of the 'LocationTree' and mark these accesses as done.
-getAccessFunctions
+withFolderAccessNodes
   :: (MonadThrow m, KatipContext m, Traversable t)
-  => [LocationTreePathItem]  -- ^ Path to subfolder in 'LocationTree'
-  -> t (LTPIAndSubtree VirtualFileNode)    -- ^ Items of interest in the subfolder
-  -> (i -> t (DataAccessNode m) -> m o)       -- ^ What to run with these items
-  -> PTask m i o           -- ^ The resulting PTask
-getAccessFunctions path filesToAccess writeFn = makePTask tree runAccess
+  => [LocationTreePathItem]              -- ^ Path to folder in 'LocationTree'
+  -> t (LTPIAndSubtree VirtualFileNode)  -- ^ Items of interest in the subfolder
+  -> (t (DataAccessNode m) -> i -> m o)  -- ^ What to run with these items
+  -> PTask m i o                         -- ^ The resulting PTask
+withFolderAccessNodes path filesToAccess accessFn =
+  makePTask tree runAccess
   where
     tree = foldr (\pathItem subtree -> folderNode [ pathItem :/ subtree ])
                  (folderNode $ F.toList filesToAccess) path
@@ -161,7 +175,7 @@ getAccessFunctions path filesToAccess writeFn = makePTask tree runAccess
           Nothing -> throwWithPrefix $
             "path '" ++ show filePathItem ++ "' not found in the LocationTree"
           Just tag -> return tag
-      writeFn input nodeTags
+      accessFn nodeTags input
 
 -- | Returns the locs mapped to some path in the location tree. It *doesn't*
 -- expose this path as a requirement (hence the result list may be empty, as no
