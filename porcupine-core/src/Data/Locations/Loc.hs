@@ -9,6 +9,7 @@
 {-# LANGUAGE StaticPointers       #-}
 {-# LANGUAGE TemplateHaskell      #-}
 {-# LANGUAGE TypeSynonymInstances #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
 {-# OPTIONS_GHC -Wall #-}
 
 module Data.Locations.Loc where
@@ -16,6 +17,7 @@ module Data.Locations.Loc where
 import           Control.Applicative
 import           Control.Lens
 import           Control.Monad              (foldM)
+import           Control.Funflow.ContentHashable
 import           Data.Aeson
 import           Data.Binary                (Binary)
 import qualified Data.HashMap.Strict        as HM
@@ -74,6 +76,8 @@ concatLocBitChunks [] = []
 data LocFilePath a = LocFilePath { _pathWithoutExt :: a, _pathExtension :: String }
   deriving (Eq, Ord, Generic, ToJSON, FromJSON, Functor, Foldable, Traversable, Binary, Store)
 
+instance (Monad m, ContentHashable m a) => ContentHashable m (LocFilePath a)
+
 makeLenses ''LocFilePath
 
 firstNonEmptyExt :: String -> String -> String
@@ -115,7 +119,10 @@ data Loc_ a
      | ParquetObj ...
      | SQLTableObj ...
   -}
-  deriving (Eq, Ord, Generic, ToJSON, FromJSON, Functor, Foldable, Traversable, Binary, Store)
+  deriving ( Eq, Ord, Generic, ToJSON, FromJSON
+           , Functor, Foldable, Traversable, Binary, Store )
+
+instance (Monad m, ContentHashable m a) => ContentHashable m (Loc_ a)
 
 instance (IsLocString a) => Show (Loc_ a) where
   show LocalFile{ filePath } = show filePath
