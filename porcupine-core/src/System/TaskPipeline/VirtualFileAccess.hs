@@ -20,7 +20,6 @@ module System.TaskPipeline.VirtualFileAccess
     -- * High-level API
   , loadData
   , loadDataStream
-  , loadLast
   , writeData
   , writeDataStream
 
@@ -57,7 +56,7 @@ streamHeadTask = unsafeLiftToPTask $ \s ->
 -- pure 'DataSource'. For practical reasons the task input is () rather than
 -- Void.
 loadData
-  :: (LocationMonad m, KatipContext m, Monoid a, Typeable a)
+  :: (LocationMonad m, KatipContext m, Typeable a)
   => VirtualFile ignored a -- ^ A 'DataSource'
   -> PTask m () a  -- ^ The resulting task
 loadData vf = arr (\_ -> S.yield ([] :: [Int]))
@@ -67,25 +66,13 @@ loadData vf = arr (\_ -> S.yield ([] :: [Int]))
 -- | Loads a stream of repeated occurences of a VirtualFile, from a stream of
 -- indices. The process is lazy: the data will actually be read when the
 -- resulting stream is consumed.
-loadDataStream :: (Show idx, LocationMonad m, KatipContext m, Monoid a, Typeable a)
+loadDataStream :: (Show idx, LocationMonad m, KatipContext m, Typeable a)
                => [LocVariable]
                -> VirtualFile ignored a -- ^ A 'DataSource'
                -> PTask m (Stream (Of [idx]) m r) (Stream (Of ([idx], a)) m r)
 loadDataStream repIndices vf =
       arr (S.map (, error "loadDataStream: THIS IS VOID"))
   >>> accessVirtualFile repIndices (makeSource vf)
-
--- | Like 'loadData', but doesn't require your data to be a monoid. Will always
--- load the last layer bound to the 'VirtualFile'.
-loadLast
-  :: (LocationMonad m, KatipContext m, Typeable a)
-  => VirtualFile ignored a -- ^ A 'DataSource'
-  -> PTask m () a  -- ^ The resulting task
-loadLast vf = loadData (rmap (Last . Just) vf') >>> arr get
-  where
-    vf' = vf & vfileUsage .~ MustBeMapped
-    get (Last (Just x)) = x
-    get _               = error "loadLast: THIS SHOULD NOT HAPPEN" -- Won't be evaluated
 
 -- | Uses only the write part of a 'VirtualFile'. It is therefore considered as
 -- a pure 'DataSink'.
@@ -113,7 +100,7 @@ writeDataStream repIndices vf =
 -- indices.
 accessVirtualFile
   :: forall m a b idx r.
-     (LocationMonad m, KatipContext m, Typeable a, Typeable b, Monoid b, Show idx)
+     (LocationMonad m, KatipContext m, Typeable a, Typeable b, Show idx)
   => [LocVariable]  -- ^ The list of repetition indices. Can be empty if the
                     -- file isn't meant to be repeated
   -> VirtualFile a b  -- ^ The VirtualFile to access
@@ -138,7 +125,7 @@ accessVirtualFile repIndices vfile =
 -- DataAccessNode of a VirtualFile.
 withVFileAccessFunction
   :: forall m i o a b.
-     (MonadThrow m, KatipContext m, Typeable a, Typeable b, Monoid b)
+     (MonadThrow m, KatipContext m, Typeable a, Typeable b)
   => VirtualFile a b  -- ^ The VirtualFile to access
   -> ((LocVariableMap -> DataAccessFn m a b) -> i -> m o)
          -- ^ The action to run. It will be a function to access the

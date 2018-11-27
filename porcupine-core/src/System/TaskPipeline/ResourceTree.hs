@@ -78,7 +78,7 @@ import           System.TaskPipeline.ConfigurationReader
 -- | The internal part of a 'VirtualFileNode', closing over the type params of
 -- the 'VirtualFile'
 data SomeVirtualFile where
-  SomeVirtualFile :: (Typeable a, Typeable b, Monoid b) => VirtualFile a b -> SomeVirtualFile
+  SomeVirtualFile :: (Typeable a, Typeable b) => VirtualFile a b -> SomeVirtualFile
 
 instance Semigroup SomeVirtualFile where
   SomeVirtualFile vf <> SomeVirtualFile vf' = case cast vf' of
@@ -418,9 +418,10 @@ resolveDataAccess
   -> m' (DataAccessNode m)
 resolveDataAccess (PhysicalFileNode layers vf) = do
   case layers of
-    [] | vf ^. vfileUsage == MustBeMapped ->
-         throwM $ TaskConstructionError $
-         vpath ++ " requires to be mapped to a non-null location."
+    [] -> case vf ^. vfileReadUsage of
+      LayeredMappingWithNull -> return ()
+      _ -> throwM $ TaskConstructionError $
+           vpath ++ " cannot be mapped to null"
     _ -> return ()
   writeLocs <- findFunctions writers
   readLocs <- findFunctions readers
@@ -433,17 +434,27 @@ resolveDataAccess (PhysicalFileNode layers vf) = do
           katipAddContext (DAC (show loc) rkeys repetKeyMap (show loc')) $ do
             f input loc'
             logFM NoticeS $ logStr $ "Wrote '" ++ show loc' ++ "'"
-        layersRes <- mconcat <$> forM readLocs (\(ReadFromLoc rkeys f, loc) -> do
+        dataFromLayers <- forM readLocs (\(ReadFromLoc rkeys f, loc) -> do
           loc' <- fillLoc repetKeyMap loc
           katipAddContext (DAC (show loc) rkeys repetKeyMap (show loc')) $ do
             r <- f loc'
             logFM DebugS $ logStr $ "Read '" ++ show loc' ++ "'"
             return r)
-        return $ case vf ^? vfileEmbeddedValue of
-          Just v  -> v <> layersRes
-          Nothing -> layersRes
+        case (vf ^. vfileReadUsage, mbPrepend (vf ^? vfileEmbeddedValue) dataFromLayers) of
+          (_, [x]) -> return x
+          (LayeredMappingWithNull, ls) -> return $ mconcat ls
+          (_, []) -> throwWithPrefix $ vpath ++ " has no layers from which to read"
+          (LayeredMapping, l:ls) -> return $ foldr (<>) l ls
+          (SingleMapping, ls) -> do
+            logFM WarningS $ logStr $ vpath ++
+              " doesn't support layered mapping. Using only result from last layer '"
+              ++ show (last $ layers) ++ "'"
+            return $ last ls
     in DataAccessFn{..}
   where
+    mbPrepend (Just x) = (x:)
+    mbPrepend Nothing = id
+    
     vpath = T.unpack $ toTextRepr $ LTP $ vf ^. vfilePath
 
     fillLoc repetKeyMap loc =

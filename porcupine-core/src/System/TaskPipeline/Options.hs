@@ -51,7 +51,8 @@ getOptions path defOpts =
     defOpts' = Last $ Just defOpts
     post (Last Nothing)  = defOpts
     post (Last (Just x)) = x
-    vfile = bidirVirtualFile path $
+    vfile = canBeUnmapped $
+            bidirVirtualFile path $
             serials & serialWriters . serialWritersToOutputFile .~ mempty
             -- We remove all the writers, so if options are read from a file
             -- this file isn't overwritten

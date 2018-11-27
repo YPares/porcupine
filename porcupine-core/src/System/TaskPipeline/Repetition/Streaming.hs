@@ -128,7 +128,7 @@ repeatedlyWriteData rkey vf =
 -- changing each time the value associated to a repetition key (so the physical
 -- file will be different each time).
 repeatedlyLoadData
-  :: (LocationMonad m, CanRunPTask m, Typeable b, Monoid b, Show i)
+  :: (LocationMonad m, CanRunPTask m, Typeable b, Show i)
   => LocVariable
   -> VirtualFile ignored b -- ^ A 'DataSource'
   -> OSTask m i (Stream (Of i) m r) b
@@ -140,7 +140,7 @@ repeatedlyLoadData rkey vf =
 -- | Like 'repeatedlyLoadData', except the stream of indices to read is obtained
 -- from a list whose elements can be Shown.
 repeatedlyLoadData'
-  :: (LocationMonad m, CanRunPTask m, Typeable b, Monoid b, Show i)
+  :: (LocationMonad m, CanRunPTask m, Typeable b, Show i)
   => LocVariable
   -> VirtualFile ignore b -- ^ A 'DataSource'
   -> OSTask m i [i] b
