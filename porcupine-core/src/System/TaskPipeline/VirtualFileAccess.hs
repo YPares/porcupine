@@ -114,9 +114,15 @@ writeDataStream repIndices vf =
 accessVirtualFile
   :: forall m a b idx r.
      (LocationMonad m, KatipContext m, Typeable a, Typeable b, Monoid b, Show idx)
-  => [LocVariable]
-  -> VirtualFile a b
-  -> PTask m (Stream (Of ([idx], a)) m r) (Stream (Of ([idx], b)) m r)
+  => [LocVariable]  -- ^ The list of repetition indices. Can be empty if the
+                    -- file isn't meant to be repeated
+  -> VirtualFile a b  -- ^ The VirtualFile to access
+  -> PTask m (Stream (Of ([idx], a)) m r)
+             (Stream (Of ([idx], b)) m r)  -- ^ The resulting task reads a
+                                           -- stream of indices and input values
+                                           -- and returns a stream of the same
+                                           -- indices associated to their
+                                           -- outputs.
 accessVirtualFile repIndices vfile =
   withVFileAccessFunction vfile' $ \_ action inputStream ->
     return $ S.mapM (runOnce action) inputStream
@@ -133,8 +139,11 @@ accessVirtualFile repIndices vfile =
 withVFileAccessFunction
   :: forall m i o a b.
      (MonadThrow m, KatipContext m, Typeable a, Typeable b, Monoid b)
-  => VirtualFile a b
+  => VirtualFile a b  -- ^ The VirtualFile to access
   -> ([LocWithVars] -> (LocVariableMap -> a -> m b) -> i -> m o)
+         -- ^ The action to run. It will be given the physical paths bound to
+         -- the VirtualFile and a function to access them. The LocVariableMap
+         -- can just be empty if the VirtualFile isn't meant to be repeated
   -> PTask m i o
 withVFileAccessFunction vfile f =
   withFolderAccessNodes path (Identity fname) $

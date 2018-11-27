@@ -39,7 +39,8 @@ import           Network.AWS.S3
 import qualified Network.AWS.S3.TaskPipelineUtils      as S3
 import           Streaming
 import           System.Clock
-import           System.Directory                      (createDirectoryIfMissing)
+import           System.Directory                      (createDirectoryIfMissing
+                                                       ,doesPathExist)
 import qualified System.FilePath                       as Path
 import qualified System.IO.Temp                        as Tmp
 
@@ -77,6 +78,9 @@ instance Show RetrievingError where
 
 -- | Runs computations accessing 'Loc's
 class (MonadMask m, MonadIO m) => LocationMonad m where
+  -- | Tells whether a Loc corresponds to a physical file
+  locExists :: Loc -> m Bool
+
   writeBSS :: Loc -> BSS.ByteString m () -> m ()
 
   -- | Read a (streaming) bytestring from a location.
@@ -109,6 +113,7 @@ class (MonadMask m, MonadIO m) => LocationMonad m where
 
 -- | Any ReaderT of some LocationMonad is also a LocationMonad
 instance (LocationMonad m) => LocationMonad (ReaderT r m) where
+  locExists = lift . locExists
   writeBSS loc bs = do
     st <- ask
     lift $ writeBSS loc $ hoist (flip runReaderT st) bs
@@ -124,6 +129,7 @@ instance (LocationMonad m) => LocationMonad (ReaderT r m) where
 -- | Same than the previous instance, we just lift through the @KatipContextT@
 -- constructor
 instance (LocationMonad m) => LocationMonad (KatipContextT m) where
+  locExists = lift . locExists
   writeBSS loc bs = KatipContextT $ do
     st <- ask
     lift $ writeBSS loc $ hoist (flip (runReaderT . unKatipContextT) st) bs
@@ -165,6 +171,8 @@ instance MonadBaseControl IO (ResourceT IO) where
      restoreM = ResourceT . const . restoreM
 
 instance LocationMonad AWS where
+  locExists (LocalFile l) = locExists_Local l
+  locExists _ = return True -- TODO: Implement it
   writeBSS (LocalFile l) = writeBSS_Local l
   writeBSS l             = writeBSS_S3 l
   readBSS (LocalFile l) = readBSS_Local l
@@ -197,17 +205,21 @@ checkLocal funcName _ _ = error $ funcName ++ ": S3 location cannot be reached i
 type LocalM = ResourceT IO
 
 instance LocationMonad LocalM where
+  locExists = checkLocal "locExists" locExists_Local
   writeBSS = checkLocal "writeBSS" writeBSS_Local
   readBSS  = checkLocal "readBSS" readBSS_Local
   withLocalBuffer f = checkLocal "withLocalBuffer" (\lf -> f $ lf^.locFilePathAsRawFilePath)
 
 writeText :: LocationMonad m
-             => Loc
-             -> Text.Text
-             -> m ()
+          => Loc
+          -> Text.Text
+          -> m ()
 writeText loc body =
   let bsBody = BSS.fromStrict $ TE.encodeUtf8 body in
   writeBSS loc bsBody
+
+locExists_Local :: MonadIO m => LocalFilePath -> m Bool
+locExists_Local = liftIO . doesPathExist . view locFilePathAsRawFilePath
 
 writeBSS_Local :: MonadResource m => LocalFilePath -> BSS.ByteString m b -> m b
 writeBSS_Local path body = do
@@ -219,7 +231,7 @@ writeBSS_S3 :: (HasEnv r, MonadReader r m, MonadResource m, MonadAWS m) => Loc -
 writeBSS_S3 S3Obj { bucketName, objectName } body = do
   let raw = objectName ^. locFilePathAsRawFilePath
   res <- S3.uploadObj (fromString bucketName) (fromString raw) body
-  case view porsResponseStatus res of
+  case res ^. porsResponseStatus of
     200 -> pure ()
     _   -> error $ "Unable to upload to the object " ++ raw ++ "."
 writeBSS_S3 _ _ = undefined
