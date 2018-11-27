@@ -165,6 +165,14 @@ spliceLocVariables vars = over locVariables $ \v -> case v of
       Nothing  -> v
   _ -> error "spliceLocVariables: Should not happen"
 
+terminateLocWithVars :: LocWithVars -> Either String Loc
+terminateLocWithVars = traverse terminateLocString
+  where
+    terminateLocString (LocString [LocBitChunk s]) = Right s
+    terminateLocString locString = Left $
+      "Variable(s) " ++ show (locString ^.. locStringVariables)
+      ++ " in '" ++ show locString ++ "' haven't been given a value"
+
 -- | Means that @a@ can represent file paths
 class (Monoid a) => IsLocString a where
   locStringAsRawString :: Iso' a String

@@ -22,6 +22,6 @@ cacheWithVFile :: (MonadThrow m, KatipContext m, Typeable c, Typeable c', Monoid
                -> (a -> m (b,c))
                -> PTask m a (b,c')
 cacheWithVFile props vf f = proc input -> do
-  (locs, accessFn) <- withVFileAccessFunction vf (\l a _ -> return (l,a)) -< ()
+  accessFn <- withVFileAccessFunction vf (\fn _ -> return $ fn mempty) -< ()
   -- makePTask' props (\_ ->
   undefined -< ()

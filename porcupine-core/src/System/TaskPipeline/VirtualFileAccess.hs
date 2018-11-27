@@ -124,11 +124,11 @@ accessVirtualFile
                                            -- indices associated to their
                                            -- outputs.
 accessVirtualFile repIndices vfile =
-  withVFileAccessFunction vfile' $ \_ action inputStream ->
-    return $ S.mapM (runOnce action) inputStream
+  withVFileAccessFunction vfile' $ \accessFn inputStream ->
+    return $ S.mapM (runOnce accessFn) inputStream
   where
-    runOnce :: (LocVariableMap -> a -> m b) -> ([idx], a) -> m ([idx], b)
-    runOnce action (ixVals, input) = (ixVals,) <$> action lvMap input
+    runOnce :: (LocVariableMap -> DataAccessFn m a b) -> ([idx], a) -> m ([idx], b)
+    runOnce accessFn (ixVals, input) = (ixVals,) <$> runDataAccessFn (accessFn lvMap) input
       where lvMap = HM.fromList $ zip repIndices $ map show ixVals
     vfile' = case repIndices of
       [] -> vfile
@@ -140,18 +140,18 @@ withVFileAccessFunction
   :: forall m i o a b.
      (MonadThrow m, KatipContext m, Typeable a, Typeable b, Monoid b)
   => VirtualFile a b  -- ^ The VirtualFile to access
-  -> ([LocWithVars] -> (LocVariableMap -> a -> m b) -> i -> m o)
-         -- ^ The action to run. It will be given the physical paths bound to
-         -- the VirtualFile and a function to access them. The LocVariableMap
-         -- can just be empty if the VirtualFile isn't meant to be repeated
+  -> ((LocVariableMap -> DataAccessFn m a b) -> i -> m o)
+         -- ^ The action to run. It will be a function to access the
+         -- VirtualFile. The LocVariableMap can just be empty if the VirtualFile
+         -- isn't meant to be repeated
   -> PTask m i o
 withVFileAccessFunction vfile f =
   withFolderAccessNodes path (Identity fname) $
     \(Identity n) input -> case n of
-      DataAccessNode locs (action :: LocVariableMap -> a' -> m b') ->
+      DataAccessNode _ (action :: LocVariableMap -> DataAccessFn m a' b') ->
         case (eqT :: Maybe (a :~: a'), eqT :: Maybe (b :~: b')) of
           (Just Refl, Just Refl)
-            -> f locs action input
+            -> f action input
           _ -> err "input or output types don't match"
       _ -> err "no access action is present in the tree"
   where
@@ -190,12 +190,19 @@ withFolderAccessNodes path filesToAccess accessFn =
 -- expose this path as a requirement (hence the result list may be empty, as no
 -- mapping might exist). SHOULD NOT BE USED UNLESS loadData/writeData cannot do
 -- what you want.
-getLocsMappedTo :: (KatipContext m)
-                => [LocationTreePathItem] -> PTask m () [LocWithVars]
+getLocsMappedTo :: (KatipContext m, MonadThrow m)
+                => [LocationTreePathItem] -> PTask m () [Loc]
 getLocsMappedTo path = runnableWithoutReqs $ withRunnableState $
-                         \state _ -> return $ getLocs $ state^.ptrsDataAccessTree
+                         \state _ -> getLocs $ state^.ptrsDataAccessTree
   where
     getLocs tree =
       case tree ^? (atSubfolderRec path . locTreeNodeTag) of
-        Just (MbDataAccessNode locs _) -> locs
-        _                              -> []
+        -- NOTE: Will fail on repeated folders (because here we can only access
+        -- the final locations -- with variables spliced in -- in the case of
+        -- nodes with a data access function, not intermediary folders).
+        Just (MbDataAccessNode locsWithVars (First mbAccess)) -> case mbAccess of
+          Just (SomeDataAccess fn) -> getLocsAccessed $ fn mempty
+          Nothing -> case traverse terminateLocWithVars locsWithVars of
+            Left e -> throwWithPrefix $ "getLocsMappedTo: " ++ e
+            Right l -> return l
+        _ -> return []

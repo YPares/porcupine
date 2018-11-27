@@ -8,6 +8,7 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TupleSections       #-}
 {-# LANGUAGE ViewPatterns        #-}
+{-# LANGUAGE RecordWildCards     #-}
 {-# OPTIONS_GHC -fno-warn-missing-pattern-synonym-signatures #-}
 
 -- | This file describes the ResourceTree API. The ResourceTree is central to
@@ -84,11 +85,15 @@ instance Semigroup SomeVirtualFile where
     Just vf'' -> SomeVirtualFile $ vf <> vf''
     Nothing -> error "Two differently typed VirtualFiles are at the same location"
 
+data DataAccessFn m a b = DataAccessFn
+  { runDataAccessFn :: a -> m b
+  , getLocsAccessed :: m [Loc] }
+
 -- | The internal part of a 'DataAccessNode, closing over the type params of the
 -- access function.
 data SomeDataAccess m where
   SomeDataAccess :: (Typeable a, Typeable b)
-                 => (LocVariableMap -> a -> m b) -> SomeDataAccess m
+                 => (LocVariableMap -> DataAccessFn m a b) -> SomeDataAccess m
 
 -- | The nodes of the ResourceTree, before mapping each 'VirtualFiles' to
 -- physical locations
@@ -419,31 +424,32 @@ resolveDataAccess (PhysicalFileNode layers vf) = do
     _ -> return ()
   writeLocs <- findFunctions writers
   readLocs <- findFunctions readers
-  return $ DataAccessNode layers $ \repetKeyMap input -> do
-    forM_ writeLocs $ \(WriteToLoc rkeys f, loc) -> do
-      loc' <- fillLoc repetKeyMap loc
-      katipAddContext (DAC (show loc) rkeys repetKeyMap (show loc')) $ do
-        f input loc'
-        logFM NoticeS $ logStr $ "Wrote '" ++ show loc' ++ "'"
-    layersRes <- mconcat <$> forM readLocs (\(ReadFromLoc rkeys f, loc) -> do
-      loc' <- fillLoc repetKeyMap loc
-      katipAddContext (DAC (show loc) rkeys repetKeyMap (show loc')) $ do
-        r <- f loc'
-        logFM DebugS $ logStr $ "Read '" ++ show loc' ++ "'"
-        return r)
-    return $ case vf ^? vfileEmbeddedValue of
-      Just v  -> v <> layersRes
-      Nothing -> layersRes
+  return $ DataAccessNode layers $ \repetKeyMap ->
+    let
+      getLocsAccessed = traverse (fillLoc repetKeyMap) layers
+      runDataAccessFn input = do
+        forM_ writeLocs $ \(WriteToLoc rkeys f, loc) -> do
+          loc' <- fillLoc repetKeyMap loc
+          katipAddContext (DAC (show loc) rkeys repetKeyMap (show loc')) $ do
+            f input loc'
+            logFM NoticeS $ logStr $ "Wrote '" ++ show loc' ++ "'"
+        layersRes <- mconcat <$> forM readLocs (\(ReadFromLoc rkeys f, loc) -> do
+          loc' <- fillLoc repetKeyMap loc
+          katipAddContext (DAC (show loc) rkeys repetKeyMap (show loc')) $ do
+            r <- f loc'
+            logFM DebugS $ logStr $ "Read '" ++ show loc' ++ "'"
+            return r)
+        return $ case vf ^? vfileEmbeddedValue of
+          Just v  -> v <> layersRes
+          Nothing -> layersRes
+    in DataAccessFn{..}
   where
     vpath = T.unpack $ toTextRepr $ LTP $ vf ^. vfilePath
 
     fillLoc repetKeyMap loc =
-      traverse terminateLocString $ spliceLocVariables repetKeyMap loc
-
-    terminateLocString (LocString [LocBitChunk s]) = return s
-    terminateLocString locString = throwWithPrefix $
-      "resolveDataAccess: Variable(s) " ++ show (locString ^.. locStringVariables)
-      ++ " in '" ++ show locString ++ "' haven't been given a value"
+      case terminateLocWithVars $ spliceLocVariables repetKeyMap loc of
+        Left e -> throwWithPrefix $ "resolveDataAccess: " ++ e
+        Right r -> return r
 
     readers = vf ^. vfileSerials . serialReaders . serialReadersFromInputFile
     writers = vf ^. vfileSerials . serialWriters . serialWritersToOutputFile
