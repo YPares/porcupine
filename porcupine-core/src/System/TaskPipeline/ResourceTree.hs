@@ -423,6 +423,50 @@ instance LogItem DataAccessContext where
   --  payloadKeys v _ | v >= V1 = SomeKeys ["locationAccessed"]
   payloadKeys V0 _ = SomeKeys []
 
+makeDataAccessor
+  :: (LocationMonad m, KatipContext m)
+  => String  -- ^ VirtualFile path (for doc)
+  -> [LocWithVars]  -- ^ Every mapped layer (for doc)
+  -> Maybe b -- ^ Default value (used as base layer)
+  -> LayeredReadScheme b  -- ^ How to handle the different layers
+  -> [(WriteToLoc a, LocWithVars)]  -- ^ Layers to write to
+  -> [(ReadFromLoc b, LocWithVars)] -- ^ Layers to read from
+  -> LocVariableMap  -- ^ The map of the values of the repetition indices
+  -> DataAccessor m a b
+makeDataAccessor vpath layers mbDefVal readUsage writeLocs readLocs repetKeyMap =
+  DataAccessor{..}
+  where
+    daLocsAccessed = traverse (fillLoc' repetKeyMap) layers
+    daPerformWrite input = do
+        forM_ writeLocs $ \(WriteToLoc rkeys f, loc) -> do
+          loc' <- fillLoc repetKeyMap loc
+          katipAddContext (DAC (show loc) rkeys repetKeyMap (show loc')) $ do
+            f input loc'
+            logFM NoticeS $ logStr $ "Wrote '" ++ show loc' ++ "'"
+    daPerformRead = do
+        dataFromLayers <- forM readLocs (\(ReadFromLoc rkeys f, loc) -> do
+          loc' <- fillLoc repetKeyMap loc
+          katipAddContext (DAC (show loc) rkeys repetKeyMap (show loc')) $ do
+            r <- f loc'
+            logFM DebugS $ logStr $ "Read '" ++ show loc' ++ "'"
+            return r)
+        let embeddedValAndLayers = maybe id (:) mbDefVal dataFromLayers
+        case (readUsage, embeddedValAndLayers) of
+          (_, [x]) -> return x
+          (LayeredReadWithNull, ls) -> return $ mconcat ls
+          (_, []) -> throwWithPrefix $ vpath ++ " has no layers from which to read"
+          (LayeredRead, l:ls) -> return $ foldr (<>) l ls
+          (SingleLayerRead, ls) -> do
+            logFM WarningS $ logStr $ vpath ++
+              " doesn't support layered mapping. Using only result from last layer '"
+              ++ show (last $ layers) ++ "'"
+            return $ last ls
+
+    fillLoc' rkMap loc = terminateLocWithVars $ spliceLocVariables rkMap loc
+    fillLoc rkMap loc =
+      case fillLoc' rkMap loc of
+        Left e  -> throwWithPrefix $ "resolveDataAccess: " ++ e
+        Right r -> return r
 
 -- | Transform a file node with physical locations in node with a data access
 -- function to run. Matches the location (esp. file extensions) to writers
@@ -433,51 +477,20 @@ resolveDataAccess
   -> m' (DataAccessNode m)
 resolveDataAccess (PhysicalFileNode layers vf) = do
   case layers of
-    [] -> case vf ^. vfileReadUsage of
-      LayeredMappingWithNull -> return ()
-      _ -> throwM $ TaskConstructionError $
-           vpath ++ " cannot be mapped to null"
+    [] -> case vf ^. vfileLayeredReadScheme of
+            LayeredReadWithNull -> return ()
+            _ -> throwM $ TaskConstructionError $
+                 vpath ++ " cannot be mapped to null"
     _ -> return ()
   writeLocs <- findFunctions writers
   readLocs <- findFunctions readers
-  return $ DataAccessNode layers $ \repetKeyMap ->
-    let
-      daLocsAccessed = traverse (fillLoc' repetKeyMap) layers
-      daPerformWrite input = do
-        forM_ writeLocs $ \(WriteToLoc rkeys f, loc) -> do
-          loc' <- fillLoc repetKeyMap loc
-          katipAddContext (DAC (show loc) rkeys repetKeyMap (show loc')) $ do
-            f input loc'
-            logFM NoticeS $ logStr $ "Wrote '" ++ show loc' ++ "'"
-      daPerformRead = do
-        dataFromLayers <- forM readLocs (\(ReadFromLoc rkeys f, loc) -> do
-          loc' <- fillLoc repetKeyMap loc
-          katipAddContext (DAC (show loc) rkeys repetKeyMap (show loc')) $ do
-            r <- f loc'
-            logFM DebugS $ logStr $ "Read '" ++ show loc' ++ "'"
-            return r)
-        case (vf ^. vfileReadUsage, mbPrepend (vf ^? vfileEmbeddedValue) dataFromLayers) of
-          (_, [x]) -> return x
-          (LayeredMappingWithNull, ls) -> return $ mconcat ls
-          (_, []) -> throwWithPrefix $ vpath ++ " has no layers from which to read"
-          (LayeredMapping, l:ls) -> return $ foldr (<>) l ls
-          (SingleMapping, ls) -> do
-            logFM WarningS $ logStr $ vpath ++
-              " doesn't support layered mapping. Using only result from last layer '"
-              ++ show (last $ layers) ++ "'"
-            return $ last ls
-    in DataAccessor{..}
+  return $
+    DataAccessNode layers $
+      makeDataAccessor vpath layers
+                       (vf ^? vfileEmbeddedValue) (vf ^. vfileLayeredReadScheme)
+                       writeLocs readLocs
   where
-    mbPrepend (Just x) = (x:)
-    mbPrepend Nothing  = id
-
     vpath = T.unpack $ toTextRepr $ LTP $ vf ^. vfilePath
-
-    fillLoc' rkMap loc = terminateLocWithVars $ spliceLocVariables rkMap loc
-    fillLoc rkMap loc =
-      case fillLoc' rkMap loc of
-        Left e  -> throwWithPrefix $ "resolveDataAccess: " ++ e
-        Right r -> return r
 
     readers = vf ^. vfileSerials . serialReaders . serialReadersFromInputFile
     writers = vf ^. vfileSerials . serialWriters . serialWritersToOutputFile

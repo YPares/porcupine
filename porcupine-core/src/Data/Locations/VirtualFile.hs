@@ -9,14 +9,14 @@ module Data.Locations.VirtualFile
   ( LocationTreePathItem
   , module Data.Locations.SerializationMethod
   , Profunctor(..)
-  , VirtualFile(..), VirtualFileReadUsage(..)
+  , VirtualFile(..), LayeredReadScheme(..)
   , BidirVirtualFile, DataSource, DataSink
   , VirtualFileIntent(..), VirtualFileDescription(..)
   , DocRecOfOptions, RecOfOptions(..)
   , vfileBidirProof, vfileSerials
   , vfileAsBidir, vfileAsBidirE
   , vfileEmbeddedValue, vfileIntermediaryValue, vfileAesonValue
-  , vfilePath, showVFilePath, vfileReadUsage
+  , vfilePath, showVFilePath, vfileLayeredReadScheme
   , dataSource, dataSink, bidirVirtualFile, ensureBidirFile
   , makeSink, makeSource
   , documentedFile
@@ -50,22 +50,25 @@ import           Data.Void
 -- * The general 'VirtualFile' type
 
 -- | Tells how the file is meant to be read
-data VirtualFileReadUsage b where
-  SingleMapping          :: VirtualFileReadUsage b
-  LayeredMapping         :: Semigroup b => VirtualFileReadUsage b
-  LayeredMappingWithNull :: Monoid b => VirtualFileReadUsage b
+data LayeredReadScheme b where
+  SingleLayerRead     :: LayeredReadScheme b
+    -- ^ No layered reading accepted
+  LayeredRead         :: Semigroup b => LayeredReadScheme b
+    -- ^ A layered reading combining all the layers with (<>)
+  LayeredReadWithNull :: Monoid b => LayeredReadScheme b
+    -- ^ Like 'LayeredRead', and handles mapping to no layer (mempty)
 
 -- | A virtual file in the location tree to which we can write @a@ and from
 -- which we can read @b@.
 data VirtualFile a b = VirtualFile
-  { _vfilePath            :: [LocationTreePathItem]
-  , _vfileReadUsage       :: VirtualFileReadUsage b
-  , _vfileMappedByDefault :: Bool
-  , _vfileDocumentation   :: Maybe T.Text
-  , _vfileBidirProof      :: Maybe (a :~: b)
+  { _vfilePath              :: [LocationTreePathItem]
+  , _vfileLayeredReadScheme :: LayeredReadScheme b
+  , _vfileMappedByDefault   :: Bool
+  , _vfileDocumentation     :: Maybe T.Text
+  , _vfileBidirProof        :: Maybe (a :~: b)
                     -- Temporary, necessary until we can do away with docrec
                     -- conversion in the writer part of SerialsFor
-  , _vfileSerials         :: SerialsFor a b }
+  , _vfileSerials           :: SerialsFor a b }
 
 makeLenses ''VirtualFile
 
@@ -95,11 +98,11 @@ instance Semigroup (VirtualFile a b) where
   VirtualFile p u m d b s <> VirtualFile _ _ _ _ _ s' =
     VirtualFile p u m d b (s<>s')
 instance Monoid (VirtualFile a b) where
-  mempty = VirtualFile [] SingleMapping True Nothing Nothing mempty
+  mempty = VirtualFile [] SingleLayerRead True Nothing Nothing mempty
 
 instance Profunctor VirtualFile where
   dimap f g (VirtualFile p _ m d _ s) =
-    VirtualFile p SingleMapping m d Nothing $ dimap f g s
+    VirtualFile p SingleLayerRead m d Nothing $ dimap f g s
 
 
 -- * Obtaining a description of how the 'VirtualFile' should be used
@@ -158,18 +161,18 @@ showVFilePath = T.unpack . toTextRepr .  LTP . _vfilePath
 -- | Indicates that the file uses layered mapping
 usesLayeredMapping :: (Semigroup b) => VirtualFile a b -> VirtualFile a b
 usesLayeredMapping =
-  vfileReadUsage .~ LayeredMapping
+  vfileLayeredReadScheme .~ LayeredRead
 
 -- | Indicates that the file uses layered mapping, and additionally can be left
 -- unmapped (ie. mapped to null)
 canBeUnmapped :: (Monoid b) => VirtualFile a b -> VirtualFile a b
 canBeUnmapped =
-  vfileReadUsage .~ LayeredMappingWithNull
+  vfileLayeredReadScheme .~ LayeredReadWithNull
 
 -- | Indicates that the file should be mapped to null by default
 unmappedByDefault :: (Monoid b) => VirtualFile a b -> VirtualFile a b
 unmappedByDefault =
-    (vfileReadUsage .~ LayeredMappingWithNull)
+    (vfileLayeredReadScheme .~ LayeredReadWithNull)
   . (vfileMappedByDefault .~ False)
 
 -- | Gives a documentation to the 'VirtualFile'
@@ -193,7 +196,7 @@ type DataSink a = VirtualFile a ()
 -- the data. You should prefer 'dataSink' and 'dataSource' for clarity when the
 -- file is meant to be readonly or writeonly.
 virtualFile :: [LocationTreePathItem] -> Maybe (a :~: b) -> SerialsFor a b -> VirtualFile a b
-virtualFile path refl sers = VirtualFile path SingleMapping True Nothing refl sers
+virtualFile path refl sers = VirtualFile path SingleLayerRead True Nothing refl sers
 
 -- | Creates a virtual file from its virtual path and ways to deserialize the
 -- data.
@@ -218,7 +221,7 @@ ensureBidirFile vf = vf{_vfileBidirProof=Just Refl}
 makeSink :: VirtualFile a b -> DataSink a
 makeSink vf = vf{_vfileSerials=eraseDeserials $ _vfileSerials vf
                 ,_vfileBidirProof=Nothing
-                ,_vfileReadUsage=LayeredMappingWithNull}
+                ,_vfileLayeredReadScheme=LayeredReadWithNull}
 
 makeSource :: VirtualFile a b -> DataSource b
 makeSource vf = vf{_vfileSerials=eraseSerials $ _vfileSerials vf
