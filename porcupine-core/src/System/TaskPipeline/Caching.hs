@@ -32,7 +32,8 @@ cacheWithVFile :: (MonadThrow m, KatipContext m, Typeable c, Typeable c')
                -> (a -> m (b,c))
                -> PTask m a (b,c')
 cacheWithVFile props inputHashablePart vf action = proc input -> do
-  (locs,accessor) <- withVFileAccessFunction vf getLocsAndAccessor -< ()
+  (locs,accessor) <-
+    withVFileAccessFunction [ATWrite, ATRead] vf getLocsAndAccessor -< ()
   output <- unsafeLiftToPTask' props' cached -< (input,locs,accessor)
   fromVFile <- unsafeLiftToPTask daPerformRead -< accessor
   returnA -< (output, fromVFile)

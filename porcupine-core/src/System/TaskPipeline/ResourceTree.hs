@@ -78,12 +78,15 @@ import           System.TaskPipeline.ConfigurationReader
 -- | The internal part of a 'VirtualFileNode', closing over the type params of
 -- the 'VirtualFile'
 data SomeVirtualFile where
-  SomeVirtualFile :: (Typeable a, Typeable b) => VirtualFile a b -> SomeVirtualFile
+  SomeVirtualFile :: (Typeable a, Typeable b)
+                  => VirtualFile a b
+                  -> SomeVirtualFile
 
 instance Semigroup SomeVirtualFile where
   SomeVirtualFile vf <> SomeVirtualFile vf' = case cast vf' of
-    Just vf'' -> SomeVirtualFile $ vf <> vf''
+    Just vf'' -> SomeVirtualFile (vf <> vf'')
     Nothing -> error "Two differently typed VirtualFiles are at the same location"
+
 
 data DataAccessor m a b = DataAccessor
   { daPerformWrite :: a -> m ()
@@ -96,17 +99,23 @@ data SomeDataAccess m where
   SomeDataAccess :: (Typeable a, Typeable b)
                  => (LocVariableMap -> DataAccessor m a b) -> SomeDataAccess m
 
+-- | Tells the type of accesses that some VirtualFile will undergo. They are
+-- accumulated though the whole pipeline.
+data VFNodeAccessType = ATWrite | ATRead
+  deriving (Eq, Show)
+
 -- | The nodes of the ResourceTree, before mapping each 'VirtualFiles' to
 -- physical locations
-data VirtualFileNode = MbVirtualFileNode (Maybe SomeVirtualFile)
+data VirtualFileNode = MbVirtualFileNode [VFNodeAccessType] (Maybe SomeVirtualFile)
 -- | A non-empty 'VirtualFileNode'
-pattern VirtualFileNode x = MbVirtualFileNode (Just (SomeVirtualFile x))
+pattern VirtualFileNode {vfnodeAccesses, vfnodeFile} =
+  MbVirtualFileNode vfnodeAccesses (Just (SomeVirtualFile vfnodeFile))
 
 -- | The nodes of the ResourceTree, after mapping each 'VirtualFiles' to
 -- physical locations
 data PhysicalFileNode = MbPhysicalFileNode [LocWithVars] (Maybe SomeVirtualFile)
 -- | A non-empty 'PhysicalFileNode'
-pattern PhysicalFileNode l x = MbPhysicalFileNode l (Just (SomeVirtualFile x))
+pattern PhysicalFileNode l vf = MbPhysicalFileNode l (Just (SomeVirtualFile vf))
 
 -- | The nodes of the LocationTree after the 'VirtualFiles' have been resolved
 -- to physical paths, and data possibly extracted from these paths
@@ -118,9 +127,10 @@ pattern DataAccessNode l x = MbDataAccessNode l (First (Just (SomeDataAccess x))
 
 
 instance Semigroup VirtualFileNode where
-  MbVirtualFileNode vf <> MbVirtualFileNode vf' = MbVirtualFileNode $ vf <> vf'
+  MbVirtualFileNode at vf <> MbVirtualFileNode at' vf' =
+    MbVirtualFileNode (at <> at') (vf <> vf')
 instance Monoid VirtualFileNode where
-  mempty = MbVirtualFileNode mempty
+  mempty = MbVirtualFileNode [] mempty
 -- TODO: It is dubious that composing DataAccessNodes is really needed in the
 -- end. Find a way to remove that.
 instance Semigroup (DataAccessNode m) where
@@ -129,7 +139,9 @@ instance Monoid (DataAccessNode m) where
   mempty = MbDataAccessNode [] mempty
 
 instance Show VirtualFileNode where
-  show (VirtualFileNode vf) = "VirtualFileNode with " ++ show (getVirtualFileDescription vf)
+  show (VirtualFileNode{..}) =
+    "VirtualFileNode with " ++ show (getVirtualFileDescription vfnodeFile)
+    ++ " accessed for: " ++ show vfnodeAccesses
   show _                    = ""
   -- TODO: Cleaner Show
   -- TODO: Display read/written types here, since they're already Typeable
@@ -140,7 +152,8 @@ instance Show PhysicalFileNode where
               (intersperse " << "
                (map toTextRepr layers)))
     ++ case mbVF of
-         Just (SomeVirtualFile vf) -> " - " ++ show (getVirtualFileDescription vf)
+         Just (SomeVirtualFile vf) ->
+           " - " ++ show (getVirtualFileDescription vf)
          _ -> ""
 
 
@@ -157,8 +170,8 @@ type PhysicalResourceTree = LocationTree PhysicalFileNode
 type DataResourceTree m = LocationTree (DataAccessNode m)
 
 instance HasDefaultMappingRule VirtualFileNode where
-  getDefaultLocShortcut (VirtualFileNode vf) = getDefaultLocShortcut vf
-  getDefaultLocShortcut _                    = Nothing
+  getDefaultLocShortcut (VirtualFileNode{..}) = getDefaultLocShortcut vfnodeFile
+  getDefaultLocShortcut _                     = Nothing
 
 -- | Filters the tree to get only the nodes that don't have data and can be
 -- mapped to external files
@@ -167,11 +180,11 @@ rscTreeToMappings
   -> Maybe LocationMappings
 rscTreeToMappings tree = mappingsFromLocTree <$> over filteredLocsInTree rmOpts tree
   where
-    rmOpts (VirtualFileNode vfile)
+    rmOpts (VirtualFileNode{..})
       | Just VFForCLIOptions <- intent = Nothing  -- Nodes with default data are
                                                   -- by default not put in the
                                                   -- mappings
-      where intent = vfileDescIntent $ getVirtualFileDescription vfile
+      where intent = vfileDescIntent $ getVirtualFileDescription vfnodeFile
     rmOpts n = Just n
 
 -- | Filters the tree to get only the nodes than can be embedded in the config file
@@ -180,10 +193,10 @@ rscTreeToEmbeddedDataTree
   -> Maybe VirtualResourceTree
 rscTreeToEmbeddedDataTree = over filteredLocsInTree keepOpts
   where
-    keepOpts n@(VirtualFileNode vfile)
+    keepOpts n@(VirtualFileNode{..})
       | Just VFForCLIOptions <- intent = Just n
       | otherwise = Nothing
-      where intent = vfileDescIntent $ getVirtualFileDescription vfile
+      where intent = vfileDescIntent $ getVirtualFileDescription vfnodeFile
     keepOpts n = Just n
 
 variablesSection :: T.Text
@@ -201,8 +214,8 @@ embeddedDataTreeToJSONFields thisPath (LocationTree mbOpts sub) =
   [(thisPath, Object $ opts' <> sub')]
   where
     opts' = case mbOpts of
-      VirtualFileNode vf ->
-        case Right vf ^? vfileAsBidirE . vfileAesonValue of
+      VirtualFileNode{..} ->
+        case Right vfnodeFile ^? vfileAsBidirE . vfileAesonValue of
           Just (Object o) -> o
           _               -> mempty
       _ -> mempty
@@ -287,7 +300,7 @@ rscTreeConfigurationReader (ResourceTreeAndMappings{rtamResourceTree=defTree}) =
           Left "Location mapping must be of the form \"virtual_path(+)=physical_path\""
 
     nodeAndRecOfOptions :: VirtualFileNode -> (VirtualFileNode, Maybe DocRecOfOptions)
-    nodeAndRecOfOptions n@(VirtualFileNode vf) = (n, vf ^? vfileAsBidir . vfileRecOfOptions)
+    nodeAndRecOfOptions n@(VirtualFileNode{..}) = (n, vfnodeFile ^? vfileAsBidir . vfileRecOfOptions)
     nodeAndRecOfOptions n = (n, Nothing)
     parseOptions :: RecOfOptions DocField -> Parser (RecOfOptions SourcedDocField)
     parseOptions (RecOfOptions r) = RecOfOptions <$>
@@ -324,8 +337,9 @@ rscTreeConfigurationReader (ResourceTreeAndMappings{rtamResourceTree=defTree}) =
       -> (LocationTreePath, (VirtualFileNode, Maybe (RecOfOptions SourcedDocField)))
       -> Either String VirtualFileNode
     replaceWithDataFromConfig (Just dataSectionContent)
-                              (LTP path, (node@(VirtualFileNode vf), mbRecFromCLI)) =
-      case findInAesonVal path dataSectionContent of
+                              (LTP path, (node@(VirtualFileNode{..}), mbRecFromCLI)) =
+      let rebuildNode newF = VirtualFileNode{vfnodeFile = newF, ..}
+      in case findInAesonVal path dataSectionContent of
           Right v -> case mbRecFromCLI of
             Just (RecOfOptions recFromCLI) -> do
               -- YAML: yes, CLI: yes
@@ -333,15 +347,15 @@ rscTreeConfigurationReader (ResourceTreeAndMappings{rtamResourceTree=defTree}) =
                 -- We merge the two configurations:
               let newOpts = RecOfOptions $ rmTags $
                     rzipWith chooseHighestPriority recFromYaml recFromCLI
-              return $ VirtualFileNode $ vf & vfileAsBidir . vfileRecOfOptions .~ newOpts
+              return $ rebuildNode $ vfnodeFile & vfileAsBidir . vfileRecOfOptions .~ newOpts
             Nothing ->
               -- YAML: yes, CLI: no
-              VirtualFileNode <$> (Right vf & vfileAsBidirE . vfileAesonValue .~ v)
+              rebuildNode <$> (Right vfnodeFile & vfileAsBidirE . vfileAesonValue .~ v)
           Left _ -> case mbRecFromCLI of
             Just (RecOfOptions recFromCLI) ->
               -- YAML: no, CLI: yes
-              return $ VirtualFileNode $
-                vf & vfileAsBidir . vfileRecOfOptions .~ RecOfOptions (rmTags recFromCLI)
+              return $ rebuildNode $
+                vfnodeFile & vfileAsBidir . vfileRecOfOptions .~ RecOfOptions (rmTags recFromCLI)
             Nothing ->
               -- YAML: no, CLI: no
               return node
@@ -363,10 +377,10 @@ applyOneRscMapping :: LocVariableMap -> [LocWithVars] -> VirtualFileNode -> Bool
 applyOneRscMapping variables configLayers mbVF mappingIsExplicit = buildPhysicalNode mbVF
   where
     configLayers' = map (spliceLocVariables variables) configLayers
-    buildPhysicalNode (VirtualFileNode vf) = PhysicalFileNode layers vf
+    buildPhysicalNode (VirtualFileNode{..}) = PhysicalFileNode layers vfnodeFile
       where
-        First defExt = vf ^. vfileSerials . serialDefaultExt
-        intent = vfileDescIntent $ getVirtualFileDescription vf
+        First defExt = vfnodeFile ^. vfileSerials . serialDefaultExt
+        intent = vfileDescIntent $ getVirtualFileDescription vfnodeFile
         layers | not mappingIsExplicit, Just VFForCLIOptions <- intent = []
              -- Options usually present in the config file need an _explicit_
              -- mapping to be present in the config file, if we want them to be

@@ -44,7 +44,7 @@ getOptions
                              -- overriden by the user
 getOptions path defOpts =
       arr (\_ -> S.yield ([] :: [Int], error "getOptions: THIS IS VOID"))
-  >>> accessVirtualFile [] vfile
+  >>> accessVirtualFile (DoRead Refl) [] vfile
   >>> streamHeadTask
   >>> arr post
   where

@@ -24,9 +24,11 @@ module System.TaskPipeline.VirtualFileAccess
   , writeDataStream
 
     -- * Lower-level API
+  , AccessToPerform(..)
+  , (:~:)(..)
   , accessVirtualFile
   , withVFileAccessFunction
-  , withFolderAccessNodes
+  , withFolderDataAccessNodes
   , getLocsMappedTo
   , streamHeadTask
   ) where
@@ -58,9 +60,9 @@ streamHeadTask = unsafeLiftToPTask $ \s ->
 -- pure 'DataSource'. For practical reasons the task input is () rather than
 -- Void.
 loadData
-  :: (LocationMonad m, KatipContext m, Typeable a)
-  => VirtualFile ignored a -- ^ A 'DataSource'
-  -> PTask m () a  -- ^ The resulting task
+  :: (LocationMonad m, KatipContext m, Typeable a, Typeable b)
+  => VirtualFile a b -- ^ Use as a 'DataSource'
+  -> PTask m () b  -- ^ The resulting task
 loadData vf = arr (\_ -> S.yield ([] :: [Int]))
           >>> loadDataStream [] vf
           >>> streamHeadTask
@@ -68,19 +70,19 @@ loadData vf = arr (\_ -> S.yield ([] :: [Int]))
 -- | Loads a stream of repeated occurences of a VirtualFile, from a stream of
 -- indices. The process is lazy: the data will actually be read when the
 -- resulting stream is consumed.
-loadDataStream :: (Show idx, LocationMonad m, KatipContext m, Typeable a)
+loadDataStream :: (Show idx, LocationMonad m, KatipContext m, Typeable a, Typeable b)
                => [LocVariable]
-               -> VirtualFile ignored a -- ^ A 'DataSource'
-               -> PTask m (Stream (Of [idx]) m r) (Stream (Of ([idx], a)) m r)
+               -> VirtualFile a b -- ^ Used as a 'DataSource'
+               -> PTask m (Stream (Of [idx]) m r) (Stream (Of ([idx], b)) m r)
 loadDataStream repIndices vf =
       arr (S.map (, error "loadDataStream: THIS IS VOID"))
-  >>> accessVirtualFile repIndices (makeSource vf)
+  >>> accessVirtualFile (DoRead Refl) repIndices vf
 
 -- | Uses only the write part of a 'VirtualFile'. It is therefore considered as
 -- a pure 'DataSink'.
 writeData
-  :: (LocationMonad m, KatipContext m, Typeable a)
-  => VirtualFile a ignored  -- ^ A 'DataSink'
+  :: (LocationMonad m, KatipContext m, Typeable a, Typeable b)
+  => VirtualFile a b  -- ^ Used as a 'DataSink'
   -> PTask m a ()
 writeData vf = arr (\a -> S.yield ([] :: [Int], a))
            >>> writeDataStream [] vf
@@ -89,37 +91,55 @@ writeData vf = arr (\a -> S.yield ([] :: [Int], a))
 -- it to repeated occurences of a VirtualFile. See
 -- System.TaskPipeline.Repetition.Fold for more complex ways to consume a
 -- Stream.
-writeDataStream :: (Show idx, LocationMonad m, KatipContext m, Typeable a)
+writeDataStream :: (Show idx, LocationMonad m, KatipContext m, Typeable a, Typeable b)
                 => [LocVariable]
-                -> VirtualFile a ignored -- ^ A 'DataSink'
+                -> VirtualFile a b -- ^ Used as a 'DataSink'
                 -> PTask m (Stream (Of ([idx], a)) m r) r
 writeDataStream repIndices vf =
-  accessVirtualFile repIndices (makeSink vf) >>> unsafeLiftToPTask S.effects
+  accessVirtualFile (DoWrite ()) repIndices vf >>> unsafeLiftToPTask S.effects
+
+-- | When only writing, gives a value that should be returned for b
+data AccessToPerform b b'
+  = DoWrite b'
+  | DoRead (b :~: b')
+  | DoWriteAndRead (b :~: b')
 
 -- | When building the pipeline, stores into the location tree the way to read
 -- or write the required resource. When running the pipeline, access the
 -- instances of this ressource corresponding to the values of some repetition
 -- indices.
+--
+-- NOTE: 'accessVirtualFile' maybe has become too generic: it does stream
+-- write/read by default and handle every type of access. This genericity can
+-- come at a cost. Benchmarks should tell whether loadData, writeData, etc.
+-- should be rewritten in a more specialized fashion.
 accessVirtualFile
-  :: forall m a b idx r.
+  :: forall m a b b' idx r.
      (LocationMonad m, KatipContext m, Typeable a, Typeable b, Show idx)
-  => [LocVariable]  -- ^ The list of repetition indices. Can be empty if the
+  => AccessToPerform b b'
+  -> [LocVariable]  -- ^ The list of repetition indices. Can be empty if the
                     -- file isn't meant to be repeated
   -> VirtualFile a b  -- ^ The VirtualFile to access
   -> PTask m (Stream (Of ([idx], a)) m r)
-             (Stream (Of ([idx], b)) m r)  -- ^ The resulting task reads a
+             (Stream (Of ([idx], b')) m r)  -- ^ The resulting task reads a
                                            -- stream of indices and input values
                                            -- and returns a stream of the same
                                            -- indices associated to their
                                            -- outputs.
-accessVirtualFile repIndices vfile =
-  withVFileAccessFunction vfile' $ \accessFn inputStream ->
+accessVirtualFile accessToDo repIndices vfile =
+  withVFileAccessFunction accesses' vfile' $ \accessFn inputStream ->
     return $ S.mapM (runOnce accessFn) inputStream
   where
-    runOnce :: (LocVariableMap -> DataAccessor m a b) -> ([idx], a) -> m ([idx], b)
+    accesses' = case accessToDo of
+      DoWriteAndRead{} -> [ATWrite,ATRead]
+      DoWrite{}        -> [ATWrite]
+      DoRead{}         -> [ATRead]
+    runOnce :: (LocVariableMap -> DataAccessor m a b) -> ([idx], a) -> m ([idx], b')
     runOnce accessFn (ixVals, input) = do
-      daPerformWrite da input
-      (ixVals,) <$> daPerformRead da
+      (ixVals,) <$> case accessToDo of
+        DoWrite r           -> daPerformWrite da input >> return r
+        DoRead Refl         -> daPerformRead da
+        DoWriteAndRead Refl -> daPerformWrite da input >> daPerformRead da
       where
         da = accessFn lvMap
         lvMap = HM.fromList $ zip repIndices $ map show ixVals
@@ -132,14 +152,15 @@ accessVirtualFile repIndices vfile =
 withVFileAccessFunction
   :: forall m i o a b.
      (MonadThrow m, KatipContext m, Typeable a, Typeable b)
-  => VirtualFile a b  -- ^ The VirtualFile to access
+  => [VFNodeAccessType]  -- ^ The accesses that will be performed on it
+  -> VirtualFile a b  -- ^ The VirtualFile to access
   -> ((LocVariableMap -> DataAccessor m a b) -> i -> m o)
          -- ^ The action to run. It will be a function to access the
          -- VirtualFile. The LocVariableMap can just be empty if the VirtualFile
          -- isn't meant to be repeated
   -> PTask m i o
-withVFileAccessFunction vfile f =
-  withFolderAccessNodes path (Identity fname) $
+withVFileAccessFunction accessesToDo vfile f =
+  withFolderDataAccessNodes path (Identity fname) $
     \(Identity n) input -> case n of
       DataAccessNode _ (action :: LocVariableMap -> DataAccessor m a' b') ->
         case (eqT :: Maybe (a :~: a'), eqT :: Maybe (b :~: b')) of
@@ -149,19 +170,19 @@ withVFileAccessFunction vfile f =
       _ -> err "no access action is present in the tree"
   where
     path = init $ vfile ^. vfilePath
-    fname = file (last $ vfile ^. vfilePath) $ VirtualFileNode vfile
+    fname = file (last $ vfile ^. vfilePath) $ VirtualFileNode accessesToDo vfile
     err s = throwWithPrefix $
       "withVFileAccessFunction (" ++ showVFilePath vfile ++ "): " ++ s
 
 -- | Wraps in a task a function that needs to access some items present in a
 -- subfolder of the 'LocationTree' and mark these accesses as done.
-withFolderAccessNodes
+withFolderDataAccessNodes
   :: (MonadThrow m, KatipContext m, Traversable t)
   => [LocationTreePathItem]              -- ^ Path to folder in 'LocationTree'
   -> t (LTPIAndSubtree VirtualFileNode)  -- ^ Items of interest in the subfolder
   -> (t (DataAccessNode m) -> i -> m o)  -- ^ What to run with these items
   -> PTask m i o                         -- ^ The resulting PTask
-withFolderAccessNodes path filesToAccess accessFn =
+withFolderDataAccessNodes path filesToAccess accessFn =
   makePTask tree runAccess
   where
     tree = foldr (\pathItem subtree -> folderNode [ pathItem :/ subtree ])
