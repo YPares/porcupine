@@ -38,11 +38,6 @@ cacheWithVFile props inputHashablePart vf action = proc input -> do
   fromVFile <- unsafeLiftToPTask daPerformRead -< accessor
   returnA -< (output, fromVFile)
   where
-    cached (input, _, accessor) = do
-      (outputForStore, outputForVFile) <- action input
-      daPerformWrite accessor outputForVFile
-      return outputForStore
-
     getLocsAndAccessor getAccessor _ = do
       let accessor = getAccessor mempty
       locs <- case daLocsAccessed accessor of
@@ -50,6 +45,11 @@ cacheWithVFile props inputHashablePart vf action = proc input -> do
           "cacheWithVFile (" ++ showVFilePath vf ++ "): " ++ e
         Right r -> return r
       return (map (over traversed T.pack) locs, accessor)
+
+    cached (input,_,accessor) = do
+      (outputForStore, outputForVFile) <- action input
+      daPerformWrite accessor outputForVFile
+      return outputForStore
 
     props' = props { cache = cache'
                    , mdpolicy = updMdw <$> mdpolicy props }
