@@ -16,10 +16,12 @@ module System.TaskPipeline.Run
 import           Control.Lens
 import           Control.Monad.Catch
 import           Control.Monad.IO.Class
-import           Data.Locations
+import           Data.Locations                     hiding ((</>))
 import           Data.Maybe
 import           Katip
+import           System.Environment                 (getEnv, lookupEnv)
 import           System.Exit
+import           System.FilePath                    ((</>))
 import           System.TaskPipeline.CLI
 import           System.TaskPipeline.Logger         (defaultLoggerScribeParams,
                                                      runLogger)
@@ -102,7 +104,14 @@ runPipelineCommandOnPTask ptask input cmd boundTree = do
   case cmd of
     RunPipeline -> do
       dataTree <- traverse resolveDataAccess boundTree
-      withPTaskReaderState dataTree $ \initState ->
+      ffPaths <- liftIO $ do
+        pwd <- getEnv "PWD"
+        FunflowPaths
+          <$> (fromMaybe (pwd </> "_funflow/store") <$> lookupEnv "FUNFLOW_STORE")
+          <*> (fromMaybe (pwd </> "_funflow/coordinator.db") <$> lookupEnv "FUNFLOW_COORDINATOR")
+      withPTaskState ffPaths dataTree $ \initState -> do
+        $(logTM) DebugS $ logStr $ "Using funflow store in '" ++ storePath ffPaths
+              ++ "' and coordinator '" ++ coordPath ffPaths ++ "'."
         execRunnablePTask runnable initState input
     ShowLocTree mode -> do
       liftIO $ putStrLn $ case mode of

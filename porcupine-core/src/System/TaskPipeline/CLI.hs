@@ -236,7 +236,7 @@ parseScribeParams = LoggerScribeParams
         "emergency" -> Right EmergencyS
         s -> Left $ s ++ " isn't a valid severity level"
     numToVerbosity 0 = V0
-    numToVerbosity 1 = V0
+    numToVerbosity 1 = V1
     numToVerbosity 2 = V2
     numToVerbosity _ = V3
     loggerFormatParser "pretty"  = Right PrettyLog

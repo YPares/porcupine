@@ -31,6 +31,7 @@ dependencies:
   - exceptions
   - filepath
   - formatting
+  - foldl
   - funflow
   - hashable
   - katip >= 0.6.3
