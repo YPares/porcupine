@@ -2,12 +2,19 @@
 
 module System.TaskPipeline.Caching
   ( cacheWithVFile
+
+  -- * Re-exports
+  
+  , Properties(..)
+  , defaultCacherWithIdent
+  , Default(..)
   ) where
 
 import           Control.Funflow
 import           Control.Funflow.ContentHashable
 import           Control.Lens                          (over, traversed)
 import           Control.Monad.Catch
+import           Data.Default                          (Default (..))
 import           Data.Locations.Loc
 import           Data.Locations.LogAndErrors
 import           Data.Locations.VirtualFile
