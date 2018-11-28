@@ -30,7 +30,6 @@ module System.TaskPipeline.VirtualFileAccess
   , withVFileAccessFunction
   , withFolderDataAccessNodes
   , getLocsMappedTo
-  , streamHeadTask
   ) where
 
 import           Prelude                            hiding (id, (.))
@@ -52,10 +51,6 @@ import           System.TaskPipeline.PTask.Internal
 import           System.TaskPipeline.ResourceTree
 
 
-streamHeadTask :: (KatipContext m) => PTask m (Stream (Of (i, a)) m r) a
-streamHeadTask = unsafeLiftToPTask $ \s ->
-  maybe (error $ "streamHeadTask: No value in the output stream") snd <$> S.head_ s
-
 -- | Uses only the read part of a 'VirtualFile'. It is therefore considered as a
 -- pure 'DataSource'. For practical reasons the task input is () rather than
 -- Void.
@@ -63,9 +58,11 @@ loadData
   :: (LocationMonad m, KatipContext m, Typeable a, Typeable b)
   => VirtualFile a b -- ^ Use as a 'DataSource'
   -> PTask m () b  -- ^ The resulting task
-loadData vf = arr (\_ -> S.yield ([] :: [Int]))
-          >>> loadDataStream [] vf
-          >>> streamHeadTask
+loadData vf =
+      arr (\_ -> S.yield ([] :: [Int]))
+  >>> loadDataStream [] vf
+  >>> unsafeLiftToPTask (\s ->
+      maybe (error $ "loadData: No value in the output stream") snd <$> S.head_ s)
 
 -- | Loads a stream of repeated occurences of a VirtualFile, from a stream of
 -- indices. The process is lazy: the data will actually be read when the
@@ -96,7 +93,8 @@ writeDataStream :: (Show idx, LocationMonad m, KatipContext m, Typeable a, Typea
                 -> VirtualFile a b -- ^ Used as a 'DataSink'
                 -> PTask m (Stream (Of ([idx], a)) m r) r
 writeDataStream repIndices vf =
-  accessVirtualFile (DoWrite ()) repIndices vf >>> unsafeLiftToPTask S.effects
+      accessVirtualFile (DoWrite ()) repIndices vf
+  >>> unsafeLiftToPTask S.effects
 
 -- | When only writing, gives a value that should be returned for b
 data AccessToPerform b b'

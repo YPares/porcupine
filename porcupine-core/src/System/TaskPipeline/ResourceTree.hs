@@ -433,7 +433,7 @@ makeDataAccessor
   -> [(ReadFromLoc b, LocWithVars)] -- ^ Layers to read from
   -> LocVariableMap  -- ^ The map of the values of the repetition indices
   -> DataAccessor m a b
-makeDataAccessor vpath layers mbDefVal readUsage writeLocs readLocs repetKeyMap =
+makeDataAccessor vpath layers mbDefVal readScheme writeLocs readLocs repetKeyMap =
   DataAccessor{..}
   where
     daLocsAccessed = traverse (fillLoc' repetKeyMap) layers
@@ -451,7 +451,7 @@ makeDataAccessor vpath layers mbDefVal readUsage writeLocs readLocs repetKeyMap 
             logFM DebugS $ logStr $ "Read '" ++ show loc' ++ "'"
             return r)
         let embeddedValAndLayers = maybe id (:) mbDefVal dataFromLayers
-        case (readUsage, embeddedValAndLayers) of
+        case (readScheme, embeddedValAndLayers) of
           (_, [x]) -> return x
           (LayeredReadWithNull, ls) -> return $ mconcat ls
           (_, []) -> throwWithPrefix $ vpath ++ " has no layers from which to read"
@@ -476,20 +476,30 @@ resolveDataAccess
   => PhysicalFileNode
   -> m' (DataAccessNode m)
 resolveDataAccess (PhysicalFileNode layers vf) = do
+  -- resolveDataAccess performs some buildtime checks: --
+  -- First, that we aren't illegally binding to no layers:
   case layers of
-    [] -> case vf ^. vfileLayeredReadScheme of
+    [] -> case readScheme of
             LayeredReadWithNull -> return ()
-            _ -> throwM $ TaskConstructionError $
-                 vpath ++ " cannot be mapped to null"
+            _ -> case mbEmbeddedVal of
+              Just _ -> return ()
+              Nothing ->
+                throwM $ TaskConstructionError $
+                vpath ++ " cannot be mapped to null. It doesn't contain any default value."
     _ -> return ()
+  -- Then, that we aren't writing to an unsupported filetype:
   writeLocs <- findFunctions writers
+  -- And finally, that we aren't reading from an unsupported filetype:
   readLocs <- findFunctions readers
   return $
     DataAccessNode layers $
       makeDataAccessor vpath layers
-                       (vf ^? vfileEmbeddedValue) (vf ^. vfileLayeredReadScheme)
+                       mbEmbeddedVal readScheme
                        writeLocs readLocs
   where
+    readScheme = vf ^. vfileLayeredReadScheme
+    mbEmbeddedVal = vf ^? vfileEmbeddedValue
+    
     vpath = T.unpack $ toTextRepr $ LTP $ vf ^. vfilePath
 
     readers = vf ^. vfileSerials . serialReaders . serialReadersFromInputFile

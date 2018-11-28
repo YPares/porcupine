@@ -47,7 +47,7 @@ computeAnalysis (User name surname _) = Analysis $
 -- having to change it at all.
 analyseOneUser :: (LocationMonad m, KatipContext m) => PTask m () ()
 analyseOneUser =
-  loadLast userFile >>> arr computeAnalysis >>> writeData analysisFile
+  loadData userFile >>> arr computeAnalysis >>> writeData analysisFile
 
 mainTask :: (LocationMonad m, KatipContext m) => PTask m () ()
 mainTask =
