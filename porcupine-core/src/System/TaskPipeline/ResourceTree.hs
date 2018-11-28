@@ -5,10 +5,10 @@
 {-# LANGUAGE GADTs               #-}
 {-# LANGUAGE OverloadedStrings   #-}
 {-# LANGUAGE PatternSynonyms     #-}
+{-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TupleSections       #-}
 {-# LANGUAGE ViewPatterns        #-}
-{-# LANGUAGE RecordWildCards     #-}
 {-# OPTIONS_GHC -fno-warn-missing-pattern-synonym-signatures #-}
 
 -- | This file describes the ResourceTree API. The ResourceTree is central to
@@ -85,15 +85,16 @@ instance Semigroup SomeVirtualFile where
     Just vf'' -> SomeVirtualFile $ vf <> vf''
     Nothing -> error "Two differently typed VirtualFiles are at the same location"
 
-data DataAccessFn m a b = DataAccessFn
-  { runDataAccessFn :: a -> m b
-  , getLocsAccessed :: m [Loc] }
+data DataAccessor m a b = DataAccessor
+  { daPerformWrite :: a -> m ()
+  , daPerformRead  :: m b
+  , daLocsAccessed :: Either String [Loc] }
 
 -- | The internal part of a 'DataAccessNode, closing over the type params of the
 -- access function.
 data SomeDataAccess m where
   SomeDataAccess :: (Typeable a, Typeable b)
-                 => (LocVariableMap -> DataAccessFn m a b) -> SomeDataAccess m
+                 => (LocVariableMap -> DataAccessor m a b) -> SomeDataAccess m
 
 -- | The nodes of the ResourceTree, before mapping each 'VirtualFiles' to
 -- physical locations
@@ -427,13 +428,14 @@ resolveDataAccess (PhysicalFileNode layers vf) = do
   readLocs <- findFunctions readers
   return $ DataAccessNode layers $ \repetKeyMap ->
     let
-      getLocsAccessed = traverse (fillLoc repetKeyMap) layers
-      runDataAccessFn input = do
+      daLocsAccessed = traverse (fillLoc' repetKeyMap) layers
+      daPerformWrite input = do
         forM_ writeLocs $ \(WriteToLoc rkeys f, loc) -> do
           loc' <- fillLoc repetKeyMap loc
           katipAddContext (DAC (show loc) rkeys repetKeyMap (show loc')) $ do
             f input loc'
             logFM NoticeS $ logStr $ "Wrote '" ++ show loc' ++ "'"
+      daPerformRead = do
         dataFromLayers <- forM readLocs (\(ReadFromLoc rkeys f, loc) -> do
           loc' <- fillLoc repetKeyMap loc
           katipAddContext (DAC (show loc) rkeys repetKeyMap (show loc')) $ do
@@ -450,16 +452,17 @@ resolveDataAccess (PhysicalFileNode layers vf) = do
               " doesn't support layered mapping. Using only result from last layer '"
               ++ show (last $ layers) ++ "'"
             return $ last ls
-    in DataAccessFn{..}
+    in DataAccessor{..}
   where
     mbPrepend (Just x) = (x:)
-    mbPrepend Nothing = id
-    
+    mbPrepend Nothing  = id
+
     vpath = T.unpack $ toTextRepr $ LTP $ vf ^. vfilePath
 
-    fillLoc repetKeyMap loc =
-      case terminateLocWithVars $ spliceLocVariables repetKeyMap loc of
-        Left e -> throwWithPrefix $ "resolveDataAccess: " ++ e
+    fillLoc' rkMap loc = terminateLocWithVars $ spliceLocVariables rkMap loc
+    fillLoc rkMap loc =
+      case fillLoc' rkMap loc of
+        Left e  -> throwWithPrefix $ "resolveDataAccess: " ++ e
         Right r -> return r
 
     readers = vf ^. vfileSerials . serialReaders . serialReadersFromInputFile

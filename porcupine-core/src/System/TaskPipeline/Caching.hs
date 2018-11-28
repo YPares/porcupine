@@ -4,44 +4,51 @@ module System.TaskPipeline.Caching
   ( cacheWithVFile
   ) where
 
-import Control.Funflow
-import Control.Monad.Catch
-import Control.Lens (over, traversed)
-import Data.Locations.Loc
-import Data.Locations.VirtualFile
-import Katip
-import System.TaskPipeline.PTask.Internal
-import System.TaskPipeline.VirtualFileAccess
-import System.TaskPipeline.ResourceTree
-import Control.Funflow.ContentHashable
+import           Control.Funflow
+import           Control.Funflow.ContentHashable
+import           Control.Lens                          (over, traversed)
+import           Control.Monad.Catch
+import           Data.Locations.Loc
+import           Data.Locations.LogAndErrors
+import           Data.Locations.VirtualFile
+import qualified Data.Text                             as T
+import           Katip
 import qualified Path
-import qualified Data.Text as T
+import           System.TaskPipeline.PTask
+import           System.TaskPipeline.ResourceTree
+import           System.TaskPipeline.VirtualFileAccess
+
+import           Prelude                               hiding (id, (.))
 
 
 -- | Similar to 'wrap' from 'ArrowFlow', but caches a part of the result
 -- _outside_ of the store. In this case we use the filepath bound to the
 -- VirtualFile to compute the hash. That means that if the VirtualFile is bound
 -- to something else, the step will be re-executed.
-cacheWithVFile :: (MonadThrow m, KatipContext m, Typeable c
-                  ,Typeable ignored, Monoid ignored)
+cacheWithVFile :: (MonadThrow m, KatipContext m, Typeable c, Typeable c')
                => Properties (a', [Loc_ T.Text]) b  -- String isn't ContentHashable
                -> (a -> a')
-               -> VirtualFile c ignored
+               -> VirtualFile c c'
                -> (a -> m (b,c))
-               -> PTask m a b
+               -> PTask m a (b,c')
 cacheWithVFile props inputHashablePart vf action = proc input -> do
-  (locs,accessFn) <- withVFileAccessFunction vf getLocsAndAccessFn -< ()
-  makePTask' props' mempty cached -< (input,locs,accessFn)
+  (locs,accessor) <- withVFileAccessFunction vf getLocsAndAccessor -< ()
+  output <- unsafeLiftToPTask' props' cached -< (input,locs,accessor)
+  fromVFile <- unsafeLiftToPTask daPerformRead -< accessor
+  returnA -< (output, fromVFile)
   where
-    cached _ (input, _, accessFn) = do
+    cached (input, _, accessor) = do
       (outputForStore, outputForVFile) <- action input
-      accessFn outputForVFile
+      daPerformWrite accessor outputForVFile
       return outputForStore
 
-    getLocsAndAccessFn fn _ = do
-      let da = fn mempty
-      locs <- getLocsAccessed da
-      return (map (over traversed T.pack) locs, runDataAccessFn da)
+    getLocsAndAccessor getAccessor _ = do
+      let accessor = getAccessor mempty
+      locs <- case daLocsAccessed accessor of
+        Left e  -> throwWithPrefix $
+          "cacheWithVFile (" ++ showVFilePath vf ++ "): " ++ e
+        Right r -> return r
+      return (map (over traversed T.pack) locs, accessor)
 
     props' = props { cache = cache'
                    , mdpolicy = updMdw <$> mdpolicy props }

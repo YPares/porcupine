@@ -31,7 +31,6 @@ module System.TaskPipeline.PTask.Internal
   , withRunnableState
   , withRunnableState'
   , execRunnablePTask
-  , toRunnable
   , runnableWithoutReqs
   , withPTaskState
   ) where
@@ -233,12 +232,6 @@ splittedPTask = iso to_ from_
 -- | Permits to apply a function to the state of a 'RunnablePTask' when in runs.
 runnablePTaskState :: Setter' (RunnablePTask m a b) (PTaskState m)
 runnablePTaskState = lens unAppArrow (const AppArrow) . setting local
-
--- | Just a shortcut around 'withRunnableState' when you just need to run an
--- action without accessing the tree.
-toRunnable :: (KatipContext m)
-           => (a -> m b) -> RunnablePTask m a b
-toRunnable = withRunnableState . const
 
 -- | Makes a task from a tree of requirements and a function. The 'Properties'
 -- indicate whether we can cache this task.

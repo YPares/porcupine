@@ -58,14 +58,14 @@ data VirtualFileReadUsage b where
 -- | A virtual file in the location tree to which we can write @a@ and from
 -- which we can read @b@.
 data VirtualFile a b = VirtualFile
-  { _vfilePath          :: [LocationTreePathItem]
-  , _vfileReadUsage     :: VirtualFileReadUsage b
+  { _vfilePath            :: [LocationTreePathItem]
+  , _vfileReadUsage       :: VirtualFileReadUsage b
   , _vfileMappedByDefault :: Bool
-  , _vfileDocumentation :: Maybe T.Text
-  , _vfileBidirProof    :: Maybe (a :~: b)
+  , _vfileDocumentation   :: Maybe T.Text
+  , _vfileBidirProof      :: Maybe (a :~: b)
                     -- Temporary, necessary until we can do away with docrec
                     -- conversion in the writer part of SerialsFor
-  , _vfileSerials       :: SerialsFor a b }
+  , _vfileSerials         :: SerialsFor a b }
 
 makeLenses ''VirtualFile
 

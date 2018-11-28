@@ -1,35 +1,35 @@
-{-# LANGUAGE DeriveAnyClass       #-}
-{-# LANGUAGE DeriveDataTypeable   #-}
-{-# LANGUAGE DeriveFoldable       #-}
-{-# LANGUAGE DeriveFunctor        #-}
-{-# LANGUAGE DeriveGeneric        #-}
-{-# LANGUAGE DeriveTraversable    #-}
-{-# LANGUAGE FlexibleInstances    #-}
-{-# LANGUAGE NamedFieldPuns       #-}
-{-# LANGUAGE StaticPointers       #-}
-{-# LANGUAGE TemplateHaskell      #-}
-{-# LANGUAGE TypeSynonymInstances #-}
+{-# LANGUAGE DeriveAnyClass        #-}
+{-# LANGUAGE DeriveDataTypeable    #-}
+{-# LANGUAGE DeriveFoldable        #-}
+{-# LANGUAGE DeriveFunctor         #-}
+{-# LANGUAGE DeriveGeneric         #-}
+{-# LANGUAGE DeriveTraversable     #-}
+{-# LANGUAGE FlexibleInstances     #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE NamedFieldPuns        #-}
+{-# LANGUAGE StaticPointers        #-}
+{-# LANGUAGE TemplateHaskell       #-}
+{-# LANGUAGE TypeSynonymInstances  #-}
 {-# OPTIONS_GHC -Wall #-}
 
 module Data.Locations.Loc where
 
 import           Control.Applicative
-import           Control.Lens
-import           Control.Monad              (foldM)
 import           Control.Funflow.ContentHashable
+import           Control.Lens
+import           Control.Monad                   (foldM)
 import           Data.Aeson
-import           Data.Binary                (Binary)
-import qualified Data.HashMap.Strict        as HM
+import           Data.Binary                     (Binary)
+import qualified Data.HashMap.Strict             as HM
 import           Data.Locations.LocVariable
 import           Data.Representable
-import           Data.Store (Store)
+import           Data.Store                      (Store)
 import           Data.String
-import qualified Data.Text                  as T
-import           GHC.Generics               (Generic)
-import qualified Network.URL                as URL
-import qualified System.Directory           as Dir (createDirectoryIfMissing)
-import qualified System.FilePath            as Path
+import qualified Data.Text                       as T
+import           GHC.Generics                    (Generic)
+import qualified Network.URL                     as URL
+import qualified System.Directory                as Dir (createDirectoryIfMissing)
+import qualified System.FilePath                 as Path
 
 
 -- | Each location bit can be a simple chunk of string, or a variable name

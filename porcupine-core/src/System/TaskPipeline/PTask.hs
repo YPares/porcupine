@@ -23,8 +23,9 @@ module System.TaskPipeline.PTask
   , PTask
   , Severity(..)
   , CanRunPTask
+  , Properties
   , tryPTask, throwPTask, clockPTask
-  , unsafeLiftToPTask, unsafeRunIOTask
+  , unsafeLiftToPTask, unsafeLiftToPTask', unsafeRunIOTask
   , ptaskRequirements
   , ptaskRunnable
   , ptaskDataAccessTree
@@ -42,6 +43,7 @@ import qualified Control.Arrow.Free                 as AF
 import           Control.Category
 import           Control.DeepSeq                    (NFData (..), force)
 import           Control.Exception                  (evaluate)
+import           Control.Funflow                    (Properties)
 import           Control.Lens
 import           Control.Monad.IO.Class
 import           Data.Locations
@@ -63,6 +65,7 @@ unsafeRunIOTask
   => (i -> IO o)
   -> PTask m i o
 unsafeRunIOTask f = unsafeLiftToPTask (liftIO . f)
+                    -- TODO: implement it using stepIO instead
 
 -- | Catches an error happening in a task. Leaves the tree intact if an error
 -- occured.
@@ -83,7 +86,14 @@ throwPTask = unsafeLiftToPTask $ \i ->
 -- the LocationTree.
 unsafeLiftToPTask :: (KatipContext m)
                   => (a -> m b) -> PTask m a b
-unsafeLiftToPTask = runnableWithoutReqs . toRunnable
+unsafeLiftToPTask = makePTask mempty . const
+
+-- | A version of 'unsafeLiftToPTask' that can perform caching. It's analog to
+-- funflow wrap' except the action passed here is just a simple function (it
+-- will be wrapped later as a funflow effect).
+unsafeLiftToPTask' :: (KatipContext m)
+                   => Properties a b -> (a -> m b) -> PTask m a b
+unsafeLiftToPTask' props = makePTask' props mempty . const
 
 -- This orphan instance is necessary so clockPTask may work over an 'Either
 -- SomeException a'

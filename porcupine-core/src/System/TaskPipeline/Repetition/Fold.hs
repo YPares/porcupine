@@ -63,7 +63,7 @@ foldStreamTask (FoldA step start done) =
     runnable =
       id &&&& (pure () >>> runnableStart) >>> loopStep >>> first runnableDone
     loopStep = proc (Pair stream acc) -> do
-      firstElem <- toRunnable S.next -< stream
+      firstElem <- withRunnableState (const S.next) -< stream
       case firstElem of
         Left r -> returnA -< (acc, r)
         Right (a, stream') -> do

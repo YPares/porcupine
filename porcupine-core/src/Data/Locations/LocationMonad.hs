@@ -39,8 +39,8 @@ import           Network.AWS.S3
 import qualified Network.AWS.S3.TaskPipelineUtils      as S3
 import           Streaming
 import           System.Clock
-import           System.Directory                      (createDirectoryIfMissing
-                                                       ,doesPathExist)
+import           System.Directory                      (createDirectoryIfMissing,
+                                                        doesPathExist)
 import qualified System.FilePath                       as Path
 import qualified System.IO.Temp                        as Tmp
 
@@ -172,7 +172,7 @@ instance MonadBaseControl IO (ResourceT IO) where
 
 instance LocationMonad AWS where
   locExists (LocalFile l) = locExists_Local l
-  locExists _ = return True -- TODO: Implement it
+  locExists _             = return True -- TODO: Implement it
   writeBSS (LocalFile l) = writeBSS_Local l
   writeBSS l             = writeBSS_S3 l
   readBSS (LocalFile l) = readBSS_Local l

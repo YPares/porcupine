@@ -40,6 +40,8 @@ import qualified Data.HashMap.Strict                as HM
 import           Data.Locations
 import           Data.Maybe                         (maybe)
 import           Data.Monoid
+import           Data.Representable
+import qualified Data.Text                          as T
 import           Data.Typeable
 import           Streaming                          (Of (..), Stream)
 import qualified Streaming.Prelude                  as S
@@ -114,9 +116,13 @@ accessVirtualFile repIndices vfile =
   withVFileAccessFunction vfile' $ \accessFn inputStream ->
     return $ S.mapM (runOnce accessFn) inputStream
   where
-    runOnce :: (LocVariableMap -> DataAccessFn m a b) -> ([idx], a) -> m ([idx], b)
-    runOnce accessFn (ixVals, input) = (ixVals,) <$> runDataAccessFn (accessFn lvMap) input
-      where lvMap = HM.fromList $ zip repIndices $ map show ixVals
+    runOnce :: (LocVariableMap -> DataAccessor m a b) -> ([idx], a) -> m ([idx], b)
+    runOnce accessFn (ixVals, input) = do
+      daPerformWrite da input
+      (ixVals,) <$> daPerformRead da
+      where
+        da = accessFn lvMap
+        lvMap = HM.fromList $ zip repIndices $ map show ixVals
     vfile' = case repIndices of
       [] -> vfile
       _  -> vfile & over (vfileSerials.serialsRepetitionKeys) (repIndices++)
@@ -127,7 +133,7 @@ withVFileAccessFunction
   :: forall m i o a b.
      (MonadThrow m, KatipContext m, Typeable a, Typeable b)
   => VirtualFile a b  -- ^ The VirtualFile to access
-  -> ((LocVariableMap -> DataAccessFn m a b) -> i -> m o)
+  -> ((LocVariableMap -> DataAccessor m a b) -> i -> m o)
          -- ^ The action to run. It will be a function to access the
          -- VirtualFile. The LocVariableMap can just be empty if the VirtualFile
          -- isn't meant to be repeated
@@ -135,7 +141,7 @@ withVFileAccessFunction
 withVFileAccessFunction vfile f =
   withFolderAccessNodes path (Identity fname) $
     \(Identity n) input -> case n of
-      DataAccessNode _ (action :: LocVariableMap -> DataAccessFn m a' b') ->
+      DataAccessNode _ (action :: LocVariableMap -> DataAccessor m a' b') ->
         case (eqT :: Maybe (a :~: a'), eqT :: Maybe (b :~: b')) of
           (Just Refl, Just Refl)
             -> f action input
@@ -182,14 +188,15 @@ getLocsMappedTo :: (KatipContext m, MonadThrow m)
 getLocsMappedTo path = runnableWithoutReqs $ withRunnableState $
                          \state _ -> getLocs $ state^.ptrsDataAccessTree
   where
+    onErr (Left s) = throwWithPrefix $
+      "getLocsMappedTo (" ++ T.unpack (toTextRepr (LTP path)) ++ "): " ++ s
+    onErr (Right x) = return x
     getLocs tree =
       case tree ^? (atSubfolderRec path . locTreeNodeTag) of
         -- NOTE: Will fail on repeated folders (because here we can only access
         -- the final locations -- with variables spliced in -- in the case of
         -- nodes with a data access function, not intermediary folders).
         Just (MbDataAccessNode locsWithVars (First mbAccess)) -> case mbAccess of
-          Just (SomeDataAccess fn) -> getLocsAccessed $ fn mempty
-          Nothing -> case traverse terminateLocWithVars locsWithVars of
-            Left e -> throwWithPrefix $ "getLocsMappedTo: " ++ e
-            Right l -> return l
+          Just (SomeDataAccess fn) -> onErr $ daLocsAccessed $ fn mempty
+          Nothing -> onErr $ traverse terminateLocWithVars locsWithVars
         _ -> return []
