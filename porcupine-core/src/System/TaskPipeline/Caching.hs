@@ -11,7 +11,6 @@ module System.TaskPipeline.Caching
   ) where
 
 import           Control.Funflow
-import           Control.Funflow.ContentHashable
 import           Control.Lens                          (over, traversed)
 import           Control.Monad.Catch
 import           Data.Default                          (Default (..))
@@ -19,8 +18,6 @@ import           Data.Locations.Loc
 import           Data.Locations.LogAndErrors
 import           Data.Locations.VirtualFile
 import qualified Data.Text                             as T
-import           Katip
-import qualified Path
 import           System.TaskPipeline.PTask
 import           System.TaskPipeline.ResourceTree
 import           System.TaskPipeline.VirtualFileAccess

@@ -10,6 +10,7 @@
 {-# LANGUAGE TupleSections       #-}
 {-# LANGUAGE ViewPatterns        #-}
 {-# OPTIONS_GHC -fno-warn-missing-pattern-synonym-signatures #-}
+{-# OPTIONS_GHC -fno-warn-name-shadowing #-}
 
 -- | This file describes the ResourceTree API. The ResourceTree is central to
 -- every pipeline that runs. It is aggregated from each subtask composing the
@@ -127,8 +128,8 @@ pattern DataAccessNode l x = MbDataAccessNode l (First (Just (SomeDataAccess x))
 
 
 instance Semigroup VirtualFileNode where
-  MbVirtualFileNode at vf <> MbVirtualFileNode at' vf' =
-    MbVirtualFileNode (at <> at') (vf <> vf')
+  MbVirtualFileNode ats vf <> MbVirtualFileNode ats' vf' =
+    MbVirtualFileNode (ats <> ats') (vf <> vf')
 instance Monoid VirtualFileNode where
   mempty = MbVirtualFileNode [] mempty
 -- TODO: It is dubious that composing DataAccessNodes is really needed in the
