@@ -52,11 +52,11 @@ import           Data.Void
 -- | Tells how the file is meant to be read
 data LayeredReadScheme b where
   SingleLayerRead     :: LayeredReadScheme b
-    -- ^ No layered reading accepted
+    -- No layered reading accepted
   LayeredRead         :: Semigroup b => LayeredReadScheme b
-    -- ^ A layered reading combining all the layers with (<>)
+    -- A layered reading combining all the layers with (<>)
   LayeredReadWithNull :: Monoid b => LayeredReadScheme b
-    -- ^ Like 'LayeredRead', and handles mapping to no layer (mempty)
+    -- Like 'LayeredRead', and handles mapping to no layer (mempty)
 
 -- | A virtual file in the location tree to which we can write @a@ and from
 -- which we can read @b@.
