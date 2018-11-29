@@ -7,10 +7,12 @@
 module Control.Arrow.FoldA
   ( module Control.Foldl
   , FoldA(..)
+  , FoldA'
   , Pair(..)
   , generalizeA
   , specializeA
   , premapA
+  , premapInitA
   , postmapA
   , prefilterA
 
@@ -63,25 +65,28 @@ secondP :: (Arrow a) => a c c' -> a (Pair b c) (Pair b c')
 secondP ar =
   arr toTup >>> second ar >>> arr fromTup
 
--- | If arr is (->), then 'FoldA' is just 'Fold'
-data FoldA arr a b =
-  forall x. FoldA (arr (Pair x a) x) (arr () x) (arr x b)
+-- | If @i@ is () and @arr@ is (->), then 'FoldA' is just 'Fold'
+data FoldA arr i a b =
+  forall x. FoldA (arr (Pair x a) x) (arr i x) (arr x b)
 
-generalizeA :: (Arrow arr) => Fold a b -> FoldA arr a b
+-- | A fold that will directly receive its initial accumulator
+type FoldA' arr a b = FoldA arr b a b
+
+generalizeA :: (Arrow arr) => Fold a b -> FoldA arr i a b
 generalizeA (Fold step start done) =
   FoldA (arr $ uncurryP step) (ret start) (arr done)
 
-specializeA :: FoldA (->) a b -> Fold a b
+specializeA :: FoldA (->) () a b -> Fold a b
 specializeA (FoldA step start done) =
   Fold (\x a -> step $ Pair x a) (start ()) done
 
-instance (Arrow arr) => Functor (FoldA arr a) where
+instance (Arrow arr) => Functor (FoldA arr i a) where
   fmap f (FoldA step start done) = FoldA step start done'
     where
       done' = done >>> arr (f $!)
   {-# INLINE fmap #-}
 
-instance (Arrow arr) => Applicative (FoldA arr a) where
+instance (Arrow arr) => Applicative (FoldA arr i a) where
   pure x = FoldA (ret ()) (ret ()) (ret x)
   {-# INLINE pure #-}
 
@@ -95,27 +100,35 @@ instance (Arrow arr) => Applicative (FoldA arr a) where
     in FoldA step start done
   {-# INLINE (<*>) #-}
 
-instance (Arrow arr) => Profunctor (FoldA arr) where
+instance (Arrow arr) => Profunctor (FoldA arr i) where
   rmap = fmap
   lmap f (FoldA step start done) = FoldA step' start done
     where
       step' = arr (\(Pair x a) -> Pair x (f a)) >>> step
   {-# INLINE lmap #-}
 
+-- | Changes the type initializing the accumulator
+premapInitA :: (Arrow arr)
+            => arr i' i -> FoldA arr i a b -> FoldA arr i' a b
+premapInitA ar (FoldA step start done) =
+  FoldA step (ar >>> start) done
+
+-- | Changes all the inputs arriving to the 'FoldA'
 premapA :: (Arrow arr)
-        => arr a b -> FoldA arr b r -> FoldA arr a r
+        => arr a b -> FoldA arr i b r -> FoldA arr i a r
 premapA ar (FoldA step start done) =
   FoldA (secondP ar >>> step) start done
 {-# INLINABLE premapA #-}
 
+-- | Changes the output of the 'FoldA'
 postmapA :: (Category arr)
-         => FoldA arr a b -> arr b r -> FoldA arr a r
+         => FoldA arr i a b -> arr b r -> FoldA arr i a r
 postmapA (FoldA step start done) ar =
   FoldA step start (done >>> ar)
 {-# INLINABLE postmapA #-}
 
 prefilterA :: (ArrowChoice arr)
-           => arr a Bool -> FoldA arr a r -> FoldA arr a r
+           => arr a Bool -> FoldA arr i a r -> FoldA arr i a r
 prefilterA fltr (FoldA step start done) =
   FoldA (proc (Pair x a) -> do
             b <- fltr -< a

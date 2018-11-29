@@ -43,6 +43,7 @@ dependencies:
   - profunctors
   - resourcet
   - retry
+  - store
   - streaming
   - streaming-bytestring
   - streaming-conduit

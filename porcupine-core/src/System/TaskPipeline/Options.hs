@@ -15,21 +15,19 @@ module System.TaskPipeline.Options
   , docField
   ) where
 
-import           Prelude                               hiding (id, (.))
-
-import           Control.Lens
 import           Data.Aeson
 import           Data.DocRecord
 import           Data.DocRecord.OptParse
 import           Data.Locations.LocationMonad
 import           Data.Locations.SerializationMethod
 import           Data.Locations.VirtualFile
-import           Data.Monoid                           (Last (..))
 import           Data.Typeable
 import           GHC.TypeLits                          (KnownSymbol)
 import           Katip
 import           System.TaskPipeline.PTask
 import           System.TaskPipeline.VirtualFileAccess
+
+import           Prelude                               hiding (id, (.))
 
 
 -- | Add a set of options (as a DocRec) to the 'LocationTree', in order to
@@ -41,21 +39,9 @@ getOptions
                              -- docs and default values
   -> PTask m () (DocRec rs)  -- ^ A PTask that returns the new options values,
                              -- overriden by the user
-getOptions path defOpts = arr (const $ error "getOptions: THIS IS VOID") >>> accessVirtualFile vfile >>> arr post
-  where
-    defOpts' = Last $ Just defOpts
-    post (Last Nothing)  = defOpts
-    post (Last (Just x)) = x
-    vfile = bidirVirtualFile path $
-            serials & serialWriters . serialWritersToOutputFile .~ mempty
-            -- We remove all the writers, so if options are read from a file
-            -- this file isn't overwritten
-    serials =
-      someBidirSerial (DocRecSerial defOpts' post (Last . Just))
-      -- TODO: merge properly the docrecs here instead of just using the last
-      -- one
-      <>
-      someBidirSerial JSONSerial
+getOptions path defOpts = loadData $
+  bidirVirtualFile path $
+    someBidirSerial (DocRecSerial defOpts id id) <> someBidirSerial JSONSerial
 
 -- | Just like 'getOptions', but for a single field.
 getOption

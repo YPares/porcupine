@@ -4,7 +4,8 @@ module Porcupine.Serials
   , BidirVirtualFile, DataSource, DataSink
   , LocationTreePathItem
   , localFile
-  , unusedByDefault, documentedFile
+  , documentedFile
+  , usesLayeredMapping, canBeUnmapped, unmappedByDefault
   , bidirVirtualFile, dataSource, dataSink
   , ensureBidirFile, makeSource, makeSink )
 where

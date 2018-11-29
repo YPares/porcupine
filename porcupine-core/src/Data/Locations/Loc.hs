@@ -1,32 +1,35 @@
-{-# LANGUAGE DeriveAnyClass       #-}
-{-# LANGUAGE DeriveDataTypeable   #-}
-{-# LANGUAGE DeriveFoldable       #-}
-{-# LANGUAGE DeriveFunctor        #-}
-{-# LANGUAGE DeriveGeneric        #-}
-{-# LANGUAGE DeriveTraversable    #-}
-{-# LANGUAGE FlexibleInstances    #-}
-{-# LANGUAGE NamedFieldPuns       #-}
-{-# LANGUAGE StaticPointers       #-}
-{-# LANGUAGE TemplateHaskell      #-}
-{-# LANGUAGE TypeSynonymInstances #-}
+{-# LANGUAGE DeriveAnyClass        #-}
+{-# LANGUAGE DeriveDataTypeable    #-}
+{-# LANGUAGE DeriveFoldable        #-}
+{-# LANGUAGE DeriveFunctor         #-}
+{-# LANGUAGE DeriveGeneric         #-}
+{-# LANGUAGE DeriveTraversable     #-}
+{-# LANGUAGE FlexibleInstances     #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE NamedFieldPuns        #-}
+{-# LANGUAGE StaticPointers        #-}
+{-# LANGUAGE TemplateHaskell       #-}
+{-# LANGUAGE TypeSynonymInstances  #-}
 {-# OPTIONS_GHC -Wall #-}
 
 module Data.Locations.Loc where
 
 import           Control.Applicative
+import           Control.Funflow.ContentHashable
 import           Control.Lens
-import           Control.Monad              (foldM)
+import           Control.Monad                   (foldM)
 import           Data.Aeson
-import           Data.Binary                (Binary)
-import qualified Data.HashMap.Strict        as HM
+import           Data.Binary                     (Binary)
+import qualified Data.HashMap.Strict             as HM
 import           Data.Locations.LocVariable
 import           Data.Representable
+import           Data.Store                      (Store)
 import           Data.String
-import qualified Data.Text                  as T
-import           GHC.Generics               (Generic)
-import qualified Network.URL                as URL
-import qualified System.Directory           as Dir (createDirectoryIfMissing)
-import qualified System.FilePath            as Path
+import qualified Data.Text                       as T
+import           GHC.Generics                    (Generic)
+import qualified Network.URL                     as URL
+import qualified System.Directory                as Dir (createDirectoryIfMissing)
+import qualified System.FilePath                 as Path
 
 
 -- | Each location bit can be a simple chunk of string, or a variable name
@@ -34,7 +37,7 @@ import qualified System.FilePath            as Path
 data LocBit
   = LocBitChunk FilePath  -- ^ A raw filepath part, to be used as is
   | LocBitVarRef LocVariable -- ^ A variable name
-  deriving (Eq, Generic, ToJSON, FromJSON)
+  deriving (Eq, Generic, ToJSON, FromJSON, Store)
 
 instance Show LocBit where
   show (LocBitChunk s)                = s
@@ -46,6 +49,7 @@ locBitContent f (LocBitVarRef (LocVariable v)) = LocBitVarRef . LocVariable <$> 
 
 -- | A newtype so that we can redefine the Show instance
 newtype LocString = LocString [LocBit]
+  deriving (Generic, Store)
 
 instance Semigroup LocString where
   LocString l1 <> LocString l2 = LocString $ concatLocBitChunks $ l1++l2
@@ -70,7 +74,9 @@ concatLocBitChunks (x : rest) = x : concatLocBitChunks rest
 concatLocBitChunks [] = []
 
 data LocFilePath a = LocFilePath { _pathWithoutExt :: a, _pathExtension :: String }
-  deriving (Eq, Ord, Generic, ToJSON, FromJSON, Functor, Foldable, Traversable, Binary)
+  deriving (Eq, Ord, Generic, ToJSON, FromJSON, Functor, Foldable, Traversable, Binary, Store)
+
+instance (Monad m, ContentHashable m a) => ContentHashable m (LocFilePath a)
 
 makeLenses ''LocFilePath
 
@@ -113,7 +119,10 @@ data Loc_ a
      | ParquetObj ...
      | SQLTableObj ...
   -}
-  deriving (Eq, Ord, Generic, ToJSON, FromJSON, Functor, Foldable, Traversable, Binary)
+  deriving ( Eq, Ord, Generic, ToJSON, FromJSON
+           , Functor, Foldable, Traversable, Binary, Store )
+
+instance (Monad m, ContentHashable m a) => ContentHashable m (Loc_ a)
 
 instance (IsLocString a) => Show (Loc_ a) where
   show LocalFile{ filePath } = show filePath
@@ -162,6 +171,14 @@ spliceLocVariables vars = over locVariables $ \v -> case v of
       Just val -> LocBitChunk val
       Nothing  -> v
   _ -> error "spliceLocVariables: Should not happen"
+
+terminateLocWithVars :: LocWithVars -> Either String Loc
+terminateLocWithVars = traverse terminateLocString
+  where
+    terminateLocString (LocString [LocBitChunk s]) = Right s
+    terminateLocString locString = Left $
+      "Variable(s) " ++ show (locString ^.. locStringVariables)
+      ++ " in '" ++ show locString ++ "' haven't been given a value"
 
 -- | Means that @a@ can represent file paths
 class (Monoid a) => IsLocString a where

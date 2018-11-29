@@ -9,17 +9,18 @@ module Data.Locations.VirtualFile
   ( LocationTreePathItem
   , module Data.Locations.SerializationMethod
   , Profunctor(..)
-  , VirtualFile(..), VirtualFileUsage(..)
+  , VirtualFile(..), LayeredReadScheme(..)
   , BidirVirtualFile, DataSource, DataSink
   , VirtualFileIntent(..), VirtualFileDescription(..)
   , DocRecOfOptions, RecOfOptions(..)
   , vfileBidirProof, vfileSerials
   , vfileAsBidir, vfileAsBidirE
   , vfileEmbeddedValue, vfileIntermediaryValue, vfileAesonValue
-  , vfilePath, showVFilePath, vfileUsage
+  , vfilePath, showVFilePath, vfileLayeredReadScheme
   , dataSource, dataSink, bidirVirtualFile, ensureBidirFile
   , makeSink, makeSource
-  , documentedFile, unusedByDefault
+  , documentedFile
+  , usesLayeredMapping, canBeUnmapped, unmappedByDefault
   , getVirtualFileDescription
   , vfileRecOfOptions
   ) where
@@ -48,29 +49,33 @@ import           Data.Void
 
 -- * The general 'VirtualFile' type
 
--- | Tells whether the file can remain unmapped or not
-data VirtualFileUsage = MustBeMapped
-                      | CanBeUnmapped
-                      | UnmappedByDefault
-  deriving (Eq, Show)
+-- | Tells how the file is meant to be read
+data LayeredReadScheme b where
+  SingleLayerRead     :: LayeredReadScheme b
+    -- ^ No layered reading accepted
+  LayeredRead         :: Semigroup b => LayeredReadScheme b
+    -- ^ A layered reading combining all the layers with (<>)
+  LayeredReadWithNull :: Monoid b => LayeredReadScheme b
+    -- ^ Like 'LayeredRead', and handles mapping to no layer (mempty)
 
 -- | A virtual file in the location tree to which we can write @a@ and from
 -- which we can read @b@.
 data VirtualFile a b = VirtualFile
-  { _vfilePath          :: [LocationTreePathItem]
-  , _vfileUsage         :: VirtualFileUsage
-  , _vfileDocumentation :: Maybe T.Text
-  , _vfileBidirProof    :: Maybe (a :~: b)
+  { _vfilePath              :: [LocationTreePathItem]
+  , _vfileLayeredReadScheme :: LayeredReadScheme b
+  , _vfileMappedByDefault   :: Bool
+  , _vfileDocumentation     :: Maybe T.Text
+  , _vfileBidirProof        :: Maybe (a :~: b)
                     -- Temporary, necessary until we can do away with docrec
                     -- conversion in the writer part of SerialsFor
-  , _vfileSerials       :: SerialsFor a b }
+  , _vfileSerials           :: SerialsFor a b }
 
 makeLenses ''VirtualFile
 
 -- How we derive the default configuration for mapping some VirtualFile
 instance HasDefaultMappingRule (VirtualFile a b) where
-  getDefaultLocShortcut vf
-    | vf ^. vfileUsage /= UnmappedByDefault = Just $
+  getDefaultLocShortcut vf = if vf ^. vfileMappedByDefault
+    then Just $
       case vf ^? vfileSerials . serialsRepetitionKeys . filtered (not . null) of
         Nothing -> DeriveWholeLocFromTree defExt
         -- LIMITATION: For now we suppose that every reading/writing function in
@@ -80,7 +85,7 @@ instance HasDefaultMappingRule (VirtualFile a b) where
               ls = LocString $ (LocBitChunk "-")
                    : intersperse (LocBitChunk "-") (map toVar rkeys)
           in LocFilePath ls $ T.unpack defExt
-    | otherwise = Nothing
+    else Nothing
     where
       defExt =
         case vf ^. vfileSerials . serialDefaultExt of
@@ -90,13 +95,14 @@ instance HasDefaultMappingRule (VirtualFile a b) where
 -- For now, given the requirement of PTask, VirtualFile has to be a Monoid
 -- because a Resource Tree also has to.
 instance Semigroup (VirtualFile a b) where
-  VirtualFile p u d b s <> VirtualFile _ _ _ _ s' =
-    VirtualFile p u d b (s<>s')
+  VirtualFile p u m d b s <> VirtualFile _ _ _ _ _ s' =
+    VirtualFile p u m d b (s<>s')
 instance Monoid (VirtualFile a b) where
-  mempty = VirtualFile [] UnmappedByDefault Nothing Nothing mempty
+  mempty = VirtualFile [] SingleLayerRead True Nothing Nothing mempty
 
 instance Profunctor VirtualFile where
-  dimap f g (VirtualFile p u d _ s) = VirtualFile p u d Nothing $ dimap f g s
+  dimap f g (VirtualFile p _ m d _ s) =
+    VirtualFile p SingleLayerRead m d Nothing $ dimap f g s
 
 
 -- * Obtaining a description of how the 'VirtualFile' should be used
@@ -152,9 +158,22 @@ getVirtualFileDescription vf =
 showVFilePath :: VirtualFile a b -> String
 showVFilePath = T.unpack . toTextRepr .  LTP . _vfilePath
 
--- | Indicates that the file should be mapped to 'null' by default
-unusedByDefault :: VirtualFile a b -> VirtualFile a b
-unusedByDefault = vfileUsage .~ UnmappedByDefault
+-- | Indicates that the file uses layered mapping
+usesLayeredMapping :: (Semigroup b) => VirtualFile a b -> VirtualFile a b
+usesLayeredMapping =
+  vfileLayeredReadScheme .~ LayeredRead
+
+-- | Indicates that the file uses layered mapping, and additionally can be left
+-- unmapped (ie. mapped to null)
+canBeUnmapped :: (Monoid b) => VirtualFile a b -> VirtualFile a b
+canBeUnmapped =
+  vfileLayeredReadScheme .~ LayeredReadWithNull
+
+-- | Indicates that the file should be mapped to null by default
+unmappedByDefault :: (Monoid b) => VirtualFile a b -> VirtualFile a b
+unmappedByDefault =
+    (vfileLayeredReadScheme .~ LayeredReadWithNull)
+  . (vfileMappedByDefault .~ False)
 
 -- | Gives a documentation to the 'VirtualFile'
 documentedFile :: T.Text -> VirtualFile a b -> VirtualFile a b
@@ -177,17 +196,17 @@ type DataSink a = VirtualFile a ()
 -- the data. You should prefer 'dataSink' and 'dataSource' for clarity when the
 -- file is meant to be readonly or writeonly.
 virtualFile :: [LocationTreePathItem] -> Maybe (a :~: b) -> SerialsFor a b -> VirtualFile a b
-virtualFile path refl sers = VirtualFile path CanBeUnmapped Nothing refl sers
+virtualFile path refl sers = VirtualFile path SingleLayerRead True Nothing refl sers
 
 -- | Creates a virtual file from its virtual path and ways to deserialize the
 -- data.
 dataSource :: [LocationTreePathItem] -> SerialsFor a b -> DataSource b
-dataSource path = virtualFile path Nothing . eraseSerials
+dataSource path = makeSource . virtualFile path Nothing
 
 -- | Creates a virtual file from its virtual path and ways to serialize the
 -- data.
 dataSink :: [LocationTreePathItem] -> SerialsFor a b -> DataSink a
-dataSink path = virtualFile path Nothing . eraseDeserials
+dataSink path = makeSink . virtualFile path Nothing
 
 -- | Like VirtualFile, except we will embed the proof that @a@ and @b@ are the same
 bidirVirtualFile :: [LocationTreePathItem] -> BidirSerials a -> BidirVirtualFile a
@@ -201,7 +220,8 @@ ensureBidirFile vf = vf{_vfileBidirProof=Just Refl}
 
 makeSink :: VirtualFile a b -> DataSink a
 makeSink vf = vf{_vfileSerials=eraseDeserials $ _vfileSerials vf
-                ,_vfileBidirProof=Nothing}
+                ,_vfileBidirProof=Nothing
+                ,_vfileLayeredReadScheme=LayeredReadWithNull}
 
 makeSource :: VirtualFile a b -> DataSource b
 makeSource vf = vf{_vfileSerials=eraseSerials $ _vfileSerials vf

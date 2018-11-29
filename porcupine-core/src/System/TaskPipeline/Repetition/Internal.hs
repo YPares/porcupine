@@ -1,3 +1,6 @@
+{-# LANGUAGE RecordWildCards #-}
+{-# OPTIONS_GHC -fno-warn-name-shadowing #-}
+
 module System.TaskPipeline.Repetition.Internal
   ( RepInfo(..)
   , repIndex
@@ -65,9 +68,11 @@ makeRepeatable (RepInfo repetitionKey mbVerb) =
     ( fmap addKeyToVirtualFile reqTree
     , keepingIndex $ modifyingRuntimeState alterState snd runnable )
   where
-    addKeyToVirtualFile (VirtualFileNode vf) =
-      VirtualFileNode $ vf &
+    addKeyToVirtualFile (VirtualFileNode{..}) =
+      VirtualFileNode
+      {vfnodeFile = vfnodeFile &
         over (vfileSerials.serialsRepetitionKeys) (repetitionKey:)
+      ,..}
     addKeyToVirtualFile emptyNode = emptyNode
 
     alterState (idx,_) =

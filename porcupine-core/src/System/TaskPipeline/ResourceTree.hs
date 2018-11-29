@@ -5,10 +5,12 @@
 {-# LANGUAGE GADTs               #-}
 {-# LANGUAGE OverloadedStrings   #-}
 {-# LANGUAGE PatternSynonyms     #-}
+{-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TupleSections       #-}
 {-# LANGUAGE ViewPatterns        #-}
 {-# OPTIONS_GHC -fno-warn-missing-pattern-synonym-signatures #-}
+{-# OPTIONS_GHC -fno-warn-name-shadowing #-}
 
 -- | This file describes the ResourceTree API. The ResourceTree is central to
 -- every pipeline that runs. It is aggregated from each subtask composing the
@@ -77,30 +79,44 @@ import           System.TaskPipeline.ConfigurationReader
 -- | The internal part of a 'VirtualFileNode', closing over the type params of
 -- the 'VirtualFile'
 data SomeVirtualFile where
-  SomeVirtualFile :: (Typeable a, Typeable b, Monoid b) => VirtualFile a b -> SomeVirtualFile
+  SomeVirtualFile :: (Typeable a, Typeable b)
+                  => VirtualFile a b
+                  -> SomeVirtualFile
 
 instance Semigroup SomeVirtualFile where
   SomeVirtualFile vf <> SomeVirtualFile vf' = case cast vf' of
-    Just vf'' -> SomeVirtualFile $ vf <> vf''
+    Just vf'' -> SomeVirtualFile (vf <> vf'')
     Nothing -> error "Two differently typed VirtualFiles are at the same location"
+
+
+data DataAccessor m a b = DataAccessor
+  { daPerformWrite :: a -> m ()
+  , daPerformRead  :: m b
+  , daLocsAccessed :: Either String [Loc] }
 
 -- | The internal part of a 'DataAccessNode, closing over the type params of the
 -- access function.
 data SomeDataAccess m where
   SomeDataAccess :: (Typeable a, Typeable b)
-                 => (LocVariableMap -> a -> m b) -> SomeDataAccess m
+                 => (LocVariableMap -> DataAccessor m a b) -> SomeDataAccess m
+
+-- | Tells the type of accesses that some VirtualFile will undergo. They are
+-- accumulated though the whole pipeline.
+data VFNodeAccessType = ATWrite | ATRead
+  deriving (Eq, Show)
 
 -- | The nodes of the ResourceTree, before mapping each 'VirtualFiles' to
 -- physical locations
-data VirtualFileNode = MbVirtualFileNode (Maybe SomeVirtualFile)
+data VirtualFileNode = MbVirtualFileNode [VFNodeAccessType] (Maybe SomeVirtualFile)
 -- | A non-empty 'VirtualFileNode'
-pattern VirtualFileNode x = MbVirtualFileNode (Just (SomeVirtualFile x))
+pattern VirtualFileNode {vfnodeAccesses, vfnodeFile} =
+  MbVirtualFileNode vfnodeAccesses (Just (SomeVirtualFile vfnodeFile))
 
 -- | The nodes of the ResourceTree, after mapping each 'VirtualFiles' to
 -- physical locations
 data PhysicalFileNode = MbPhysicalFileNode [LocWithVars] (Maybe SomeVirtualFile)
 -- | A non-empty 'PhysicalFileNode'
-pattern PhysicalFileNode l x = MbPhysicalFileNode l (Just (SomeVirtualFile x))
+pattern PhysicalFileNode l vf = MbPhysicalFileNode l (Just (SomeVirtualFile vf))
 
 -- | The nodes of the LocationTree after the 'VirtualFiles' have been resolved
 -- to physical paths, and data possibly extracted from these paths
@@ -112,9 +128,10 @@ pattern DataAccessNode l x = MbDataAccessNode l (First (Just (SomeDataAccess x))
 
 
 instance Semigroup VirtualFileNode where
-  MbVirtualFileNode vf <> MbVirtualFileNode vf' = MbVirtualFileNode $ vf <> vf'
+  MbVirtualFileNode ats vf <> MbVirtualFileNode ats' vf' =
+    MbVirtualFileNode (ats <> ats') (vf <> vf')
 instance Monoid VirtualFileNode where
-  mempty = MbVirtualFileNode mempty
+  mempty = MbVirtualFileNode [] mempty
 -- TODO: It is dubious that composing DataAccessNodes is really needed in the
 -- end. Find a way to remove that.
 instance Semigroup (DataAccessNode m) where
@@ -123,7 +140,9 @@ instance Monoid (DataAccessNode m) where
   mempty = MbDataAccessNode [] mempty
 
 instance Show VirtualFileNode where
-  show (VirtualFileNode vf) = "VirtualFileNode with " ++ show (getVirtualFileDescription vf)
+  show (VirtualFileNode{..}) =
+    "VirtualFileNode with " ++ show (getVirtualFileDescription vfnodeFile)
+    ++ " accessed for: " ++ show vfnodeAccesses
   show _                    = ""
   -- TODO: Cleaner Show
   -- TODO: Display read/written types here, since they're already Typeable
@@ -134,7 +153,8 @@ instance Show PhysicalFileNode where
               (intersperse " << "
                (map toTextRepr layers)))
     ++ case mbVF of
-         Just (SomeVirtualFile vf) -> " - " ++ show (getVirtualFileDescription vf)
+         Just (SomeVirtualFile vf) ->
+           " - " ++ show (getVirtualFileDescription vf)
          _ -> ""
 
 
@@ -151,8 +171,8 @@ type PhysicalResourceTree = LocationTree PhysicalFileNode
 type DataResourceTree m = LocationTree (DataAccessNode m)
 
 instance HasDefaultMappingRule VirtualFileNode where
-  getDefaultLocShortcut (VirtualFileNode vf) = getDefaultLocShortcut vf
-  getDefaultLocShortcut _                    = Nothing
+  getDefaultLocShortcut (VirtualFileNode{..}) = getDefaultLocShortcut vfnodeFile
+  getDefaultLocShortcut _                     = Nothing
 
 -- | Filters the tree to get only the nodes that don't have data and can be
 -- mapped to external files
@@ -161,11 +181,11 @@ rscTreeToMappings
   -> Maybe LocationMappings
 rscTreeToMappings tree = mappingsFromLocTree <$> over filteredLocsInTree rmOpts tree
   where
-    rmOpts (VirtualFileNode vfile)
+    rmOpts (VirtualFileNode{..})
       | Just VFForCLIOptions <- intent = Nothing  -- Nodes with default data are
                                                   -- by default not put in the
                                                   -- mappings
-      where intent = vfileDescIntent $ getVirtualFileDescription vfile
+      where intent = vfileDescIntent $ getVirtualFileDescription vfnodeFile
     rmOpts n = Just n
 
 -- | Filters the tree to get only the nodes than can be embedded in the config file
@@ -174,10 +194,10 @@ rscTreeToEmbeddedDataTree
   -> Maybe VirtualResourceTree
 rscTreeToEmbeddedDataTree = over filteredLocsInTree keepOpts
   where
-    keepOpts n@(VirtualFileNode vfile)
+    keepOpts n@(VirtualFileNode{..})
       | Just VFForCLIOptions <- intent = Just n
       | otherwise = Nothing
-      where intent = vfileDescIntent $ getVirtualFileDescription vfile
+      where intent = vfileDescIntent $ getVirtualFileDescription vfnodeFile
     keepOpts n = Just n
 
 variablesSection :: T.Text
@@ -195,8 +215,8 @@ embeddedDataTreeToJSONFields thisPath (LocationTree mbOpts sub) =
   [(thisPath, Object $ opts' <> sub')]
   where
     opts' = case mbOpts of
-      VirtualFileNode vf ->
-        case Right vf ^? vfileAsBidirE . vfileAesonValue of
+      VirtualFileNode{..} ->
+        case Right vfnodeFile ^? vfileAsBidirE . vfileAesonValue of
           Just (Object o) -> o
           _               -> mempty
       _ -> mempty
@@ -281,7 +301,7 @@ rscTreeConfigurationReader (ResourceTreeAndMappings{rtamResourceTree=defTree}) =
           Left "Location mapping must be of the form \"virtual_path(+)=physical_path\""
 
     nodeAndRecOfOptions :: VirtualFileNode -> (VirtualFileNode, Maybe DocRecOfOptions)
-    nodeAndRecOfOptions n@(VirtualFileNode vf) = (n, vf ^? vfileAsBidir . vfileRecOfOptions)
+    nodeAndRecOfOptions n@(VirtualFileNode{..}) = (n, vfnodeFile ^? vfileAsBidir . vfileRecOfOptions)
     nodeAndRecOfOptions n = (n, Nothing)
     parseOptions :: RecOfOptions DocField -> Parser (RecOfOptions SourcedDocField)
     parseOptions (RecOfOptions r) = RecOfOptions <$>
@@ -318,8 +338,9 @@ rscTreeConfigurationReader (ResourceTreeAndMappings{rtamResourceTree=defTree}) =
       -> (LocationTreePath, (VirtualFileNode, Maybe (RecOfOptions SourcedDocField)))
       -> Either String VirtualFileNode
     replaceWithDataFromConfig (Just dataSectionContent)
-                              (LTP path, (node@(VirtualFileNode vf), mbRecFromCLI)) =
-      case findInAesonVal path dataSectionContent of
+                              (LTP path, (node@(VirtualFileNode{..}), mbRecFromCLI)) =
+      let rebuildNode newF = VirtualFileNode{vfnodeFile = newF, ..}
+      in case findInAesonVal path dataSectionContent of
           Right v -> case mbRecFromCLI of
             Just (RecOfOptions recFromCLI) -> do
               -- YAML: yes, CLI: yes
@@ -327,15 +348,15 @@ rscTreeConfigurationReader (ResourceTreeAndMappings{rtamResourceTree=defTree}) =
                 -- We merge the two configurations:
               let newOpts = RecOfOptions $ rmTags $
                     rzipWith chooseHighestPriority recFromYaml recFromCLI
-              return $ VirtualFileNode $ vf & vfileAsBidir . vfileRecOfOptions .~ newOpts
+              return $ rebuildNode $ vfnodeFile & vfileAsBidir . vfileRecOfOptions .~ newOpts
             Nothing ->
               -- YAML: yes, CLI: no
-              VirtualFileNode <$> (Right vf & vfileAsBidirE . vfileAesonValue .~ v)
+              rebuildNode <$> (Right vfnodeFile & vfileAsBidirE . vfileAesonValue .~ v)
           Left _ -> case mbRecFromCLI of
             Just (RecOfOptions recFromCLI) ->
               -- YAML: no, CLI: yes
-              return $ VirtualFileNode $
-                vf & vfileAsBidir . vfileRecOfOptions .~ RecOfOptions (rmTags recFromCLI)
+              return $ rebuildNode $
+                vfnodeFile & vfileAsBidir . vfileRecOfOptions .~ RecOfOptions (rmTags recFromCLI)
             Nothing ->
               -- YAML: no, CLI: no
               return node
@@ -357,10 +378,10 @@ applyOneRscMapping :: LocVariableMap -> [LocWithVars] -> VirtualFileNode -> Bool
 applyOneRscMapping variables configLayers mbVF mappingIsExplicit = buildPhysicalNode mbVF
   where
     configLayers' = map (spliceLocVariables variables) configLayers
-    buildPhysicalNode (VirtualFileNode vf) = PhysicalFileNode layers vf
+    buildPhysicalNode (VirtualFileNode{..}) = PhysicalFileNode layers vfnodeFile
       where
-        First defExt = vf ^. vfileSerials . serialDefaultExt
-        intent = vfileDescIntent $ getVirtualFileDescription vf
+        First defExt = vfnodeFile ^. vfileSerials . serialDefaultExt
+        intent = vfileDescIntent $ getVirtualFileDescription vfnodeFile
         layers | not mappingIsExplicit, Just VFForCLIOptions <- intent = []
              -- Options usually present in the config file need an _explicit_
              -- mapping to be present in the config file, if we want them to be
@@ -403,6 +424,50 @@ instance LogItem DataAccessContext where
   --  payloadKeys v _ | v >= V1 = SomeKeys ["locationAccessed"]
   payloadKeys V0 _ = SomeKeys []
 
+makeDataAccessor
+  :: (LocationMonad m, KatipContext m)
+  => String  -- ^ VirtualFile path (for doc)
+  -> [LocWithVars]  -- ^ Every mapped layer (for doc)
+  -> Maybe b -- ^ Default value (used as base layer)
+  -> LayeredReadScheme b  -- ^ How to handle the different layers
+  -> [(WriteToLoc a, LocWithVars)]  -- ^ Layers to write to
+  -> [(ReadFromLoc b, LocWithVars)] -- ^ Layers to read from
+  -> LocVariableMap  -- ^ The map of the values of the repetition indices
+  -> DataAccessor m a b
+makeDataAccessor vpath layers mbDefVal readScheme writeLocs readLocs repetKeyMap =
+  DataAccessor{..}
+  where
+    daLocsAccessed = traverse (fillLoc' repetKeyMap) layers
+    daPerformWrite input = do
+        forM_ writeLocs $ \(WriteToLoc rkeys f, loc) -> do
+          loc' <- fillLoc repetKeyMap loc
+          katipAddContext (DAC (show loc) rkeys repetKeyMap (show loc')) $ do
+            f input loc'
+            logFM NoticeS $ logStr $ "Wrote '" ++ show loc' ++ "'"
+    daPerformRead = do
+        dataFromLayers <- forM readLocs (\(ReadFromLoc rkeys f, loc) -> do
+          loc' <- fillLoc repetKeyMap loc
+          katipAddContext (DAC (show loc) rkeys repetKeyMap (show loc')) $ do
+            r <- f loc'
+            logFM DebugS $ logStr $ "Read '" ++ show loc' ++ "'"
+            return r)
+        let embeddedValAndLayers = maybe id (:) mbDefVal dataFromLayers
+        case (readScheme, embeddedValAndLayers) of
+          (_, [x]) -> return x
+          (LayeredReadWithNull, ls) -> return $ mconcat ls
+          (_, []) -> throwWithPrefix $ vpath ++ " has no layers from which to read"
+          (LayeredRead, l:ls) -> return $ foldr (<>) l ls
+          (SingleLayerRead, ls) -> do
+            logFM WarningS $ logStr $ vpath ++
+              " doesn't support layered mapping. Using only result from last layer '"
+              ++ show (last $ layers) ++ "'"
+            return $ last ls
+
+    fillLoc' rkMap loc = terminateLocWithVars $ spliceLocVariables rkMap loc
+    fillLoc rkMap loc =
+      case fillLoc' rkMap loc of
+        Left e  -> throwWithPrefix $ "resolveDataAccess: " ++ e
+        Right r -> return r
 
 -- | Transform a file node with physical locations in node with a data access
 -- function to run. Matches the location (esp. file extensions) to writers
@@ -412,38 +477,31 @@ resolveDataAccess
   => PhysicalFileNode
   -> m' (DataAccessNode m)
 resolveDataAccess (PhysicalFileNode layers vf) = do
+  -- resolveDataAccess performs some buildtime checks: --
+  -- First, that we aren't illegally binding to no layers:
   case layers of
-    [] | vf ^. vfileUsage == MustBeMapped ->
-         throwM $ TaskConstructionError $
-         vpath ++ " requires to be mapped to a non-null location."
+    [] -> case readScheme of
+            LayeredReadWithNull -> return ()
+            _ -> case mbEmbeddedVal of
+              Just _ -> return ()
+              Nothing ->
+                throwM $ TaskConstructionError $
+                vpath ++ " cannot be mapped to null. It doesn't contain any default value."
     _ -> return ()
+  -- Then, that we aren't writing to an unsupported filetype:
   writeLocs <- findFunctions writers
+  -- And finally, that we aren't reading from an unsupported filetype:
   readLocs <- findFunctions readers
-  return $ DataAccessNode layers $ \repetKeyMap input -> do
-    forM_ writeLocs $ \(WriteToLoc rkeys f, loc) -> do
-      loc' <- fillLoc repetKeyMap loc
-      katipAddContext (DAC (show loc) rkeys repetKeyMap (show loc')) $ do
-        f input loc'
-        logFM NoticeS $ logStr $ "Wrote '" ++ show loc' ++ "'"
-    layersRes <- mconcat <$> forM readLocs (\(ReadFromLoc rkeys f, loc) -> do
-      loc' <- fillLoc repetKeyMap loc
-      katipAddContext (DAC (show loc) rkeys repetKeyMap (show loc')) $ do
-        r <- f loc'
-        logFM DebugS $ logStr $ "Read '" ++ show loc' ++ "'"
-        return r)
-    return $ case vf ^? vfileEmbeddedValue of
-      Just v  -> v <> layersRes
-      Nothing -> layersRes
+  return $
+    DataAccessNode layers $
+      makeDataAccessor vpath layers
+                       mbEmbeddedVal readScheme
+                       writeLocs readLocs
   where
+    readScheme = vf ^. vfileLayeredReadScheme
+    mbEmbeddedVal = vf ^? vfileEmbeddedValue
+
     vpath = T.unpack $ toTextRepr $ LTP $ vf ^. vfilePath
-
-    fillLoc repetKeyMap loc =
-      traverse terminateLocString $ spliceLocVariables repetKeyMap loc
-
-    terminateLocString (LocString [LocBitChunk s]) = return s
-    terminateLocString locString = throwWithPrefix $
-      "resolveDataAccess: Variable(s) " ++ show (locString ^.. locStringVariables)
-      ++ " in '" ++ show locString ++ "' haven't been given a value"
 
     readers = vf ^. vfileSerials . serialReaders . serialReadersFromInputFile
     writers = vf ^. vfileSerials . serialWriters . serialWritersToOutputFile
