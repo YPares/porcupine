@@ -499,7 +499,7 @@ resolveDataAccess (PhysicalFileNode layers vf) = do
   where
     readScheme = vf ^. vfileLayeredReadScheme
     mbEmbeddedVal = vf ^? vfileEmbeddedValue
-    
+
     vpath = T.unpack $ toTextRepr $ LTP $ vf ^. vfilePath
 
     readers = vf ^. vfileSerials . serialReaders . serialReadersFromInputFile

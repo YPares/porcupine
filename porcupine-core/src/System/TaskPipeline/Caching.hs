@@ -4,7 +4,7 @@ module System.TaskPipeline.Caching
   ( cacheWithVFile
 
   -- * Re-exports
-  
+
   , Properties(..)
   , defaultCacherWithIdent
   , Default(..)
