@@ -59,8 +59,8 @@ loadData
   => VirtualFile a b -- ^ Use as a 'DataSource'
   -> PTask m () b  -- ^ The resulting task
 loadData vf =
-      arr (\_ -> S.yield ([] :: [Int]))
-  >>> loadDataStream [] vf
+      arr (\_ -> S.yield ([] :: [Int], error "loadData: THIS IS VOID"))
+  >>> accessVirtualFile (DoRead Refl) [] vf
   >>> unsafeLiftToPTask (\s ->
       maybe (error $ "loadData: No value in the output stream") snd <$> S.head_ s)
 
@@ -68,12 +68,13 @@ loadData vf =
 -- indices. The process is lazy: the data will actually be read when the
 -- resulting stream is consumed.
 loadDataStream :: (Show idx, LocationMonad m, KatipContext m, Typeable a, Typeable b)
-               => [LocVariable]
+               => LocVariable
                -> VirtualFile a b -- ^ Used as a 'DataSource'
-               -> PTask m (Stream (Of [idx]) m r) (Stream (Of ([idx], b)) m r)
-loadDataStream repIndices vf =
-      arr (S.map (, error "loadDataStream: THIS IS VOID"))
-  >>> accessVirtualFile (DoRead Refl) repIndices vf
+               -> PTask m (Stream (Of idx) m r) (Stream (Of (idx, b)) m r)
+loadDataStream repIndex vf =
+      arr (S.map $ \i -> ([i], error "loadDataStream: THIS IS VOID"))
+  >>> accessVirtualFile (DoRead Refl) [repIndex] vf
+  >>> arr (S.map $ \(i, r) -> (head i, r))
 
 -- | Uses only the write part of a 'VirtualFile'. It is therefore considered as
 -- a pure 'DataSink'.
@@ -82,18 +83,20 @@ writeData
   => VirtualFile a b  -- ^ Used as a 'DataSink'
   -> PTask m a ()
 writeData vf = arr (\a -> S.yield ([] :: [Int], a))
-           >>> writeDataStream [] vf
+           >>> accessVirtualFile (DoWrite ()) [] vf
+           >>> unsafeLiftToPTask S.effects
 
 -- | The simplest way to consume a stream of data inside a pipeline. Just write
 -- it to repeated occurences of a VirtualFile. See
 -- System.TaskPipeline.Repetition.Fold for more complex ways to consume a
 -- Stream.
 writeDataStream :: (Show idx, LocationMonad m, KatipContext m, Typeable a, Typeable b)
-                => [LocVariable]
+                => LocVariable
                 -> VirtualFile a b -- ^ Used as a 'DataSink'
-                -> PTask m (Stream (Of ([idx], a)) m r) r
-writeDataStream repIndices vf =
-      accessVirtualFile (DoWrite ()) repIndices vf
+                -> PTask m (Stream (Of (idx, a)) m r) r
+writeDataStream repIndex vf =
+      arr (S.map $ \(i,a) -> ([i],a))
+  >>> accessVirtualFile (DoWrite ()) [repIndex] vf
   >>> unsafeLiftToPTask S.effects
 
 -- | When only writing, gives a value that should be returned for b
