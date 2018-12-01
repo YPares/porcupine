@@ -78,7 +78,7 @@ class (MonadMask m, MonadIO m) => LocationMonad m where
   -- | Tells whether a Loc corresponds to a physical file
   locExists :: Loc -> m Bool
 
-  writeBSS :: Loc -> BSS.ByteString m () -> m ()
+  writeBSS :: Loc -> BSS.ByteString m r -> m r
 
   -- | Read a (streaming) bytestring from a location.
   --
@@ -204,13 +204,14 @@ writeBSS_Local path body = do
   liftIO $ createDirectoryIfMissing True (Path.takeDirectory raw)
   BSS.writeFile raw body
 
-writeBSS_S3 :: (HasEnv r, MonadReader r m, MonadResource m, MonadAWS m) => Loc -> BSS.ByteString m () -> m ()
+writeBSS_S3 :: (HasEnv r, MonadReader r m, MonadResource m, MonadAWS m) => Loc -> BSS.ByteString m a -> m a
 writeBSS_S3 S3Obj { bucketName, objectName } body = do
   let raw = objectName ^. locFilePathAsRawFilePath
-  res <- S3.uploadObj (fromString bucketName) (fromString raw) body
+  (res, r) <- S3.uploadObj (fromString bucketName) (fromString raw) body
   case res ^. porsResponseStatus of
     200 -> pure ()
     _   -> error $ "Unable to upload to the object " ++ raw ++ "."
+  return r
 writeBSS_S3 _ _ = undefined
 
 writeLazyByte

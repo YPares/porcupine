@@ -17,7 +17,7 @@ module Network.AWS.S3.TaskPipelineUtils
   )
 where
 
-import           Control.Lens
+import           Control.Lens                hiding ((:>))
 import           Control.Monad               (when)
 import           Control.Monad.Catch         (catch, try)
 import           Control.Monad.Trans.AWS
@@ -59,11 +59,12 @@ getEnv verbose = do
 uploadObj :: (MonadAWS m, AWSConstraint r m)
              => BucketName
              -> ObjectKey
-             -> BSS.ByteString m ()
-             -> m PutObjectResponse
+             -> BSS.ByteString m a
+             -> m (PutObjectResponse, a)
 uploadObj buck object source = do
-  requestBody <- toBody <$> BSS.toStrict_ source
-  send $ putObject buck object requestBody
+  (bs :> r) <- BSS.toStrict source
+  por <- send $ putObject buck object $ toBody bs
+  return (por, r)
 
 -- | Upload a whole folder to an s3 bucket
 uploadFolder :: (MonadAWS m, AWSConstraint r m)
@@ -76,7 +77,7 @@ uploadFolder srcFolder destBucket destPath =
   & S.mapM_ (\f -> do
                 let
                   objectName = destPath </> f
-                crs <- uploadObj destBucket (fromString objectName) $ BSS.readFile f
+                (crs,_) <- uploadObj destBucket (fromString objectName) $ BSS.readFile f
                 liftIO $ putStrLn $
                   if view porsResponseStatus crs == 200
                   then objectName ++ " uploaded."
