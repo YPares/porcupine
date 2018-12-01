@@ -29,8 +29,6 @@ import           Data.Locations.Loc
 import           Data.String
 import qualified Data.Text                             as Text
 import qualified Data.Text.Encoding                    as TE
-import           Formatting
-import           Formatting.Clock
 import           GHC.Generics                          (Generic)
 import           Katip.Monadic
 import           Network.AWS                           hiding (Error)
@@ -38,7 +36,6 @@ import qualified Network.AWS                           as AWS
 import           Network.AWS.S3
 import qualified Network.AWS.S3.TaskPipelineUtils      as S3
 import           Streaming
-import           System.Clock
 import           System.Directory                      (createDirectoryIfMissing,
                                                         doesPathExist)
 import qualified System.FilePath                       as Path
@@ -95,22 +92,6 @@ class (MonadMask m, MonadIO m) => LocationMonad m where
   -- result to @loc@
   withLocalBuffer :: (FilePath -> m a) -> Loc -> m a
 
-  -- | Log a message
-  logMsg :: String -> m ()
-  -- Redundant since for now we impose a 'MonadIO' constraint anyways
-  -- default logMsg :: MonadIO m => String -> m ()
-  logMsg = liftIO . putStrLn
-
-  -- | Time an access duration
-  clockAccess :: m a -> m a
-  -- default clockAccess :: MonadIO m => m a -> m a
-  clockAccess act = do
-    start <- liftIO $ getTime Monotonic
-    res   <- act
-    end   <- liftIO $ getTime Monotonic
-    liftIO $ fprint (timeSpecs % "\n") start end
-    return res
-
 -- | Any ReaderT of some LocationMonad is also a LocationMonad
 instance (LocationMonad m) => LocationMonad (ReaderT r m) where
   locExists = lift . locExists
@@ -123,8 +104,6 @@ instance (LocationMonad m) => LocationMonad (ReaderT r m) where
   withLocalBuffer f loc = do
     st <- ask
     lift $ withLocalBuffer (flip runReaderT st . f) loc
-  logMsg = lift . logMsg
-  clockAccess (ReaderT act) = ReaderT (clockAccess . act)
 
 -- | Same than the previous instance, we just lift through the @KatipContextT@
 -- constructor
@@ -139,8 +118,6 @@ instance (LocationMonad m) => LocationMonad (KatipContextT m) where
   withLocalBuffer f loc = KatipContextT $ do
     st <- ask
     lift $ withLocalBuffer (flip (runReaderT . unKatipContextT) st . f) loc
-  logMsg = lift . logMsg
-  clockAccess (KatipContextT (ReaderT act)) = KatipContextT $ ReaderT (clockAccess . act)
 
 -- | Run a computation or a sequence of computations that will access some
 -- locations. Selects whether to run in IO or AWS based on some Loc used as
