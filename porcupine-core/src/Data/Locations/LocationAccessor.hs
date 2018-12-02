@@ -1,5 +1,6 @@
-{-# LANGUAGE TypeFamilies     #-}
-{-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE TypeFamilies      #-}
+{-# LANGUAGE FlexibleContexts  #-}
+{-# LANGUAGE DefaultSignatures #-}
 
 module Data.Locations.LocationAccessor where
 
@@ -14,18 +15,16 @@ import qualified Data.ByteString.Streaming             as BSS
 import qualified Data.ByteString.Lazy                  as LBS
 
 
-class ( Eq l, FromJSON l, ToJSON l
-      , Store l, ContentHashable Identity l )
-   => Location l where
+-- class ( Eq l, FromJSON l, ToJSON l
+--       , Store l, ContentHashable Identity l )
+--    => Location l where
   
 
-class (Location (LocationOf m))
-   => LocationAccessor m where
-  type LocationOf m :: *
+-- class (Location l)
+--    => LocationAccessor l m where
+--   locExists :: l m -> IO Bool
 
-  locExists :: LocationOf m -> m Bool
+--   writeBSS :: l m -> BSS.ByteString IO r -> IO r
 
-  writeBSS :: Loc -> BSS.ByteString m r -> m r
-
-  readBSS :: Loc -> (BSS.ByteString m () -> m b) -> m b
+--   readBSS :: l m -> (BSS.ByteString IO () -> IO b) -> IO b
   
