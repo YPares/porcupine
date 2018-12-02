@@ -122,7 +122,7 @@ import qualified Data.Text            as T
 import           Data.Typeable
 import           Data.Vinyl.Core
 import           Data.Vinyl.Curry
-import           Data.Vinyl.Derived   hiding (rfield, (=:), Field, HasField)
+import           Data.Vinyl.Derived   hiding (rfield, (=:), ElField, HasField)
 import           Data.Vinyl.Lens      (RElem, RSubset, rlens)
 import qualified Data.Vinyl.Lens      as VL
 import           Data.Vinyl.TypeLevel hiding (Fst, Snd)
@@ -228,8 +228,8 @@ instance (Show t, ShowPath s) => Show (Field (s:|:t)) where
   show (Field x) =
     T.unpack (showPath (Proxy @s)) ++ " =: " ++ show x ++ "\n"
 
-instance (Show (f (g a))) => Show (F.Compose f g a) where
-  show (F.Compose x) = show x
+-- instance (Show (f (g a))) => Show (F.Compose f g a) where
+--   show (F.Compose x) = show x
 
 type PossiblyEmptyField = F.Compose PossiblyEmpty Field
 
@@ -317,7 +317,7 @@ instance (FromJSON t, FromJSON (Rec PossiblyEmptyField rs), ShowPath s)
                   x = maybe Null id mbX
 
 -- | Just sets the docstrings to empty
-instance (FromJSON (Rec PossiblyEmptyField rs)) => FromJSON (Rec DocField rs) where
+instance (RMap rs, FromJSON (Rec PossiblyEmptyField rs)) => FromJSON (Rec DocField rs) where
   parseJSON v = rmap toDoc <$> parseJSON v
     where toDoc = F.Compose . Tagged ""
 
@@ -368,7 +368,7 @@ instance (ToJSON `AllSnd` rs, ShowPath `AllFst` rs)
         fs
 
 -- | Just ignores the docstrings
-instance (ToJSON `AllSnd` rs, ShowPath `AllFst` rs)
+instance (RMap rs, ToJSON `AllSnd` rs, ShowPath `AllFst` rs)
       => ToJSON (Rec DocField rs) where
   toJSON = toJSON . rmap removeDoc
 
@@ -564,10 +564,11 @@ type rs `EquivalentTo` ss = (rs `Includes` ss, ss `Includes` rs)
 
 -- | Lens for getting a field's value inside some NamedField. Shortcut for
 -- @rlens f . rfield@
-fld :: (NamedField field, rs `HasField` (s:|:a), ShowPath s)
+fld :: forall s a rs field proxy.
+       (NamedField field, rs `HasField` (s:|:a), ShowPath s)
     => proxy (s:|:a)
     -> L.Lens' (Rec field rs) (Maybe a)
-fld f = VL.rlens f . rfield
+fld _ = VL.rlens @(s:|:a) . rfield
 
 -- | @r ^^. n@ is just a shortcut for @r ^. fld n . _Just@. Since the field can be empty
 -- it requires it to be a Monoid
