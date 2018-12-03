@@ -6,27 +6,36 @@
 {-# LANGUAGE KindSignatures #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE TypeApplications #-}
+{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE UndecidableInstances #-}
+{-# LANGUAGE StandaloneDeriving #-}
 
 module Control.Monad.ReaderSoup where
 
-import Control.Monad.Trans
+import Control.Lens (over, view)
+import qualified Control.Monad.Reader.Class as MR
+import Control.Monad.IO.Unlift
 import Control.Monad.Trans.Reader
 import Data.Vinyl
 import Data.Vinyl.Derived
 import Data.Vinyl.Functor
 import Data.Vinyl.TypeLevel
 import GHC.TypeLits
+import GHC.OverloadedLabels
 
 
 -- | Represents a set of Reader-like monads as a one-layer Reader that can grow
 -- and host more Readers, in a way that's more generic than creating you own
 -- application stack of Reader and implementing a host of MonadXXX classes,
 -- because each of these MonadXXX classes can be implemented once and for all
--- for the ReaderSoup type.
-newtype ReaderSoup_ (record::((Symbol, *) -> *) -> [(Symbol, *)] -> *) ctxs m a = ReaderSoup
+-- for ReaderSoup.
+newtype ReaderSoup_ (record::((Symbol, *) -> *) -> [(Symbol, *)] -> *) ctxs a = ReaderSoup
   { unReaderSoup ::
-      ReaderT (record ElField ctxs) m a }
-  deriving (Functor, Applicative, Monad, MonadTrans)
+      ReaderT (record ElField ctxs) IO a }
+  deriving (Functor, Applicative, Monad, MonadIO, MonadUnliftIO)
 
 -- | The type of 'ReaderSoup_' your application will eat
 type ReaderSoup = ReaderSoup_ ARec
@@ -34,29 +43,77 @@ type ReaderSoup = ReaderSoup_ ARec
 -- | A 'ReaderSoup' ready to be eaten
 type CookedReaderSoup = ReaderSoup_ Rec
 
--- | Turns a 'ReaderSoup' into something than is ready to be eaten (ran)
+
+-- * Eating (running) a 'ReaderSoup'
+
+-- | Turns a 'ReaderSoup' into something than is ready to be eaten
 cookReaderSoup :: (NatToInt (RLength ctxs))
-               => ReaderSoup ctxs m a
-               -> CookedReaderSoup ctxs m a
+               => ReaderSoup ctxs a
+               -> CookedReaderSoup ctxs a
 cookReaderSoup (ReaderSoup (ReaderT act)) =
   ReaderSoup $ ReaderT $ act . toARec
 
--- | Extracts the first context so it can be eaten (ran)
-pickTopping :: (KnownSymbol l)
-            => CookedReaderSoup ( (l:::ctx) : ctxs ) m a
-            -> ReaderT ctx (CookedReaderSoup ctxs m) a
-pickTopping (ReaderSoup (ReaderT actInSoup)) =
+-- | Extracts a ReaderT of the first context so it can be eaten
+eatTopping :: (KnownSymbol l)
+            => CookedReaderSoup ( (l:::ctx) : ctxs ) a
+            -> ReaderT ctx (CookedReaderSoup ctxs) a
+eatTopping (ReaderSoup (ReaderT actInSoup)) =
   ReaderT $ \ctx1 -> ReaderSoup $
     ReaderT $ \ctxs -> actInSoup $ Field ctx1 :& ctxs
 
--- | Once all ingredients have been eaten, leaves only the bowl (the base monad)
-finishBroth :: CookedReaderSoup '[] m a -> m a
-finishBroth (ReaderSoup (ReaderT act)) = act RNil
+-- | Once all contexts have been eaten, leaves only the base monad
+finishBroth :: (MonadIO m) => CookedReaderSoup '[] a -> m a
+finishBroth (ReaderSoup (ReaderT act)) = liftIO $ act RNil
+
+-- | Associates the type-level label to the reader context
+type family ContextInSoup (l::Symbol) :: *
+
+type IsInSoup ctxs l =
+  ( HasField ARec l ctxs ctxs (ContextInSoup l) (ContextInSoup l) )
+  -- , RecElemFCtx ARec ElField )
+
+type IsInCookedSoup ctxs l =
+  ( HasField Rec l ctxs ctxs (ContextInSoup l) (ContextInSoup l) )
+  -- , RecElemFCtx Rec ElField )
 
 
--- type IsInSoup record ctxs m =
---   ( HasField record (NameInSoup m) ctxs ctxs (CtxInSoup m) (CtxInSoup m)
---   , RecElemFCtx record ElField )
+-- * Working in a 'ReaderSoup'
+
+askSoup :: (IsInSoup ctxs l)
+        => Label l -> ReaderSoup ctxs (ContextInSoup l)
+askSoup l = ReaderSoup $ rvalf l <$> ask
+
+-- | Select temporarily one context out of the whole soup to create a
+-- MonadReader of that context.
+newtype Chopsticks ctxs (l::Symbol) a = Chopsticks
+  { unChopstick :: ReaderSoup ctxs a }
+  deriving (Functor, Applicative, Monad, MonadIO, MonadUnliftIO)
+
+instance (IsInSoup ctxs l, c ~ ContextInSoup l)
+      => MR.MonadReader c (Chopsticks ctxs l) where
+  ask = Chopsticks $ askSoup $ fromLabel @l
+  local f (Chopsticks (ReaderSoup (ReaderT act))) =
+    Chopsticks $ ReaderSoup $ ReaderT $
+      act . over (rlensf (fromLabel @l)) f
+
+-- | Brings forth one context of the whole soup, giving a MonadReader instance
+-- of just this context. This makes it possible that the same context type
+-- occurs several times in the broth, because the Label will disambiguate them.
+picking :: (IsInSoup ctxs l)
+        => Label l
+        -> Chopsticks ctxs l a
+        -> ReaderSoup ctxs a
+picking _ = unChopstick
+
+-- | Permits to select only a part of the whole contexts, to locally decide
+-- which part of the ReaderSoup will be exposed, and remove ambiguity.
+filtering :: (RecSubset ARec ctxs' ctxs (RImage ctxs' ctxs))
+          => ReaderSoup ctxs' a
+          -> ReaderSoup ctxs a
+filtering (ReaderSoup (ReaderT act)) =
+  ReaderSoup $ ReaderT $ act . rcast
+  -- NOTE: this isn't as fast as 'picking' as it recreates an array, rather than
+  -- just a view to the original array
 
 -- class (KnownSymbol (NameInSoup m)) => MonadInSoup m where
 --   type NameInSoup m :: Symbol
