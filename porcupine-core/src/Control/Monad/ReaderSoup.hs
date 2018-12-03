@@ -12,6 +12,7 @@
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE UndecidableInstances #-}
 {-# LANGUAGE StandaloneDeriving #-}
+{-# LANGUAGE DefaultSignatures #-}
 
 module Control.Monad.ReaderSoup where
 
@@ -71,21 +72,21 @@ finishBroth :: (MonadIO m) => CookedReaderSoup '[] a -> m a
 finishBroth (ReaderSoup (ReaderT act)) = liftIO $ act RNil
 
 -- | Associates the type-level label to the reader context
-type family ContextInSoup (l::Symbol) :: *
+type family ContextFromName (l::Symbol) :: *
 
 type IsInSoup ctxs l =
-  ( HasField ARec l ctxs ctxs (ContextInSoup l) (ContextInSoup l) )
+  ( HasField ARec l ctxs ctxs (ContextFromName l) (ContextFromName l) )
   -- , RecElemFCtx ARec ElField )
 
 type IsInCookedSoup ctxs l =
-  ( HasField Rec l ctxs ctxs (ContextInSoup l) (ContextInSoup l) )
+  ( HasField Rec l ctxs ctxs (ContextFromName l) (ContextFromName l) )
   -- , RecElemFCtx Rec ElField )
 
 
 -- * Working in a 'ReaderSoup'
 
 askSoup :: (IsInSoup ctxs l)
-        => Label l -> ReaderSoup ctxs (ContextInSoup l)
+        => Label l -> ReaderSoup ctxs (ContextFromName l)
 askSoup l = ReaderSoup $ rvalf l <$> ask
 
 -- | Permits to select only a part of the whole contexts, to locally decide
@@ -103,13 +104,13 @@ filtering (ReaderSoup (ReaderT act)) =
 
 -- | Select temporarily one context out of the whole soup to create a
 -- MonadReader of that context. 'Chopsticks' behaves exactly like a @ReaderT r
--- IO@ (where r is the ContextInSoup of @l@) but that keeps track of the whole
+-- IO@ (where r is the ContextFromName of @l@) but that keeps track of the whole
 -- context array.
 newtype Chopsticks ctxs (l::Symbol) a = Chopsticks
   { unChopsticks :: ReaderSoup ctxs a }
   deriving (Functor, Applicative, Monad, MonadIO, MonadUnliftIO)
 
-instance (IsInSoup ctxs l, c ~ ContextInSoup l)
+instance (IsInSoup ctxs l, c ~ ContextFromName l)
       => MR.MonadReader c (Chopsticks ctxs l) where
   ask = Chopsticks $ askSoup $ fromLabel @l
   local f (Chopsticks (ReaderSoup (ReaderT act))) =
@@ -125,41 +126,58 @@ picking :: (IsInSoup ctxs l)
         -> ReaderSoup ctxs a
 picking _ = unChopsticks
 
--- | A class for all monads than can be turned into ReaderT r IO
-class RIOLike m where
-  -- | The reader-like context
-  type RIOLikeContext m :: *
-  -- | Turn it into an actual ReaderT
-  toReader :: m a -> ReaderT (RIOLikeContext m) IO a
-  -- | Reconstruct it from an actual ReaderT
-  fromReader :: ReaderT (RIOLikeContext m) IO a -> m a
+-- | If you have a code that cannot cope with any MonadReader but explicitly
+-- wants a ReaderT
+rioToChopsticks :: forall l ctxs a. (IsInSoup ctxs l)
+                => ReaderT (ContextFromName l) IO a -> Chopsticks ctxs l a
+rioToChopsticks (ReaderT act) = Chopsticks $ ReaderSoup $ ReaderT $
+  act . rvalf (fromLabel @l)
 
--- | A 'RIOLike' monad that additionnally can generate a default context that
--- can be used to run it
-class (RIOLike m) => RunnableRIOLike m where
-  createDefaultContext :: proxy m -> IO (RIOLikeContext m)
 
-instance RIOLike (ReaderT r IO) where
-  type RIOLikeContext (ReaderT r IO) = r
-  toReader = id
-  fromReader = id
+-- | A class for the contexts that have an associated monad than can be turned
+-- into a ReaderT of this context
+class SoupContext c where
+  -- | The parameters to construct that context
+  data CtxConstructorArgs c :: *
+  -- | The reader-like monad using that context
+  type CtxMonad c :: * -> *
+  -- | Turn this monad into an actual ReaderT
+  toReader :: CtxMonad c a -> ReaderT c IO a
+  -- | Reconstruct this monad from an actual ReaderT
+  fromReader :: ReaderT c IO a -> CtxMonad c a
+  -- | Run the CtxMonad
+  runCtxMonad :: CtxConstructorArgs c -> CtxMonad c a -> IO a
+  default runCtxMonad
+    :: (BracketedContext c)
+    => CtxConstructorArgs c -> CtxMonad c a -> IO a
+  runCtxMonad args act = do
+    ctx <- createCtx args
+    r <- runReaderT (toReader act) ctx
+    closeCtx ctx
+    return r
 
--- | Converts an action in some ReaderT-of-IO-like monad to 'Chopsticks'. This
--- is for code that cannot cope with any MonadReader and want some specific
--- monad.
-withChopsticks :: forall l ctxs m a.
-                  (IsInSoup ctxs l, RIOLike m
-                  ,RIOLikeContext m ~ ContextInSoup l)
-               => m a
+-- | The context is created and closed
+class (SoupContext c) => BracketedContext c where
+  createCtx :: CtxConstructorArgs c -> IO c
+  closeCtx :: c -> IO ()
+  closeCtx _ = return ()
+
+-- | Converts an action in some ReaderT-of-IO-like monad to 'Chopsticks', this
+-- monad being determined by . This is for code that cannot cope with any
+-- MonadReader and want some specific monad.
+withChopsticks :: forall l ctxs c a.
+                  (IsInSoup ctxs l, SoupContext c
+                  ,c ~ ContextFromName l)
+               => CtxMonad c a
                -> Chopsticks ctxs l a
 withChopsticks act = Chopsticks $ ReaderSoup $ ReaderT $
   runReaderT (toReader act) . rvalf (fromLabel @l)
 
--- | Like 'picking', but instead of 'Chopsticks' runs any Reader-like monad.
-picking' :: (IsInSoup ctxs l, RIOLike m
-            ,RIOLikeContext m ~ ContextInSoup l)
+-- | Like 'picking', but instead of 'Chopsticks' runs some Reader-like monad.
+picking' :: (IsInSoup ctxs l, SoupContext c
+            ,c ~ ContextFromName l)
          => Label l
-         -> m a
+         -> CtxMonad c a
          -> ReaderSoup ctxs a
 picking' lbl = picking lbl . withChopsticks
 

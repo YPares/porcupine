@@ -12,15 +12,17 @@ import Control.Monad.ReaderSoup
 import Control.Monad.Trans.Reader
 import Control.Monad.Trans.Resource
 
-type instance ContextInSoup "resource" = InternalState
+type instance ContextFromName "resource" = InternalState
 
-instance RIOLike (ResourceT IO) where
-  type RIOLikeContext (ResourceT IO) = InternalState
+instance SoupContext InternalState where
+  type CtxMonad InternalState = ResourceT IO
+  data CtxConstructorArgs InternalState = UseResourceT  -- no args needed
   toReader act = ReaderT $ runInternalState act
   fromReader (ReaderT act) = withInternalState act
 
-instance RunnableRIOLike (ResourceT IO) where
-  createDefaultContext _ = createInternalState
+instance BracketedContext InternalState where
+  createCtx _ = createInternalState
+  closeCtx = closeInternalState
 
 instance (IsInSoup ctxs "resource") => MonadResource (ReaderSoup ctxs) where
   liftResourceT = picking' #resource
