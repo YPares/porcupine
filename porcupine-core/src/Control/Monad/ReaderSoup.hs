@@ -13,6 +13,7 @@
 {-# LANGUAGE UndecidableInstances #-}
 {-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE DefaultSignatures #-}
+{-# LANGUAGE RankNTypes #-}
 
 module Control.Monad.ReaderSoup where
 
@@ -20,7 +21,7 @@ import Control.Lens (over)
 import qualified Control.Monad.Reader.Class as MR
 import Control.Monad.IO.Unlift
 import Control.Monad.Trans.Reader
-import Data.Vinyl
+import Data.Vinyl hiding (record)
 import Data.Vinyl.TypeLevel
 import GHC.TypeLits
 import GHC.OverloadedLabels
@@ -163,23 +164,29 @@ class (SoupContext c) => BracketedContext c where
   closeCtx _ = return ()
 
 -- | Converts an action in some ReaderT-of-IO-like monad to 'Chopsticks', this
--- monad being determined by . This is for code that cannot cope with any
+-- monad being determined by @c@. This is for code that cannot cope with any
 -- MonadReader and want some specific monad.
 withChopsticks :: forall l ctxs c a.
                   (IsInSoup ctxs l, SoupContext c
-                  ,c ~ ContextFromName l)
-               => CtxMonad c a
+                  ,c ~ ContextFromName l, KnownSymbol l)
+               => ((forall x. Chopsticks ctxs l x -> CtxMonad c x) -> CtxMonad c a)
                -> Chopsticks ctxs l a
-withChopsticks act = Chopsticks $ ReaderSoup $ ReaderT $
-  runReaderT (toReader act) . rvalf (fromLabel @l)
+withChopsticks act = Chopsticks $ ReaderSoup $ ReaderT $ \record ->
+  let
+    lbl = fromLabel @l
+    backwards :: forall x. Chopsticks ctxs l x -> CtxMonad c x
+    backwards (Chopsticks (ReaderSoup (ReaderT act'))) =
+      fromReader $ ReaderT $ \v -> act' $ rputf lbl v record
+  in runReaderT (toReader $ act backwards) $ rvalf lbl record
 
 -- | Like 'picking', but instead of 'Chopsticks' runs some Reader-like monad.
 picking' :: (IsInSoup ctxs l, SoupContext c
-            ,c ~ ContextFromName l)
+            ,c ~ ContextFromName l, KnownSymbol l)
          => Label l
-         -> CtxMonad c a
+         -> ((forall x. ReaderSoup ctxs x -> CtxMonad c x) -> CtxMonad c a)
          -> ReaderSoup ctxs a
-picking' lbl = picking lbl . withChopsticks
+picking' lbl f = picking lbl $ withChopsticks $
+  \convert -> f (convert . Chopsticks)
 
 -- class (KnownSymbol (NameInSoup m)) => MonadInSoup m where
 --   type NameInSoup m :: Symbol

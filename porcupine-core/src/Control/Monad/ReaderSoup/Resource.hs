@@ -19,10 +19,11 @@ instance SoupContext InternalState where
   data CtxConstructorArgs InternalState = UseResourceT  -- no args needed
   toReader act = ReaderT $ runInternalState act
   fromReader (ReaderT act) = withInternalState act
+  runCtxMonad _ = runResourceT
 
 instance BracketedContext InternalState where
   createCtx _ = createInternalState
   closeCtx = closeInternalState
 
 instance (IsInSoup ctxs "resource") => MonadResource (ReaderSoup ctxs) where
-  liftResourceT = picking' #resource
+  liftResourceT act = picking' #resource (const act)
