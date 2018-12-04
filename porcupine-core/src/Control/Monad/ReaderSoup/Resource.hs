@@ -9,7 +9,6 @@
 module Control.Monad.ReaderSoup.Resource where
 
 import Control.Monad.ReaderSoup
-import Control.Monad.Trans.Reader
 import Control.Monad.Trans.Resource
 
 type instance ContextFromName "resource" = InternalState

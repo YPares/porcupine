@@ -15,12 +15,33 @@
 {-# LANGUAGE DefaultSignatures #-}
 {-# LANGUAGE RankNTypes #-}
 
-module Control.Monad.ReaderSoup where
+module Control.Monad.ReaderSoup
+  ( module Control.Monad.Trans.Reader
+  , MonadReader(..)
+  , ReaderSoup_(..)
+  , ReaderSoup
+  , CookedReaderSoup
+  , ContextFromName
+  , IsInSoup
+  , Chopsticks(..)
+  , SoupContext(..)
+  , BracketedContext(..)
+  , cookReaderSoup
+  , pickTopping
+  , eatTopping
+  , finishBroth
+  , askSoup
+  , filtering
+  , picking
+  , withChopsticks
+  , rioToChopsticks
+  , picking'
+  ) where
 
 import Control.Lens (over)
-import qualified Control.Monad.Reader.Class as MR
+import Control.Monad.Reader.Class
 import Control.Monad.IO.Unlift
-import Control.Monad.Trans.Reader
+import Control.Monad.Trans.Reader hiding (ask, local, reader)
 import Data.Vinyl hiding (record)
 import Data.Vinyl.TypeLevel
 import GHC.TypeLits
@@ -112,7 +133,7 @@ newtype Chopsticks ctxs (l::Symbol) a = Chopsticks
   deriving (Functor, Applicative, Monad, MonadIO, MonadUnliftIO)
 
 instance (IsInSoup ctxs l, c ~ ContextFromName l)
-      => MR.MonadReader c (Chopsticks ctxs l) where
+      => MonadReader c (Chopsticks ctxs l) where
   ask = Chopsticks $ askSoup $ fromLabel @l
   local f (Chopsticks (ReaderSoup (ReaderT act))) =
     Chopsticks $ ReaderSoup $ ReaderT $
@@ -187,15 +208,3 @@ picking' :: (IsInSoup ctxs l, SoupContext c
          -> ReaderSoup ctxs a
 picking' lbl f = picking lbl $ withChopsticks $
   \convert -> f (convert . Chopsticks)
-
--- class (KnownSymbol (NameInSoup m)) => MonadInSoup m where
---   type NameInSoup m :: Symbol
---   type CtxInSoup m :: *
-    
-  -- liftInSoup :: () => m a -> ReaderSoup cts a
-  -- contextField :: ElField (  )
-  -- startContext :: ReaderSoupM ()
-  -- runInIO :: m a -> IO a
-  -- interrupt :: m a -> IO
-  -- rewrapIO  :: IO (a, CtxM m) -> m a
-
