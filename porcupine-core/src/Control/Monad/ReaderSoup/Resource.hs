@@ -5,6 +5,7 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE UndecidableInstances #-}
 {-# LANGUAGE OverloadedLabels #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
 
 module Control.Monad.ReaderSoup.Resource where
 
@@ -13,16 +14,16 @@ import Control.Monad.Trans.Resource
 
 type instance ContextFromName "resource" = InternalState
 
-instance SoupContext InternalState where
-  type CtxMonad InternalState = ResourceT IO
-  data CtxConstructorArgs InternalState = UseResourceT  -- no args needed
-  toReader act = ReaderT $ runInternalState act
-  fromReader (ReaderT act) = withInternalState act
-  runCtxMonad _ = runResourceT
+instance (MonadUnliftIO m) => SoupContext InternalState m where
+  type CtxPrefMonadT InternalState = ResourceT
+  type CtxConstructorArgs InternalState = ()
+  toReaderT act = ReaderT $ runInternalState act
+  fromReaderT (ReaderT act) = withInternalState act
+  runPrefMonadT _ _ = runResourceT
 
-instance BracketedContext InternalState where
-  createCtx _ = createInternalState
+instance (MonadUnliftIO m) => BracketedContext InternalState m where
+  createCtx _ _ = createInternalState
   closeCtx = closeInternalState
 
 instance (IsInSoup ctxs "resource") => MonadResource (ReaderSoup ctxs) where
-  liftResourceT act = picking' #resource (const act)
+  liftResourceT act = inPrefMonad #resource (const act)

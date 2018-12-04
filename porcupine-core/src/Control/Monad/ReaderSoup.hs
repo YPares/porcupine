@@ -14,10 +14,12 @@
 {-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE DefaultSignatures #-}
 {-# LANGUAGE RankNTypes #-}
+{-# LANGUAGE FunctionalDependencies #-}
 
 module Control.Monad.ReaderSoup
   ( module Control.Monad.Trans.Reader
   , MonadReader(..)
+  , Identity(..)
   , ReaderSoup_(..)
   , ReaderSoup
   , CookedReaderSoup
@@ -26,6 +28,8 @@ module Control.Monad.ReaderSoup
   , Chopsticks(..)
   , SoupContext(..)
   , BracketedContext(..)
+  , consumeSoup
+  , ArgsForSoupConsumption
   , cookReaderSoup
   , pickTopping
   , eatTopping
@@ -35,13 +39,14 @@ module Control.Monad.ReaderSoup
   , picking
   , withChopsticks
   , rioToChopsticks
-  , picking'
+  , inPrefMonad
   ) where
 
-import Control.Lens (over)
+import Control.Lens (over, Identity(..))
 import Control.Monad.Reader.Class
 import Control.Monad.IO.Unlift
 import Control.Monad.Trans.Reader hiding (ask, local, reader)
+import Data.Proxy
 import Data.Vinyl hiding (record)
 import Data.Vinyl.TypeLevel
 import GHC.TypeLits
@@ -90,8 +95,8 @@ eatTopping :: (KnownSymbol l)
 eatTopping crs = runReaderT (pickTopping crs)
 
 -- | Once all contexts have been eaten, leaves only the base monad
-finishBroth :: (MonadIO m) => CookedReaderSoup '[] a -> m a
-finishBroth (ReaderSoup (ReaderT act)) = liftIO $ act RNil
+finishBroth :: CookedReaderSoup '[] a -> IO a
+finishBroth (ReaderSoup (ReaderT act)) = act RNil
 
 -- | Associates the type-level label to the reader context
 type family ContextFromName (l::Symbol) :: *
@@ -99,10 +104,6 @@ type family ContextFromName (l::Symbol) :: *
 type IsInSoup ctxs l =
   ( HasField ARec l ctxs ctxs (ContextFromName l) (ContextFromName l) )
   -- , RecElemFCtx ARec ElField )
-
-type IsInCookedSoup ctxs l =
-  ( HasField Rec l ctxs ctxs (ContextFromName l) (ContextFromName l) )
-  -- , RecElemFCtx Rec ElField )
 
 
 -- * Working in a 'ReaderSoup'
@@ -156,55 +157,84 @@ rioToChopsticks (ReaderT act) = Chopsticks $ ReaderSoup $ ReaderT $
   act . rvalf (fromLabel @l)
 
 
--- | A class for the contexts that have an associated monad than can be turned
--- into a ReaderT of this context
-class SoupContext c where
+-- | A class for the contexts that have an associated monad transformer that can
+-- be turned into a ReaderT of this context, and the type of monad over which
+-- they can run.
+class (Monad m) => SoupContext c m where
   -- | The parameters to construct that context
-  data CtxConstructorArgs c :: *
-  -- | The reader-like monad using that context
-  type CtxMonad c :: * -> *
-  -- | Turn this monad into an actual ReaderT
-  toReader :: CtxMonad c a -> ReaderT c IO a
-  -- | Reconstruct this monad from an actual ReaderT
-  fromReader :: ReaderT c IO a -> CtxMonad c a
-  -- | Run the CtxMonad
-  runCtxMonad :: CtxConstructorArgs c -> CtxMonad c a -> IO a
-  default runCtxMonad
-    :: (BracketedContext c)
-    => CtxConstructorArgs c -> CtxMonad c a -> IO a
-  runCtxMonad args act = do
-    ctx <- createCtx args
-    r <- runReaderT (toReader act) ctx
+  type CtxConstructorArgs c :: *
+  -- | The prefered monad trans to run that type of context
+  type CtxPrefMonadT c :: (* -> *) -> * -> *
+  -- | Turn this monad trans into an actual ReaderT
+  toReaderT :: CtxPrefMonadT c m a -> ReaderT c m a
+  -- | Reconstruct this monad trans from an actual ReaderT
+  fromReaderT :: ReaderT c m a -> CtxPrefMonadT c m a
+  -- | Run the CtxPrefMonadT
+  runPrefMonadT :: proxy c -> CtxConstructorArgs c -> CtxPrefMonadT c m a -> m a
+  default runPrefMonadT
+    :: (BracketedContext c m)
+    => proxy c -> CtxConstructorArgs c -> CtxPrefMonadT c m a -> m a
+  runPrefMonadT prx args act = do
+    ctx <- createCtx prx args
+    r <- runReaderT (toReaderT act) ctx
     closeCtx ctx
     return r
 
--- | The context is created and closed
-class (SoupContext c) => BracketedContext c where
-  createCtx :: CtxConstructorArgs c -> IO c
-  closeCtx :: c -> IO ()
+-- | For when the context can be opened and destroyed by separated functions.
+class (SoupContext c m) => BracketedContext c m where
+  createCtx :: proxy c -> CtxConstructorArgs c -> m c
+  closeCtx :: c -> m ()
   closeCtx _ = return ()
 
 -- | Converts an action in some ReaderT-of-IO-like monad to 'Chopsticks', this
 -- monad being determined by @c@. This is for code that cannot cope with any
 -- MonadReader and want some specific monad.
 withChopsticks :: forall l ctxs c a.
-                  (IsInSoup ctxs l, SoupContext c
+                  (IsInSoup ctxs l, SoupContext c IO
                   ,c ~ ContextFromName l, KnownSymbol l)
-               => ((forall x. Chopsticks ctxs l x -> CtxMonad c x) -> CtxMonad c a)
+               => ((forall x. Chopsticks ctxs l x -> CtxPrefMonadT c IO x) -> CtxPrefMonadT c IO a)
                -> Chopsticks ctxs l a
 withChopsticks act = Chopsticks $ ReaderSoup $ ReaderT $ \record ->
   let
     lbl = fromLabel @l
-    backwards :: forall x. Chopsticks ctxs l x -> CtxMonad c x
+    backwards :: forall x. Chopsticks ctxs l x -> CtxPrefMonadT c IO x
     backwards (Chopsticks (ReaderSoup (ReaderT act'))) =
-      fromReader $ ReaderT $ \v -> act' $ rputf lbl v record
-  in runReaderT (toReader $ act backwards) $ rvalf lbl record
+      fromReaderT $ ReaderT $ \v -> act' $ rputf lbl v record
+  in runReaderT (toReaderT $ act backwards) $ rvalf lbl record
 
--- | Like 'picking', but instead of 'Chopsticks' runs some Reader-like monad.
-picking' :: (IsInSoup ctxs l, SoupContext c
-            ,c ~ ContextFromName l, KnownSymbol l)
-         => Label l
-         -> ((forall x. ReaderSoup ctxs x -> CtxMonad c x) -> CtxMonad c a)
-         -> ReaderSoup ctxs a
-picking' lbl f = picking lbl $ withChopsticks $
+-- | Like 'picking', but instead of 'Chopsticks' runs some preferential
+-- Reader-like monad. That permits to reuse some already existing monad from an
+-- existing library (ResourceT, KatipContextT, AWST, etc.).
+inPrefMonad :: (IsInSoup ctxs l, SoupContext c IO
+               ,c ~ ContextFromName l, KnownSymbol l)
+            => Label l
+            -> ((forall x. ReaderSoup ctxs x -> CtxPrefMonadT c IO x) -> CtxPrefMonadT c IO a)
+            -> ReaderSoup ctxs a
+inPrefMonad lbl f = picking lbl $ withChopsticks $
   \convert -> f (convert . Chopsticks)
+
+class ArgsForSoupConsumption args where
+  type CtxsFromArgs args :: [(Symbol, *)]
+  consumeSoup_ :: Rec ElField args -> CookedReaderSoup (CtxsFromArgs args) a -> IO a
+
+instance ArgsForSoupConsumption '[] where
+  type CtxsFromArgs '[] = '[]
+  consumeSoup_ _ = finishBroth
+
+instance ( ArgsForSoupConsumption restArgs
+         , CtxConstructorArgs (ContextFromName l) ~ args1
+         , SoupContext (ContextFromName l) (CookedReaderSoup (CtxsFromArgs restArgs)) )
+      => ArgsForSoupConsumption ((l:::args1) : restArgs) where
+  type CtxsFromArgs ((l:::args1) : restArgs) =
+    (l:::ContextFromName l) : CtxsFromArgs restArgs
+  consumeSoup_ (Field args :& restArgs) act =
+    consumeSoup_ restArgs $
+      runPrefMonadT (Proxy :: Proxy (ContextFromName l))
+                    args
+                    (fromReaderT (pickTopping act))
+
+-- | From the list of the arguments to initialize the contexts, runs the whole
+-- 'ReaderSoup'
+consumeSoup :: (ArgsForSoupConsumption args, NatToInt (RLength (CtxsFromArgs args)))
+            => Rec ElField args -> ReaderSoup (CtxsFromArgs args) a -> IO a
+consumeSoup args = consumeSoup_ args . cookReaderSoup
