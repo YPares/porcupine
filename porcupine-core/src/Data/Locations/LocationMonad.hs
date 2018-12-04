@@ -40,6 +40,7 @@ import qualified Network.AWS.S3.TaskPipelineUtils      as S3
 import           Streaming
 import           System.Clock
 import           System.Directory                      (createDirectoryIfMissing,
+                                                        createFileLink,
                                                         doesPathExist)
 import qualified System.FilePath                       as Path
 import qualified System.IO.Temp                        as Tmp
@@ -90,6 +91,11 @@ class (MonadMask m, MonadIO m) => LocationMonad m where
   -- consumed
   readBSS :: Loc -> (BSS.ByteString m () -> m b) -> m (Either Error b)
 
+  alias ::
+       Loc -- ^ From
+    -> Loc -- ^ To
+    -> m ()
+
   -- | Wrapper to use functions directly writing to a filepath.
   -- @withLocalBuffer f loc@ will apply @f@ to a temporary file and copy the
   -- result to @loc@
@@ -120,6 +126,7 @@ instance (LocationMonad m) => LocationMonad (ReaderT r m) where
   readBSS loc f = do
     st <- ask
     lift $ readBSS loc $ flip runReaderT st . f . hoist lift
+  alias locfrom locto = lift $ alias locfrom locto
   withLocalBuffer f loc = do
     st <- ask
     lift $ withLocalBuffer (flip runReaderT st . f) loc
@@ -139,6 +146,7 @@ instance (LocationMonad m) => LocationMonad (KatipContextT m) where
   withLocalBuffer f loc = KatipContextT $ do
     st <- ask
     lift $ withLocalBuffer (flip (runReaderT . unKatipContextT) st . f) loc
+  alias locfrom locto = lift $ alias locfrom locto
   logMsg = lift . logMsg
   clockAccess (KatipContextT (ReaderT act)) = KatipContextT $ ReaderT (clockAccess . act)
 
@@ -177,6 +185,8 @@ instance LocationMonad AWS where
   writeBSS l             = writeBSS_S3 l
   readBSS (LocalFile l) = readBSS_Local l
   readBSS l             = readBSS_S3 l
+  alias (LocalFile fileFrom) (LocalFile fileTo) = alias_Local fileFrom fileTo
+  alias objFrom objTo                           = alias_S3 objFrom objTo
   withLocalBuffer f (LocalFile lf) = f $ lf ^. locFilePathAsRawFilePath
   withLocalBuffer f loc@S3Obj{} =
     Tmp.withSystemTempDirectory "pipeline-tools-tmp" writeAndUpload
@@ -208,6 +218,7 @@ instance LocationMonad LocalM where
   locExists = checkLocal "locExists" locExists_Local
   writeBSS = checkLocal "writeBSS" writeBSS_Local
   readBSS  = checkLocal "readBSS" readBSS_Local
+  alias = checkLocal "alias" $ \file1 -> checkLocal "alias (2nd argument)" (alias_Local file1)
   withLocalBuffer f = checkLocal "withLocalBuffer" (\lf -> f $ lf^.locFilePathAsRawFilePath)
 
 writeText :: LocationMonad m
@@ -257,6 +268,27 @@ eitherToExn (Right x) = pure x
 mapLeft :: (a -> b) -> Either a c -> Either b c
 mapLeft f (Left x)  = Left $ f x
 mapLeft _ (Right y) = Right y
+
+alias_Local :: MonadIO m => LocalFilePath -> LocalFilePath -> m ()
+alias_Local fp1 fp2 =
+  liftIO $ createFileLink
+    (fp1^.locFilePathAsRawFilePath)
+    (fp2^.locFilePathAsRawFilePath)
+
+alias_S3
+  :: (HasEnv r, MonadReader r m, MonadResource m, MonadAWS m)
+  => Loc
+  -> Loc
+  -> m ()
+alias_S3 (S3Obj bucket1 obj1) (S3Obj bucket2 obj2)
+  | bucket1 == bucket2 = do
+    _ <- S3.copyObj
+          (fromString bucket1)
+          (fromString $ obj1^.locFilePathAsRawFilePath)
+          (fromString $ obj2^.locFilePathAsRawFilePath)
+    pure ()
+  | otherwise = error "alias_S3: The two objects must be in the same bucket"
+alias_S3 _ _ = undefined
 
 readBSS_Local
   :: forall f m a. (MonadCatch f, MonadResource m)

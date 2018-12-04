@@ -14,6 +14,7 @@ module Network.AWS.S3.TaskPipelineUtils
   , streamObjInto
   , streamObjIntoExt
   , downloadFolder
+  , copyObj
   )
 where
 
@@ -26,6 +27,7 @@ import           Control.Retry               (RetryPolicyM (..), limitRetries,
 import qualified Data.ByteString.Streaming   as BSS
 import           Data.Conduit.Binary         (sinkLbs)
 import           Data.String
+import           Data.Text                   (Text)
 import           Network.AWS                 hiding (send)
 import           Network.AWS.Auth            (AuthError)
 import           Network.AWS.S3
@@ -64,6 +66,14 @@ uploadObj :: (MonadAWS m, AWSConstraint r m)
 uploadObj buck object source = do
   requestBody <- toBody <$> BSS.toStrict_ source
   send $ putObject buck object requestBody
+
+copyObj ::
+     (MonadAWS m, AWSConstraint r m)
+  => BucketName
+  -> Text
+  -> ObjectKey
+  -> m CopyObjectResponse
+copyObj buck from to = send $ copyObject buck from to
 
 -- | Upload a whole folder to an s3 bucket
 uploadFolder :: (MonadAWS m, AWSConstraint r m)
