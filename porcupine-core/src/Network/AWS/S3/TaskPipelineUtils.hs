@@ -73,7 +73,7 @@ copyObj ::
   -> Text
   -> ObjectKey
   -> m CopyObjectResponse
-copyObj buck from to = send $ copyObject buck from to
+copyObj buck objFrom objTo = send $ copyObject buck objFrom objTo
 
 -- | Upload a whole folder to an s3 bucket
 uploadFolder :: (MonadAWS m, AWSConstraint r m)

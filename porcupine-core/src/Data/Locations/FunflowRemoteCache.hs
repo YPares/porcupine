@@ -1,3 +1,4 @@
+{-# LANGUAGE FlexibleContexts      #-}
 {-# LANGUAGE FlexibleInstances     #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 
@@ -9,10 +10,11 @@ module Data.Locations.FunflowRemoteCache
 import           Control.Funflow.ContentHashable (ContentHash, hashToPath)
 import qualified Control.Funflow.RemoteCache     as Remote
 import           Control.Monad.Trans
+import           Data.Bifunctor                  (first)
 import           Data.Locations.Loc
 import           Data.Locations.LocationMonad
 import           Path                            (toFilePath)
-import System.FilePath (dropTrailingPathSeparator)
+import           System.FilePath                 (dropTrailingPathSeparator)
 
 hashToFilePath :: ContentHash -> FilePath
 hashToFilePath = dropTrailingPathSeparator . toFilePath . hashToPath
@@ -25,8 +27,8 @@ instance LocationMonad m => Remote.Cacher m LocationCacher where
     writeLazyByte (loc </> hashToFilePath hash) body
     pure Remote.PushOK
     where
-      aliasPath from to = Right <$>
-        alias
+      aliasPath from to = first show <$>
+        copy
           (loc </> hashToFilePath from)
           (loc </> hashToFilePath to)
   pull (LocationCacher loc) = Remote.pullAsArchive $ \hash -> do
