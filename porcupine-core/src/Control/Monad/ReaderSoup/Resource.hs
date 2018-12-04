@@ -22,4 +22,4 @@ instance (MonadUnliftIO m) => SoupContext InternalState m where
   runPrefMonadT _ _ = runResourceT
 
 instance (IsInSoup ctxs "resource") => MonadResource (ReaderSoup ctxs) where
-  liftResourceT act = inPrefMonad #resource (const act)
+  liftResourceT act = picking #resource act

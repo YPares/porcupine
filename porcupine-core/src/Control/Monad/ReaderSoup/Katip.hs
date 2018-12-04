@@ -25,17 +25,15 @@ instance (Monad m) => SoupContext KatipContextTState m where
   runPrefMonadT _ (e,n) = runKatipContextT e () n
 
 instance (IsInSoup ctxs "katip") => Katip (ReaderSoup ctxs) where
-  getLogEnv = inPrefMonad #katip (const getLogEnv)
-  localLogEnv f act =
-    inPrefMonad #katip $ \convert ->
-                        localLogEnv f (convert act)
+  getLogEnv = picking #katip getLogEnv
+  localLogEnv f act = scooping #katip $
+    localLogEnv f (pouring #katip act)
 
 instance (IsInSoup ctxs "katip") => KatipContext (ReaderSoup ctxs) where
-  getKatipContext = inPrefMonad #katip (const getKatipContext)
-  localKatipContext f act =
-    inPrefMonad #katip $ \convert ->
-                        localKatipContext f (convert act)
-  getKatipNamespace = inPrefMonad #katip (const getKatipNamespace)
-  localKatipNamespace f act =
-    inPrefMonad #katip $ \convert ->
-                        localKatipNamespace f (convert act)
+  getKatipContext = picking #katip getKatipContext
+  localKatipContext f act = scooping #katip $
+    localKatipContext f (pouring #katip act)
+  
+  getKatipNamespace = picking #katip getKatipNamespace
+  localKatipNamespace f act = scooping #katip $
+    localKatipNamespace f (pouring #katip act)

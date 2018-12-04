@@ -25,8 +25,9 @@ module Control.Monad.ReaderSoup
   , CookedReaderSoup
   , ContextFromName
   , IsInSoup
-  , Chopsticks(..)
+  , Spoon(..)
   , SoupContext(..)
+  , CanBePickedIn
   , consumeSoup
   , ArgsForSoupConsumption
   , cookReaderSoup
@@ -35,15 +36,16 @@ module Control.Monad.ReaderSoup
   , finishBroth
   , askSoup
   , filtering
-  , picking
-  , withChopsticks
-  , rioToChopsticks
-  , inPrefMonad
+  , rioToSpoon, spoonToReaderT
+  , dipping
+  , withSpoon
+  , picking, scooping, pouring
   ) where
 
 import Control.Lens (over, Identity(..))
-import Control.Monad.Reader.Class
+import Control.Monad.Catch
 import Control.Monad.IO.Unlift
+import Control.Monad.Reader.Class
 import Control.Monad.Trans.Reader hiding (ask, local, reader)
 import Data.Proxy
 import Data.Vinyl hiding (record)
@@ -60,7 +62,9 @@ import GHC.OverloadedLabels
 newtype ReaderSoup_ (record::((Symbol, *) -> *) -> [(Symbol, *)] -> *) ctxs a = ReaderSoup
   { unReaderSoup ::
       ReaderT (record ElField ctxs) IO a }
-  deriving (Functor, Applicative, Monad, MonadIO, MonadUnliftIO)
+  deriving ( Functor, Applicative, Monad
+           , MonadIO, MonadUnliftIO
+           , MonadCatch, MonadThrow )
 
 -- | The type of 'ReaderSoup_' your application will eat
 type ReaderSoup = ReaderSoup_ ARec
@@ -118,43 +122,52 @@ filtering :: (RecSubset ARec ctxs' ctxs (RImage ctxs' ctxs))
           -> ReaderSoup ctxs a
 filtering (ReaderSoup (ReaderT act)) =
   ReaderSoup $ ReaderT $ act . rcast
-  -- NOTE: this isn't as fast as 'picking' as it recreates an array, rather than
+  -- NOTE: this isn't as fast as 'picking_' as it recreates an array, rather than
   -- just a view to the original
 
 
 -- * Compatibility with existing ReaderT-like monads
 
 -- | Select temporarily one context out of the whole soup to create a
--- MonadReader of that context. 'Chopsticks' behaves exactly like a @ReaderT r
+-- MonadReader of that context. 'Spoon' behaves exactly like a @ReaderT r
 -- IO@ (where r is the ContextFromName of @l@) but that keeps track of the whole
 -- context array.
-newtype Chopsticks ctxs (l::Symbol) a = Chopsticks
-  { unChopsticks :: ReaderSoup ctxs a }
-  deriving (Functor, Applicative, Monad, MonadIO, MonadUnliftIO)
+newtype Spoon ctxs (l::Symbol) a = Spoon
+  { unSpoon :: ReaderSoup ctxs a }
+  deriving ( Functor, Applicative, Monad
+           , MonadIO, MonadUnliftIO
+           , MonadCatch, MonadThrow )
 
 instance (IsInSoup ctxs l, c ~ ContextFromName l)
-      => MonadReader c (Chopsticks ctxs l) where
-  ask = Chopsticks $ askSoup $ fromLabel @l
-  local f (Chopsticks (ReaderSoup (ReaderT act))) =
-    Chopsticks $ ReaderSoup $ ReaderT $
+      => MonadReader c (Spoon ctxs l) where
+  ask = Spoon $ askSoup $ fromLabel @l
+  local f (Spoon (ReaderSoup (ReaderT act))) =
+    Spoon $ ReaderSoup $ ReaderT $
       act . over (rlensf (fromLabel @l)) f
 
 -- | Brings forth one context of the whole soup, giving a MonadReader instance
 -- of just this context. This makes it possible that the same context type
 -- occurs several times in the broth, because the Label will disambiguate them.
-picking :: (IsInSoup ctxs l)
-        => Label l
-        -> Chopsticks ctxs l a
-        -> ReaderSoup ctxs a
-picking _ = unChopsticks
+dipping :: (IsInSoup ctxs l)
+         => Label l
+         -> Spoon ctxs l a
+         -> ReaderSoup ctxs a
+dipping _ = unSpoon
 
 -- | If you have a code that cannot cope with any MonadReader but explicitly
 -- wants a ReaderT
-rioToChopsticks :: forall l ctxs a. (IsInSoup ctxs l)
-                => ReaderT (ContextFromName l) IO a -> Chopsticks ctxs l a
-rioToChopsticks (ReaderT act) = Chopsticks $ ReaderSoup $ ReaderT $
+rioToSpoon :: forall l ctxs a. (IsInSoup ctxs l)
+           => ReaderT (ContextFromName l) IO a -> Spoon ctxs l a
+rioToSpoon (ReaderT act) = Spoon $ ReaderSoup $ ReaderT $
   act . rvalf (fromLabel @l)
 
+-- | Converting Spoon back to a ReaderT has to happen in the ReaderSoup
+-- because we need the global context
+spoonToReaderT :: forall l ctxs a. (IsInSoup ctxs l, KnownSymbol l)
+               => Spoon ctxs l a -> ReaderT (ContextFromName l) (ReaderSoup ctxs) a
+spoonToReaderT (Spoon (ReaderSoup (ReaderT act))) =
+  ReaderT $ \v -> ReaderSoup $ ReaderT $ \record ->
+    act $ rputf (fromLabel @l) v record
 
 -- | A class for the contexts that have an associated monad transformer that can
 -- be turned into a ReaderT of this context, and the type of monad over which
@@ -171,32 +184,47 @@ class (Monad m) => SoupContext c m where
   -- | Run the CtxPrefMonadT
   runPrefMonadT :: proxy c -> CtxConstructorArgs c -> CtxPrefMonadT c m a -> m a
 
--- | Converts an action in some ReaderT-of-IO-like monad to 'Chopsticks', this
+type CanBePickedIn m ctxs l =
+  (IsInSoup ctxs l, KnownSymbol l, SoupContext (ContextFromName l) m)
+
+-- | Converts an action in some ReaderT-like monad to 'Spoon', this
 -- monad being determined by @c@. This is for code that cannot cope with any
 -- MonadReader and want some specific monad.
-withChopsticks :: forall l ctxs c a.
-                  (IsInSoup ctxs l, SoupContext c IO
-                  ,c ~ ContextFromName l, KnownSymbol l)
-               => ((forall x. Chopsticks ctxs l x -> CtxPrefMonadT c IO x) -> CtxPrefMonadT c IO a)
-               -> Chopsticks ctxs l a
-withChopsticks act = Chopsticks $ ReaderSoup $ ReaderT $ \record ->
-  let
-    lbl = fromLabel @l
-    backwards :: forall x. Chopsticks ctxs l x -> CtxPrefMonadT c IO x
-    backwards (Chopsticks (ReaderSoup (ReaderT act'))) =
-      fromReaderT $ ReaderT $ \v -> act' $ rputf lbl v record
-  in runReaderT (toReaderT $ act backwards) $ rvalf lbl record
+withSpoon :: forall l ctxs a.
+             (CanBePickedIn (ReaderSoup ctxs) ctxs l)
+          => CtxPrefMonadT (ContextFromName l) (ReaderSoup ctxs) a
+          -> Spoon ctxs l a
+withSpoon act = Spoon $ ReaderSoup $ ReaderT $ \record ->
+  runReaderT (unReaderSoup $
+               (runReaderT (toReaderT act) $
+                           rvalf (fromLabel @l) record))
+             record
 
--- | Like 'picking', but instead of 'Chopsticks' runs some preferential
--- Reader-like monad. That permits to reuse some already existing monad from an
--- existing library (ResourceT, KatipContextT, AWST, etc.).
-inPrefMonad :: (IsInSoup ctxs l, SoupContext c IO
-               ,c ~ ContextFromName l, KnownSymbol l)
-            => Label l
-            -> ((forall x. ReaderSoup ctxs x -> CtxPrefMonadT c IO x) -> CtxPrefMonadT c IO a)
-            -> ReaderSoup ctxs a
-inPrefMonad lbl f = picking lbl $ withChopsticks $
-  \convert -> f (convert . Chopsticks)
+-- | Like 'dipping', but instead of 'Spoon' runs some preferential Reader-like
+-- monad. That permits to reuse some already existing monad from an existing
+-- library (ResourceT, KatipContextT, etc.) if you cannot just use a MonadReader
+-- instance.
+picking :: (CanBePickedIn IO ctxs l)
+        => Label l
+        -> CtxPrefMonadT (ContextFromName l) IO a
+        -> ReaderSoup ctxs a
+picking lbl = dipping lbl . rioToSpoon . toReaderT
+
+-- | Like 'picking', but gives you more context: instead of just running over
+-- IO, it makes the monad run over the whole soup (so instances of MonadXXX
+-- classes defined over the whole soup can still be used).
+scooping :: (CanBePickedIn (ReaderSoup ctxs) ctxs l)
+         => Label l
+         -> CtxPrefMonadT (ContextFromName l) (ReaderSoup ctxs) a
+         -> ReaderSoup ctxs a
+scooping lbl = dipping lbl . withSpoon
+
+-- | The opposite of 'scooping'.
+pouring :: forall l ctxs a. (CanBePickedIn (ReaderSoup ctxs) ctxs l)
+        => Label l
+        -> ReaderSoup ctxs a
+        -> CtxPrefMonadT (ContextFromName l) (ReaderSoup ctxs) a
+pouring _ act = fromReaderT $ spoonToReaderT (Spoon act :: Spoon ctxs l a)
 
 class ArgsForSoupConsumption args where
   type CtxsFromArgs args :: [(Symbol, *)]
