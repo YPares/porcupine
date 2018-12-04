@@ -27,7 +27,6 @@ module Control.Monad.ReaderSoup
   , IsInSoup
   , Chopsticks(..)
   , SoupContext(..)
-  , BracketedContext(..)
   , consumeSoup
   , ArgsForSoupConsumption
   , cookReaderSoup
@@ -171,20 +170,6 @@ class (Monad m) => SoupContext c m where
   fromReaderT :: ReaderT c m a -> CtxPrefMonadT c m a
   -- | Run the CtxPrefMonadT
   runPrefMonadT :: proxy c -> CtxConstructorArgs c -> CtxPrefMonadT c m a -> m a
-  default runPrefMonadT
-    :: (BracketedContext c m)
-    => proxy c -> CtxConstructorArgs c -> CtxPrefMonadT c m a -> m a
-  runPrefMonadT prx args act = do
-    ctx <- createCtx prx args
-    r <- runReaderT (toReaderT act) ctx
-    closeCtx ctx
-    return r
-
--- | For when the context can be opened and destroyed by separated functions.
-class (SoupContext c m) => BracketedContext c m where
-  createCtx :: proxy c -> CtxConstructorArgs c -> m c
-  closeCtx :: c -> m ()
-  closeCtx _ = return ()
 
 -- | Converts an action in some ReaderT-of-IO-like monad to 'Chopsticks', this
 -- monad being determined by @c@. This is for code that cannot cope with any

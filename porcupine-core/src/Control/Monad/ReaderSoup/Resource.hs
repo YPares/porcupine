@@ -21,9 +21,5 @@ instance (MonadUnliftIO m) => SoupContext InternalState m where
   fromReaderT (ReaderT act) = withInternalState act
   runPrefMonadT _ _ = runResourceT
 
-instance (MonadUnliftIO m) => BracketedContext InternalState m where
-  createCtx _ _ = createInternalState
-  closeCtx = closeInternalState
-
 instance (IsInSoup ctxs "resource") => MonadResource (ReaderSoup ctxs) where
   liftResourceT act = inPrefMonad #resource (const act)
