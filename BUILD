@@ -57,6 +57,7 @@ jinko_haskell_library(
             "@hackage//:hashable",
             "@hackage//:katip",
             "@hackage//:lens",
+            "@hackage//:mmorph",
             "@hackage//:monad-control",
             "@hackage//:mtl",
             "@hackage//:optparse-applicative",

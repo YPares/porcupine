@@ -36,6 +36,7 @@ dependencies:
   - hashable
   - katip >= 0.6.3
   - lens
+  - mmorph
   - monad-control
   - mtl
   - optparse-applicative

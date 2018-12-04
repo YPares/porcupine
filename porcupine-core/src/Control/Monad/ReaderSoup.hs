@@ -18,6 +18,7 @@
 
 module Control.Monad.ReaderSoup
   ( module Control.Monad.Trans.Reader
+  , hoist
   , MonadReader(..)
   , Identity(..)
   , ReaderSoup_(..)
@@ -27,9 +28,9 @@ module Control.Monad.ReaderSoup
   , IsInSoup
   , Spoon(..)
   , SoupContext(..)
-  , CanBePickedIn
-  , consumeSoup
+  , CanBeScoopedIn
   , ArgsForSoupConsumption
+  , consumeSoup
   , cookReaderSoup
   , pickTopping
   , eatTopping
@@ -47,6 +48,7 @@ import Control.Monad.Catch
 import Control.Monad.IO.Unlift
 import Control.Monad.Reader.Class
 import Control.Monad.Trans.Reader hiding (ask, local, reader)
+import Control.Monad.Morph (hoist)
 import Data.Proxy
 import Data.Vinyl hiding (record)
 import Data.Vinyl.TypeLevel
@@ -184,14 +186,16 @@ class (Monad m) => SoupContext c m where
   -- | Run the CtxPrefMonadT
   runPrefMonadT :: proxy c -> CtxConstructorArgs c -> CtxPrefMonadT c m a -> m a
 
-type CanBePickedIn m ctxs l =
+-- peelPrefMonadT :: CtxPrefMonadT c m a -> 
+
+type CanBeScoopedIn m ctxs l =
   (IsInSoup ctxs l, KnownSymbol l, SoupContext (ContextFromName l) m)
 
 -- | Converts an action in some ReaderT-like monad to 'Spoon', this
 -- monad being determined by @c@. This is for code that cannot cope with any
 -- MonadReader and want some specific monad.
 withSpoon :: forall l ctxs a.
-             (CanBePickedIn (ReaderSoup ctxs) ctxs l)
+             (CanBeScoopedIn (ReaderSoup ctxs) ctxs l)
           => CtxPrefMonadT (ContextFromName l) (ReaderSoup ctxs) a
           -> Spoon ctxs l a
 withSpoon act = Spoon $ ReaderSoup $ ReaderT $ \record ->
@@ -204,7 +208,7 @@ withSpoon act = Spoon $ ReaderSoup $ ReaderT $ \record ->
 -- monad. That permits to reuse some already existing monad from an existing
 -- library (ResourceT, KatipContextT, etc.) if you cannot just use a MonadReader
 -- instance.
-picking :: (CanBePickedIn IO ctxs l)
+picking :: (CanBeScoopedIn IO ctxs l)
         => Label l
         -> CtxPrefMonadT (ContextFromName l) IO a
         -> ReaderSoup ctxs a
@@ -213,18 +217,22 @@ picking lbl = dipping lbl . rioToSpoon . toReaderT
 -- | Like 'picking', but gives you more context: instead of just running over
 -- IO, it makes the monad run over the whole soup (so instances of MonadXXX
 -- classes defined over the whole soup can still be used).
-scooping :: (CanBePickedIn (ReaderSoup ctxs) ctxs l)
+scooping :: (CanBeScoopedIn (ReaderSoup ctxs) ctxs l)
          => Label l
          -> CtxPrefMonadT (ContextFromName l) (ReaderSoup ctxs) a
          -> ReaderSoup ctxs a
 scooping lbl = dipping lbl . withSpoon
 
 -- | The opposite of 'scooping'.
-pouring :: forall l ctxs a. (CanBePickedIn (ReaderSoup ctxs) ctxs l)
+pouring :: forall l ctxs a.
+           (CanBeScoopedIn (ReaderSoup ctxs) ctxs l)
         => Label l
         -> ReaderSoup ctxs a
         -> CtxPrefMonadT (ContextFromName l) (ReaderSoup ctxs) a
 pouring _ act = fromReaderT $ spoonToReaderT (Spoon act :: Spoon ctxs l a)
+
+
+-- * Running a whole 'ReaderSoup'
 
 class ArgsForSoupConsumption args where
   type CtxsFromArgs args :: [(Symbol, *)]
