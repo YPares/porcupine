@@ -73,7 +73,7 @@ newtype ReaderSoup_ (record::((Symbol, *) -> *) -> [(Symbol, *)] -> *) ctxs a = 
       ReaderT (record ElField ctxs) IO a }
   deriving ( Functor, Applicative, Monad
            , MonadIO, MonadUnliftIO
-           , MonadCatch, MonadThrow )
+           , MonadCatch, MonadThrow, MonadMask )
 
 -- | The type of 'ReaderSoup_' your application will eat
 type ReaderSoup = ReaderSoup_ ARec
@@ -145,7 +145,7 @@ newtype Spoon ctxs (l::Symbol) a = Spoon
   { unSpoon :: ReaderSoup ctxs a }
   deriving ( Functor, Applicative, Monad
            , MonadIO, MonadUnliftIO
-           , MonadCatch, MonadThrow )
+           , MonadCatch, MonadThrow, MonadMask )
 
 instance (IsInSoup ctxs l, c ~ ContextFromName l)
       => MonadReader c (Spoon ctxs l) where
