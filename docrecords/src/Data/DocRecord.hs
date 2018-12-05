@@ -1,6 +1,3 @@
-{-# LANGUAGE ViewPatterns               #-}
-{-# LANGUAGE StandaloneDeriving         #-}
-{-# LANGUAGE UndecidableInstances       #-}
 {-# LANGUAGE AllowAmbiguousTypes        #-}
 {-# LANGUAGE ConstraintKinds            #-}
 {-# LANGUAGE DataKinds                  #-}
@@ -12,14 +9,17 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE MultiParamTypeClasses      #-}
 {-# LANGUAGE OverloadedStrings          #-}
+{-# LANGUAGE PatternSynonyms            #-}
 {-# LANGUAGE PolyKinds                  #-}
 {-# LANGUAGE RankNTypes                 #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
+{-# LANGUAGE StandaloneDeriving         #-}
 {-# LANGUAGE TupleSections              #-}
 {-# LANGUAGE TypeApplications           #-}
 {-# LANGUAGE TypeFamilies               #-}
 {-# LANGUAGE TypeOperators              #-}
-{-# LANGUAGE PatternSynonyms            #-}
+{-# LANGUAGE UndecidableInstances       #-}
+{-# LANGUAGE ViewPatterns               #-}
 {-# OPTIONS_GHC -Wall #-}
 {-# OPTIONS_GHC -Wno-unticked-promoted-constructors #-}
 {-# OPTIONS_GHC -Wno-incomplete-patterns #-}
@@ -111,9 +111,9 @@ module Data.DocRecord
   ) where
 
 import           Control.Applicative
+import qualified Control.Category     as Cat
 import qualified Control.Lens         as L
 import           Data.Aeson
-import qualified Control.Category as Cat
 import           Data.Default
 import qualified Data.HashMap.Strict  as HM
 import           Data.Maybe           (fromMaybe)
@@ -122,11 +122,11 @@ import qualified Data.Text            as T
 import           Data.Typeable
 import           Data.Vinyl.Core
 import           Data.Vinyl.Curry
-import           Data.Vinyl.Derived   hiding (rfield, (=:), Field, HasField)
+import           Data.Vinyl.Derived   hiding (Field, HasField, rfield, (=:))
+import qualified Data.Vinyl.Functor   as F
 import           Data.Vinyl.Lens      (RElem, RSubset, rlens)
 import qualified Data.Vinyl.Lens      as VL
 import           Data.Vinyl.TypeLevel hiding (Fst, Snd)
-import qualified Data.Vinyl.Functor   as F
 import           GHC.Exts             (Constraint)
 import           GHC.TypeLits         (ErrorMessage (..), KnownSymbol, Symbol,
                                        TypeError, symbolVal)
@@ -185,7 +185,7 @@ instance (Show (f (s:|:a)), ShowPath s)
       T.unpack (showPath (Proxy @s)) ++ " (empty: " ++ show r ++ ")\n"
 
 -- | Wraps a field and gives it some tag
-data Tagged tag a = Tagged { tagFromTagged :: tag
+data Tagged tag a = Tagged { tagFromTagged   :: tag
                            , valueFromTagged :: a }
 
 -- | Wraps a field and gives it some documentation
@@ -234,13 +234,13 @@ instance (Show (f (g a))) => Show (F.Compose f g a) where
 type PossiblyEmptyField = F.Compose PossiblyEmpty Field
 
 peToMb :: (NamedField field, ShowPath s) => Either r (field (s:|:a)) -> Maybe a
-peToMb (Left _) = Nothing
+peToMb (Left _)  = Nothing
 peToMb (Right f) = f L.^. rfield
 
 peFromMb
   :: (ShowPath s, NamedField field)
   => Maybe a -> Either MissingValueReason (field (s ':|: a))
-peFromMb Nothing = Left NoDefault
+peFromMb Nothing  = Left NoDefault
 peFromMb (Just x) = Right $ fromValue x
 
 pattern PEField
@@ -443,7 +443,7 @@ renamedAs _ = changePath
 instance NamedField Field where
   rfield f (Field v) = Field . fromM <$> f (Just v)
     where fromM (Just v') = v'
-          fromM _        = error "Cannot remove a Field's value!"
+          fromM _         = error "Cannot remove a Field's value!"
   {-# INLINE rfield #-}
   fromValue = Field
   changePath (Field v) = Field v
@@ -454,11 +454,11 @@ instance (NamedField f) => NamedField (F.Compose PossiblyEmpty f) where
       inspect (Right inner) = rebuild NoDefault (setInner inner) <$> f (L.view rfield inner)
       inspect (Left r)      = rebuild r fromValue <$> f Nothing
       setInner inner x = L.set rfield (Just x) inner
-      rebuild reason _   Nothing   = Left reason
+      rebuild reason _   Nothing  = Left reason
       rebuild _ updInner (Just x) = Right $ updInner x
   fromValue = F.Compose . PE . Right . fromValue
   changePath (F.Compose (PE x)) = F.Compose $ PE $ case x of
-    Left r -> Left r
+    Left r  -> Left r
     Right f -> Right $ changePath f
 
 instance (FieldWithTag tag g)
@@ -551,12 +551,12 @@ rsubset = VL.rsubset
 
 -- | Just a version of 'VL.rcast' that uses the 'Includes' constraint, for
 -- better error messages
-rcast :: ss `Includes` rs => Rec f ss -> Rec f rs
+rcast :: (ss `Includes` rs) => Rec f ss -> Rec f rs
 rcast = VL.rcast
 
 -- | Just a version of 'VL.rcast' that uses the 'Includes' constraint, for
 -- better error messages
-rreplace :: ss `Includes` rs => Rec f rs -> Rec f ss -> Rec f ss
+rreplace :: (ss `Includes` rs) => Rec f rs -> Rec f ss -> Rec f ss
 rreplace = VL.rreplace
 
 -- | Replaces vinyl REquivalent to provide better error messages
