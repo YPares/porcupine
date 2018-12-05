@@ -204,7 +204,7 @@ writeBSS_Local path body = do
   liftIO $ createDirectoryIfMissing True (Path.takeDirectory raw)
   BSS.writeFile raw body
 
-writeBSS_S3 :: (HasEnv r, MonadReader r m, MonadResource m, MonadAWS m) => Loc -> BSS.ByteString m a -> m a
+writeBSS_S3 :: MonadAWS m => Loc -> BSS.ByteString m a -> m a
 writeBSS_S3 S3Obj { bucketName, objectName } body = do
   let raw = objectName ^. locFilePathAsRawFilePath
   (res, r) <- S3.uploadObj (fromString bucketName) (fromString raw) body
@@ -245,7 +245,7 @@ readBSS_Local f k = mapLeft (Error (LocalFile f) . IOError) <$>
   try (k $ BSS.readFile $ f ^. locFilePathAsRawFilePath)
 
 readBSS_S3
-  :: (HasEnv r, MonadReader r m, MonadResource m, MonadAWS m)
+  :: (MonadAWS m)
   => Loc
   -> (BSS.ByteString m () -> m b)
   -> m (Either Error b)

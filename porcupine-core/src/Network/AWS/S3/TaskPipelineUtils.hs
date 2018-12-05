@@ -6,8 +6,7 @@
 {-# LANGUAGE ViewPatterns          #-}
 
 module Network.AWS.S3.TaskPipelineUtils
-  (
-    runAll
+  ( runAll
   , getEnv
   , uploadObj
   , uploadFolder
@@ -20,13 +19,13 @@ where
 import           Control.Lens                hiding ((:>))
 import           Control.Monad               (when)
 import           Control.Monad.Catch         (catch, try)
-import           Control.Monad.Trans.AWS
+import           Control.Monad.Trans.Resource
 import           Control.Retry               (RetryPolicyM (..), limitRetries,
                                               retrying, rsIterNumber)
 import qualified Data.ByteString.Streaming   as BSS
 import           Data.Conduit.Binary         (sinkLbs)
 import           Data.String
-import           Network.AWS                 hiding (send)
+import           Network.AWS
 import           Network.AWS.Auth            (AuthError)
 import           Network.AWS.S3
 import           Streaming.TaskPipelineUtils as S
@@ -56,7 +55,7 @@ getEnv verbose = do
                   "or any other amazon service will probably fail"
       newEnv (FromKeys "foo" "bar")
 
-uploadObj :: (MonadAWS m, AWSConstraint r m)
+uploadObj :: (MonadAWS m)
              => BucketName
              -> ObjectKey
              -> BSS.ByteString m a
@@ -67,7 +66,7 @@ uploadObj buck object source = do
   return (por, r)
 
 -- | Upload a whole folder to an s3 bucket
-uploadFolder :: (MonadAWS m, AWSConstraint r m)
+uploadFolder :: (MonadAWS m, MonadResource m)
                 => FilePath -- ^ Local folder to copy
                 -> BucketName -- ^ Bucket to copy to
                 -> FilePath -- ^ Remote path to copy the content of the folder in
@@ -83,7 +82,7 @@ uploadFolder srcFolder destBucket destPath =
                   then objectName ++ " uploaded."
                   else objectName ++ " upload failed.")
 
-downloadFolder :: (MonadAWS m, AWSConstraint r m)
+downloadFolder :: (MonadAWS m, MonadResource m)
                   => BucketName
                   -> Maybe FilePath -- ^ The folder to download
                   -> FilePath -- ^ The path in which to save the download
@@ -97,7 +96,7 @@ downloadFolder srcBuck srcPath dest =
                 liftIO $ createDirectoryIfMissing True $ takeDirectory outFile
                 streamObjIntoExt srcBuck (fromString f) $ BSS.writeFile outFile)
 
-streamObjInto :: (MonadAWS m, AWSConstraint r m)
+streamObjInto :: (MonadAWS m)
                  => BucketName
                  -> ObjectKey
                  -> (BSS.ByteString m () -> m b)
@@ -139,7 +138,7 @@ retry awsRetry action =
   retrying retryPolicy shouldRetry (const action)
 
 
-streamObjIntoExt :: (MonadAWS m, AWSConstraint r m)
+streamObjIntoExt :: (MonadAWS m)
                      => BucketName
                      -> ObjectKey
                      -> (BSS.ByteString m () -> m b)
