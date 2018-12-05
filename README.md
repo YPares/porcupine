@@ -25,14 +25,29 @@ implements standard serialization interfaces, such as `aeson`'s `To/FromJSON` or
 `binary`, and makes it easy to reuse custom serialization functions you might
 already have.
 
-`SerialsFor` is a profunctor. That means that once you know how to (de)serialize
+TODO: What's the type of the encoding and decoding functions? `ByteString -> b`
+and `a -> ByteString`? Probably related to my confusion better explained in the
+following TODO.
+
+TODO: Explain what a `serial` is?
+
+`SerialsFor` is a [profunctor][profunctor]. That means that once you know how to (de)serialize
 an `A` (ie. if you have a `SerialsFor A A`), then you can just use `dimap` to
 get a `SerialsFor B B` if you know how to convert `A` to & from `B`. Handling
 only one-way serialization or deserialization is perfectly possible, that just mean you
-will have `SerialsFor Void B` or `SerialsFor A ()` and use only lmap or rmap. Any `SerialsFor a b` is also
+will have `SerialsFor Void B` or `SerialsFor A ()` and use only `lmap` or `rmap`. Any `SerialsFor a b` is also
 a monoid, meaning that you can for instance gather default serials, or serials
 from an external source and add to them your custom serialization methods,
 before using it in a task pipeline.
+
+TODO: If `SerialsFor A B` is a monoid, what's the meaning of `<>` and `empty`?
+This is the first time it surfaces that a `SerialsFor` does not wrap a function
+to encode and a function to decode, it seems to wrap multiple functions to encode
+and multiple functions to decode. It needs to be better conveyed. Also I have
+no intuition on how the encoding/deconding functions are meant to be picked for
+a particular use.
+
+[profunctor]: https://www.stackage.org/haddock/lts-12.21/lens-4.16.1/Control-Lens-Combinators.html#t:Profunctor
 
 The end goal of `SerialsFor` is that the user writing a task pipeline will not
 have to care about how the input data will be serialized. As long as the data it
@@ -41,7 +56,7 @@ the introspectable nature of resource trees (more on that later) allows you to
 _add_ serials to an existing pipeline before reusing it as part of your own
 pipeline. This sort of makes Porcupine an "anti-ETL": rather than marshall and
 curate input data so that it matches the pipeline expectations, you augment the
-pipeline so that it can deal with more different data sources.
+pipeline so that it can deal with more data sources.
 
 ## Resource tree
 
@@ -53,6 +68,22 @@ pipeline, it's completely hidden from them. This tree is made of atomic bits
 (constructed by the primitive tasks) which are composed when tasks are composed
 together to create the whole pipeline.
 
+TODO: I don't get what a `VirtualFile` is. The paragraph makes it sound as a
+resource parameter of the pipeline. The paragraph below adds that it is a thin
+layer over `SerialFor`, which doesn't help either. In either case, it is not
+clear what is virtual-like and what is file-like in a `VirtualFile`.
+
+TODO: Some concepts haven't been introduced yet in the above paragraph.
+I don't know what a "primitive task" or an "atomic bit" is. I'm wondering
+if this section would work better after the one about tasks.
+
+TODO: If the tree is hidden from the programmer, is it an implementation detail?
+The paragraph is not making clear why should she care of a hierarchy of `VirtualFiles`.
+
+TODO: Explain what is the relation between VirtualFiles which constitutes the
+hierarchy? The last part of the paragraph seems to hint that a subtask
+relation is involved, but this relates tasks, not VirtualFiles.
+
 Once the user has their serials, they just need to create a `VirtualFile` (a
 thin layer over `SerialsFor`, which is also a profunctor). For instance, this is
 how you create a readonly resource that can only be mapped to a JSON file in the
@@ -61,14 +92,21 @@ end:
 ```haskell
 myInput :: VirtualFile Void MyType
 	-- MyType must be an instance of FromJSON here
-myInput = dataSource ["Inputs", "MyInput"] -- A virtual path
-	             (somePureDeserial JSONSerial)
+myInput = dataSource
+            ["Inputs", "MyInput"] -- A virtual path
+	        (somePureDeserial JSONSerial)
 ```
+
+TODO: Show type signatures of `dataSource` and `somePureDeserial`?
 
 And then, using `myInput` in a task pipeline is just a matter of calling the
 primitive task `accessVirtualFile myInput`, and the whole pipeline will expose
 a new `/Inputs/MyInput` virtual file. `accessVirtualFile` just turns a
 `VirtualFile a b` into a `PTask a b`.
+
+TODO: Not knowing what a `PTask` is, and what the meaning is of having a
+pipeline expose a virtual file, this paragraph should probably be removed
+or placed later.
 
 ## Tasks
 
@@ -77,6 +115,16 @@ perform computations, as any pure function can be lifted. Each `PTask` will
 expose its requirements (in the form of a resource tree) and a function that will
 actually execute the task when the pipeline runs. `PTasks` compose much like
 functions do, and they merge their requirements as they compose.
+
+TODO: Explain that an arrow is a computation with an input and an output.
+
+TODO: What means that a PTask is atomic? I'm guessing that it means it is
+not built from composing other PTasks. It is possibly best to choose one of
+primitive and atomic to refer to these tasks consistently (primitive could
+be better if this has nothing to do with atomicity in transactions).
+
+TODO: Provide a an overview of the major groups of primitive operations that
+are avaialble.
 
 Once you have e.g. a `mainTask :: PTask () ()` that corresponds to your whole
 pipeline, your application just needs to call:
