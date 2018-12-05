@@ -27,6 +27,26 @@ jinko_haskell_library(
 )
 
 jinko_haskell_library(
+    name = "reader-soup",
+    srcs = glob(["reader-soup/src/**/*.hs"]),
+    src_strip_prefix = "reader-soup/src",
+    deps =
+        [
+            "@hackage//:base",
+            "@hackage//:lens",
+            "@hackage//:exceptions",
+            "@hackage//:transformers",
+            "@hackage//:mtl",
+            "@hackage//:mmorph",
+            "@hackage//:unliftio-core",
+            "@hackage//:vinyl",
+            "@hackage//:resourcet",
+            "@hackage//:katip",
+            "@hackage//:amazonka",
+        ],
+)
+
+jinko_haskell_library(
     name = "porcupine-core",
     srcs = glob(["porcupine-core/src/**/*.hs"]),
     src_strip_prefix = "porcupine-core/src",
@@ -57,7 +77,6 @@ jinko_haskell_library(
             "@hackage//:hashable",
             "@hackage//:katip",
             "@hackage//:lens",
-            "@hackage//:mmorph",
             "@hackage//:monad-control",
             "@hackage//:mtl",
             "@hackage//:optparse-applicative",
@@ -78,8 +97,8 @@ jinko_haskell_library(
             "@hackage//:unordered-containers",
             "@hackage//:url",
             "@hackage//:void",
-            "@hackage//:vinyl",
             "@hackage//:yaml",
             ":docrecords",
+	    ":reader-soup",
         ],
 )

@@ -36,12 +36,12 @@ dependencies:
   - hashable
   - katip >= 0.6.3
   - lens
-  - mmorph
   - monad-control
   - mtl
   - optparse-applicative
   - path
   - profunctors
+  - reader-soup
   - resourcet
   - retry
   - store
@@ -57,7 +57,6 @@ dependencies:
   - unordered-containers
   - url
   - void
-  - vinyl
   - yaml
 
 library:

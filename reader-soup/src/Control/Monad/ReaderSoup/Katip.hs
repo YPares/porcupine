@@ -1,19 +1,19 @@
-{-# LANGUAGE TypeSynonymInstances #-}
-{-# LANGUAGE FlexibleInstances #-}
-{-# LANGUAGE TypeFamilies #-}
-{-# LANGUAGE DataKinds #-}
-{-# LANGUAGE FlexibleContexts #-}
-{-# LANGUAGE UndecidableInstances #-}
-{-# LANGUAGE OverloadedLabels #-}
+{-# LANGUAGE DataKinds                 #-}
 {-# LANGUAGE ExistentialQuantification #-}
-{-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE FlexibleContexts          #-}
+{-# LANGUAGE FlexibleInstances         #-}
+{-# LANGUAGE MultiParamTypeClasses     #-}
+{-# LANGUAGE OverloadedLabels          #-}
+{-# LANGUAGE TypeFamilies              #-}
+{-# LANGUAGE TypeSynonymInstances      #-}
+{-# LANGUAGE UndecidableInstances      #-}
 {-# OPTIONS_GHC "-fno-warn-orphans" #-}
 
 module Control.Monad.ReaderSoup.Katip where
 
-import Control.Monad.ReaderSoup
-import Katip
-import Katip.Monadic
+import           Control.Monad.ReaderSoup
+import           Katip
+import           Katip.Monadic
 
 type instance ContextFromName "katip" = KatipContextTState
 
@@ -33,7 +33,7 @@ instance (IsInSoup ctxs "katip") => KatipContext (ReaderSoup ctxs) where
   getKatipContext = picking #katip getKatipContext
   localKatipContext f act = scooping #katip $
     localKatipContext f (pouring #katip act)
-  
+
   getKatipNamespace = picking #katip getKatipNamespace
   localKatipNamespace f act = scooping #katip $
     localKatipNamespace f (pouring #katip act)

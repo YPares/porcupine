@@ -37,6 +37,7 @@ resolver: lts-12.14
 #  - wai
 packages:
 - docrecords
+- reader-soup
 - porcupine-core
 
 # Dependency packages to be pulled from upstream that are not in the resolver

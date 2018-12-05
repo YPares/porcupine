@@ -1,59 +1,66 @@
-{-# LANGUAGE OverloadedLabels #-}
+{-# LANGUAGE ConstraintKinds            #-}
+{-# LANGUAGE DataKinds                  #-}
+{-# LANGUAGE DefaultSignatures          #-}
+{-# LANGUAGE FlexibleContexts           #-}
+{-# LANGUAGE FlexibleInstances          #-}
+{-# LANGUAGE FunctionalDependencies     #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
-{-# LANGUAGE ConstraintKinds #-}
-{-# LANGUAGE DataKinds #-}
-{-# LANGUAGE TypeOperators #-}
-{-# LANGUAGE KindSignatures #-}
-{-# LANGUAGE TypeFamilies #-}
-{-# LANGUAGE FlexibleContexts #-}
-{-# LANGUAGE TypeApplications #-}
-{-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE MultiParamTypeClasses #-}
-{-# LANGUAGE FlexibleInstances #-}
-{-# LANGUAGE UndecidableInstances #-}
-{-# LANGUAGE StandaloneDeriving #-}
-{-# LANGUAGE DefaultSignatures #-}
-{-# LANGUAGE RankNTypes #-}
-{-# LANGUAGE FunctionalDependencies #-}
+{-# LANGUAGE KindSignatures             #-}
+{-# LANGUAGE MultiParamTypeClasses      #-}
+{-# LANGUAGE OverloadedLabels           #-}
+{-# LANGUAGE RankNTypes                 #-}
+{-# LANGUAGE ScopedTypeVariables        #-}
+{-# LANGUAGE StandaloneDeriving         #-}
+{-# LANGUAGE TypeApplications           #-}
+{-# LANGUAGE TypeFamilies               #-}
+{-# LANGUAGE TypeOperators              #-}
+{-# LANGUAGE UndecidableInstances       #-}
 
 module Control.Monad.ReaderSoup
-  ( module Control.Monad.Trans.Reader
+  ( -- * API for running a ReaderSoup
+    ReaderSoup_(..)
+  , IsInSoup
+  , ArgsForSoupConsumption
+  , (=:)
+  , Rec(..)
+  , consumeSoup
+
+    -- * API for working in a ReaderSoup and creating instances of SoupContext
+  , module Control.Monad.Trans.Reader
   , hoist
   , MonadReader(..)
-  , Identity(..)
-  , ReaderSoup_(..)
   , ReaderSoup
-  , CookedReaderSoup
   , ContextFromName
   , IsInSoup
-  , Spoon(..)
   , SoupContext(..)
   , CanBeScoopedIn
-  , ArgsForSoupConsumption
-  , consumeSoup
+  , askSoup
+  , filtering
+  , picking, scooping, pouring
+
+  -- * Low-level API
+  , Spoon(..)
+  , CookedReaderSoup
   , cookReaderSoup
   , pickTopping
   , eatTopping
   , finishBroth
-  , askSoup
-  , filtering
   , rioToSpoon, spoonToReaderT
   , dipping
   , withSpoon
-  , picking, scooping, pouring
   ) where
 
-import Control.Lens (over, Identity(..))
-import Control.Monad.Catch
-import Control.Monad.IO.Unlift
-import Control.Monad.Reader.Class
-import Control.Monad.Trans.Reader hiding (ask, local, reader)
-import Control.Monad.Morph (hoist)
-import Data.Proxy
-import Data.Vinyl hiding (record)
-import Data.Vinyl.TypeLevel
-import GHC.TypeLits
-import GHC.OverloadedLabels
+import           Control.Lens               (over)
+import           Control.Monad.Catch
+import           Control.Monad.IO.Unlift
+import           Control.Monad.Morph        (hoist)
+import           Control.Monad.Reader.Class
+import           Control.Monad.Trans.Reader hiding (ask, local, reader)
+import           Data.Proxy
+import           Data.Vinyl                 hiding (record)
+import           Data.Vinyl.TypeLevel
+import           GHC.OverloadedLabels
+import           GHC.TypeLits
 
 
 -- | Represents a set of Reader-like monads as a one-layer Reader that can grow
@@ -185,8 +192,6 @@ class (Monad m) => SoupContext c m where
   fromReaderT :: ReaderT c m a -> CtxPrefMonadT c m a
   -- | Run the CtxPrefMonadT
   runPrefMonadT :: proxy c -> CtxConstructorArgs c -> CtxPrefMonadT c m a -> m a
-
--- peelPrefMonadT :: CtxPrefMonadT c m a -> 
 
 type CanBeScoopedIn m ctxs l =
   (IsInSoup ctxs l, KnownSymbol l, SoupContext (ContextFromName l) m)
