@@ -87,11 +87,6 @@ class (MonadMask m, MonadIO m) => LocationMonad m where
   -- consumed
   readBSS :: Loc -> (BSS.ByteString m () -> m b) -> m (Either Error b)
 
-  -- | Wrapper to use functions directly writing to a filepath.
-  -- @withLocalBuffer f loc@ will apply @f@ to a temporary file and copy the
-  -- result to @loc@
-  withLocalBuffer :: (FilePath -> m a) -> Loc -> m a
-
 -- | Any ReaderT of some LocationMonad is also a LocationMonad
 instance (LocationMonad m) => LocationMonad (ReaderT r m) where
   locExists = lift . locExists
@@ -101,9 +96,6 @@ instance (LocationMonad m) => LocationMonad (ReaderT r m) where
   readBSS loc f = do
     st <- ask
     lift $ readBSS loc $ flip runReaderT st . f . hoist lift
-  withLocalBuffer f loc = do
-    st <- ask
-    lift $ withLocalBuffer (flip runReaderT st . f) loc
 
 -- | Same than the previous instance, we just lift through the @KatipContextT@
 -- constructor
@@ -115,9 +107,6 @@ instance (LocationMonad m) => LocationMonad (KatipContextT m) where
   readBSS loc f = KatipContextT $ do
     st <- ask
     lift $ readBSS loc $ flip (runReaderT . unKatipContextT) st . f . hoist lift
-  withLocalBuffer f loc = KatipContextT $ do
-    st <- ask
-    lift $ withLocalBuffer (flip (runReaderT . unKatipContextT) st . f) loc
 
 -- | Run a computation or a sequence of computations that will access some
 -- locations. Selects whether to run in IO or AWS based on some Loc used as
@@ -154,8 +143,13 @@ instance LocationMonad AWS where
   writeBSS l             = writeBSS_S3 l
   readBSS (LocalFile l) = readBSS_Local l
   readBSS l             = readBSS_S3 l
-  withLocalBuffer f (LocalFile lf) = f $ lf ^. locFilePathAsRawFilePath
-  withLocalBuffer f loc@S3Obj{} =
+
+-- | Wrapper to use functions directly writing to a filepath.
+-- @withLocalBuffer f loc@ will apply @f@ to a temporary file and copy the
+-- result to @loc@
+withLocalBuffer :: (MonadIO m, MonadMask m, LocationMonad m) => (FilePath -> m a) -> Loc -> m a
+withLocalBuffer f (LocalFile lf) = f $ lf ^. locFilePathAsRawFilePath
+withLocalBuffer f loc@S3Obj{} =
     Tmp.withSystemTempDirectory "pipeline-tools-tmp" writeAndUpload
     where
       writeAndUpload tmpDir = do
@@ -185,7 +179,6 @@ instance LocationMonad LocalM where
   locExists = checkLocal "locExists" locExists_Local
   writeBSS = checkLocal "writeBSS" writeBSS_Local
   readBSS  = checkLocal "readBSS" readBSS_Local
-  withLocalBuffer f = checkLocal "withLocalBuffer" (\lf -> f $ lf^.locFilePathAsRawFilePath)
 
 writeText :: LocationMonad m
           => Loc

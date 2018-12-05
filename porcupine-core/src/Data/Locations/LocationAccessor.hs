@@ -19,6 +19,7 @@ import           Data.Locations.Loc
 import qualified Data.Locations.LocationMonad as LM
 -- import           Data.Store                      (Store)
 import           GHC.TypeLits
+import           Network.AWS
 
 
 -- | Creates some Loc type, indexed over a symbol (see ReaderSoup for how that
@@ -38,7 +39,7 @@ class (MonadMask m, MonadIO m
 
   withLocalBuffer :: (FilePath -> m a) -> LocOf l -> m a
 
--- Accessing local resources:
+-- | Accessing local resources
 instance (MonadResource m, MonadMask m) => LocationAccessor "resource" m where
   newtype LocOf "resource" = L Loc
     deriving (FromJSON)
@@ -49,5 +50,13 @@ instance (MonadResource m, MonadMask m) => LocationAccessor "resource" m where
                      case r of
                        Left err -> throwM err
                        Right x  -> return x
-  withLocalBuffer f (L l) =
-    LM.checkLocal "withLocalBuffer" (\lf -> f $ lf^.locFilePathAsRawFilePath) l
+
+-- | Accessing resources on S3
+instance (MonadAWS m, MonadMask m) => LocationAccessor "aws" m where
+  newtype LocOf "aws" = S Loc
+    deriving (FromJSON)
+  locExists _ = return True -- TODO: Implement it
+  writeBSS (S l) = LM.writeBSS_S3 l
+  readBSS (S l) f = LM.readBSS_S3 l f >>= g
+    where g (Left err) = throwM err
+          g (Right x)  = return x
