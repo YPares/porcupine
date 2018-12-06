@@ -39,6 +39,9 @@ class (MonadMask m, MonadIO m
 
   readBSS :: LocOf l -> (BSS.ByteString m () -> m b) -> m b
 
+  copy :: LocOf l -> LocOf l -> m ()
+  copy locFrom locTo = readBSS locFrom (writeBSS locTo)
+
   withLocalBuffer :: (FilePath -> m a) -> LocOf l -> m a
   -- If we have a local resource accessor, we use it:
   default withLocalBuffer :: (MonadResource m)
@@ -58,13 +61,16 @@ instance (MonadResource m, MonadMask m) => LocationAccessor "resource" m where
     deriving (FromJSON, ToJSON)
   locExists (L l) = LM.checkLocal "locExists" LM.locExists_Local l
   writeBSS (L l) = LM.checkLocal "writeBSS" LM.writeBSS_Local l
-  readBSS (L l) f = LM.checkLocal "readBSS" rd l
-    where rd l' = do r <- LM.readBSS_Local l' f
-                     case r of
-                       Left err -> throwM err
-                       Right x  -> return x
+  readBSS (L l) f =
+    LM.checkLocal "readBSS" (\l' -> LM.readBSS_Local l' f >>= LM.eitherToExn) l
   withLocalBuffer f (L l) =
     LM.checkLocal "withLocalBuffer" (\l' -> f $ l'^.locFilePathAsRawFilePath) l
+  copy (L l1) (L l2) = do
+    LM.checkLocal "copy" (\file1 ->
+      LM.checkLocal "copy (2nd argument)" (LM.copy_Local file1) l2) l1
+    >>= LM.eitherToExn
+
+-- TODO: Move "aws" instance in its own porcupine-s3 package
 
 -- | Accessing resources on S3
 instance (MonadAWS m, MonadMask m, MonadResource m) => LocationAccessor "aws" m where
@@ -72,6 +78,5 @@ instance (MonadAWS m, MonadMask m, MonadResource m) => LocationAccessor "aws" m 
     deriving (FromJSON, ToJSON)
   locExists _ = return True -- TODO: Implement it
   writeBSS (S l) = LM.writeBSS_S3 l
-  readBSS (S l) f = LM.readBSS_S3 l f >>= g
-    where g (Left err) = throwM err
-          g (Right x)  = return x
+  readBSS (S l) f = LM.readBSS_S3 l f >>= LM.eitherToExn
+  copy (S l1) (S l2) = LM.copy_S3 l1 l2 >>= LM.eitherToExn

@@ -256,7 +256,7 @@ copy_Local fp1 fp2 =
     (fp2^.locFilePathAsRawFilePath)
 
 copy_S3
-  :: (HasEnv r, MonadReader r m, MonadResource m, MonadAWS m, LocationMonad m)
+  :: (MonadResource m, MonadAWS m)
   => Loc
   -> Loc
   -> m (Either Error ())
@@ -267,8 +267,8 @@ copy_S3 locFrom@(S3Obj bucket1 obj1) locTo@(S3Obj bucket2 obj2)
           (fromString $ obj1^.locFilePathAsRawFilePath)
           (fromString $ obj2^.locFilePathAsRawFilePath)
     pure (Right ())
-  | otherwise = defaultCopy locFrom locTo
-copy_S3 locFrom locTo = defaultCopy locFrom locTo
+  | otherwise = readBSS_S3 locFrom (writeBSS_S3 locTo)
+copy_S3 _ _ = undefined
 
 readBSS_Local
   :: forall f m a. (MonadCatch f, MonadResource m)
