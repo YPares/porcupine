@@ -53,7 +53,7 @@ extra-deps:
     - core
     - amazonka-s3
 - git: https://github.com/tweag/funflow
-  commit: aa7d393206bae6e58a4b3988a20e76b42f41cbb5
+  commit: 8089be47b5a075d6092c0dd4e0e0fc50b79c7d44
   subdirs:
     - funflow
 
