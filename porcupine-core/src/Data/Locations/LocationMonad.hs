@@ -37,6 +37,7 @@ import           Network.AWS.S3
 import qualified Network.AWS.S3.TaskPipelineUtils      as S3
 import           Streaming
 import           System.Directory                      (createDirectoryIfMissing,
+                                                        createFileLink,
                                                         doesPathExist)
 import qualified System.FilePath                       as Path
 import qualified System.IO.Temp                        as Tmp
@@ -87,6 +88,20 @@ class (MonadMask m, MonadIO m) => LocationMonad m where
   -- consumed
   readBSS :: Loc -> (BSS.ByteString m () -> m b) -> m (Either Error b)
 
+  -- |
+  -- Duplicate a location.
+  --
+  -- As much as possible this should be done by aliasing to avoid actually
+  -- moving the content around.
+  copy ::
+       Loc -- ^ From
+    -> Loc -- ^ To
+    -> m (Either Error ())
+  copy = defaultCopy
+
+defaultCopy :: LocationMonad m => Loc -> Loc -> m (Either Error ())
+defaultCopy locFrom locTo = readBSS locFrom (writeBSS locTo)
+
 -- | Any ReaderT of some LocationMonad is also a LocationMonad
 instance (LocationMonad m) => LocationMonad (ReaderT r m) where
   locExists = lift . locExists
@@ -96,6 +111,7 @@ instance (LocationMonad m) => LocationMonad (ReaderT r m) where
   readBSS loc f = do
     st <- ask
     lift $ readBSS loc $ flip runReaderT st . f . hoist lift
+  copy locfrom locto = lift $ copy locfrom locto
 
 -- | Same than the previous instance, we just lift through the @KatipContextT@
 -- constructor
@@ -107,6 +123,7 @@ instance (LocationMonad m) => LocationMonad (KatipContextT m) where
   readBSS loc f = KatipContextT $ do
     st <- ask
     lift $ readBSS loc $ flip (runReaderT . unKatipContextT) st . f . hoist lift
+  copy locfrom locto = lift $ copy locfrom locto
 
 -- | Run a computation or a sequence of computations that will access some
 -- locations. Selects whether to run in IO or AWS based on some Loc used as
@@ -143,6 +160,8 @@ instance LocationMonad AWS where
   writeBSS l             = writeBSS_S3 l
   readBSS (LocalFile l) = readBSS_Local l
   readBSS l             = readBSS_S3 l
+  copy (LocalFile fileFrom) (LocalFile fileTo) = copy_Local fileFrom fileTo
+  copy objFrom objTo                           = copy_S3 objFrom objTo
 
 -- | Wrapper to use functions directly writing to a filepath.
 -- @withLocalBuffer f loc@ will apply @f@ to a temporary file and copy the
@@ -179,6 +198,7 @@ instance LocationMonad LocalM where
   locExists = checkLocal "locExists" locExists_Local
   writeBSS = checkLocal "writeBSS" writeBSS_Local
   readBSS  = checkLocal "readBSS" readBSS_Local
+  copy = checkLocal "copy" $ \file1 -> checkLocal "copy (2nd argument)" (copy_Local file1)
 
 writeText :: LocationMonad m
           => Loc
@@ -228,6 +248,27 @@ eitherToExn (Right x) = pure x
 mapLeft :: (a -> b) -> Either a c -> Either b c
 mapLeft f (Left x)  = Left $ f x
 mapLeft _ (Right y) = Right y
+
+copy_Local :: MonadIO m => LocalFilePath -> LocalFilePath -> m (Either Error ())
+copy_Local fp1 fp2 =
+  liftIO $ Right <$> createFileLink
+    (fp1^.locFilePathAsRawFilePath)
+    (fp2^.locFilePathAsRawFilePath)
+
+copy_S3
+  :: (HasEnv r, MonadReader r m, MonadResource m, MonadAWS m, LocationMonad m)
+  => Loc
+  -> Loc
+  -> m (Either Error ())
+copy_S3 locFrom@(S3Obj bucket1 obj1) locTo@(S3Obj bucket2 obj2)
+  | bucket1 == bucket2 = do
+    _ <- S3.copyObj
+          (fromString bucket1)
+          (fromString $ obj1^.locFilePathAsRawFilePath)
+          (fromString $ obj2^.locFilePathAsRawFilePath)
+    pure (Right ())
+  | otherwise = defaultCopy locFrom locTo
+copy_S3 locFrom locTo = defaultCopy locFrom locTo
 
 readBSS_Local
   :: forall f m a. (MonadCatch f, MonadResource m)
