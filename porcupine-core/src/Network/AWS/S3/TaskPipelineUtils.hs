@@ -68,7 +68,7 @@ uploadObj buck object source = do
   return (por, r)
 
 copyObj ::
-     (MonadAWS m, AWSConstraint r m)
+     (MonadAWS m)
   => BucketName
   -> Text
   -> ObjectKey
