@@ -2,6 +2,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RankNTypes        #-}
 {-# LANGUAGE TemplateHaskell   #-}
+{-# LANGUAGE OverloadedLabels           #-}
 
 module System.TaskPipeline.Run
   ( PipelineConfigMethod(..)
@@ -31,6 +32,10 @@ import           System.TaskPipeline.ResourceTree
 
 import           Prelude                            hiding (id, (.))
 
+import           Control.Monad.ReaderSoup
+import           Control.Monad.ReaderSoup.Resource
+import           Control.Monad.ReaderSoup.Katip
+import           Data.Locations.LocationAccessor
 
 -- | A task defining a whole pipeline, and that may run in any LocationMonad. It
 -- is an Arrow, which means you obtain it by composing subtasks either
@@ -159,6 +164,11 @@ bindResourceTreeAndRun progName (FullConfig defConfigFile defRoot) tree f =
         refLoc = case mappings' of
           Left rootLoc -> fmap (const ()) rootLoc
           Right m      -> refLocFromMappings m
+
+runReaderSoup progName scribeParams =
+  consumeSoup (  #katip =: AltRunner (runLogger progName scribeParams)
+              :& #resource =: UseResource
+              :& RNil) 
 
 refLocFromMappings :: LocationMappings -> Loc_ ()
 refLocFromMappings m = foldr f (LocalFile $ LocFilePath () "")

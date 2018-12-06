@@ -23,6 +23,7 @@ module Control.Monad.ReaderSoup
   , ArgsForSoupConsumption
   , AltRunner(..)
   , (=:)
+  , (:::)
   , Rec(..)
   , consumeSoup
 
@@ -235,15 +236,16 @@ pouring _ act = fromReaderT $ spoonToReaderT (Spoon act :: Spoon ctxs l a)
 
 -- | A class for monad transformers than can be ran, given some args, over some
 -- monad
-class RunnableTransformer args t m where
+class RunnableTransformer args t m | args -> t m where
   runTransformer :: args -> t m a -> m a
 
 -- | Knowing the prefered monad to run some context, 'AltRunner' gives you a way
 -- to override this monad's runner.
-newtype AltRunner t m = AltRunner { unSpiced :: forall r. t m r -> m r }
+newtype AltRunner t m = AltRunner
+  { unAltRunner :: forall r. t m r -> m r }
 
 instance RunnableTransformer (AltRunner t m) t m where
-  runTransformer = unSpiced
+  runTransformer = unAltRunner
 
 class ArgsForSoupConsumption args where
   type CtxsFromArgs args :: [(Symbol, *)]
