@@ -149,7 +149,7 @@ instance LocationMonad AWS where
 -- result to @loc@
 withLocalBuffer :: (MonadIO m, MonadMask m, LocationMonad m) => (FilePath -> m a) -> Loc -> m a
 withLocalBuffer f (LocalFile lf) = f $ lf ^. locFilePathAsRawFilePath
-withLocalBuffer f loc@S3Obj{} =
+withLocalBuffer f loc =
     Tmp.withSystemTempDirectory "pipeline-tools-tmp" writeAndUpload
     where
       writeAndUpload tmpDir = do

@@ -4,6 +4,7 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE MultiParamTypeClasses      #-}
 {-# LANGUAGE TypeFamilies               #-}
+{-# LANGUAGE DefaultSignatures          #-}
 
 module Data.Locations.LocationAccessor where
 
@@ -20,6 +21,8 @@ import qualified Data.Locations.LocationMonad as LM
 -- import           Data.Store                      (Store)
 import           GHC.TypeLits
 import           Network.AWS
+import qualified System.FilePath                       as Path
+import qualified System.IO.Temp                        as Tmp
 
 
 -- | Creates some Loc type, indexed over a symbol (see ReaderSoup for how that
@@ -38,6 +41,17 @@ class (MonadMask m, MonadIO m
   readBSS :: LocOf l -> (BSS.ByteString m () -> m b) -> m b
 
   withLocalBuffer :: (FilePath -> m a) -> LocOf l -> m a
+  default withLocalBuffer :: (MonadResource m)
+                          => (FilePath -> m a) -> LocOf l -> m a
+  -- If we have a local resource accessor, we use it:
+  withLocalBuffer f loc =
+    Tmp.withSystemTempDirectory "pipeline-tools-tmp" writeAndUpload
+    where
+      writeAndUpload tmpDir = do
+        let tmpFile = tmpDir Path.</> "out"
+        res <- f tmpFile
+        readBSS (L (localFile tmpFile)) (writeBSS loc)
+        return res
 
 -- | Accessing local resources
 instance (MonadResource m, MonadMask m) => LocationAccessor "resource" m where
@@ -50,9 +64,11 @@ instance (MonadResource m, MonadMask m) => LocationAccessor "resource" m where
                      case r of
                        Left err -> throwM err
                        Right x  -> return x
+  withLocalBuffer f (L l) =
+    LM.checkLocal "withLocalBuffer" (\l' -> f $ l'^.locFilePathAsRawFilePath) l
 
 -- | Accessing resources on S3
-instance (MonadAWS m, MonadMask m) => LocationAccessor "aws" m where
+instance (MonadAWS m, MonadMask m, MonadResource m) => LocationAccessor "aws" m where
   newtype LocOf "aws" = S Loc
     deriving (FromJSON)
   locExists _ = return True -- TODO: Implement it
