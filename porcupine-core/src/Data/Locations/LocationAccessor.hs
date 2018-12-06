@@ -73,7 +73,7 @@ instance (MonadResource m, MonadMask m) => LocationAccessor "resource" m where
       LM.checkLocal "copy (2nd argument)" (LM.copy_Local file1) l2) l1
     -- >>= LM.eitherToExn
 
--- TODO: Move "aws" instance in its own porcupine-s3 package
+-- TODO: Move "aws" instance to its own porcupine-s3 package
 
 -- | Accessing resources on S3
 instance (MonadAWS m, MonadMask m, MonadResource m) => LocationAccessor "aws" m where

@@ -21,6 +21,7 @@ module Control.Monad.ReaderSoup
     ReaderSoup_(..)
   , IsInSoup
   , ArgsForSoupConsumption
+  , AltRunner(..)
   , (=:)
   , Rec(..)
   , consumeSoup
@@ -31,7 +32,7 @@ module Control.Monad.ReaderSoup
   , MonadReader(..)
   , ReaderSoup
   , ContextFromName
-  , IsInSoup
+  , RunnableTransformer(..)
   , SoupContext(..)
   , CanBeScoopedIn
   , askSoup
@@ -56,7 +57,6 @@ import           Control.Monad.IO.Unlift
 import           Control.Monad.Morph        (hoist)
 import           Control.Monad.Reader.Class
 import           Control.Monad.Trans.Reader hiding (ask, local, reader)
-import           Data.Proxy
 import           Data.Vinyl                 hiding (record)
 import           Data.Vinyl.TypeLevel
 import           GHC.OverloadedLabels
@@ -181,27 +181,21 @@ spoonToReaderT (Spoon (ReaderSoup (ReaderT act))) =
 -- | A class for the contexts that have an associated monad transformer that can
 -- be turned into a ReaderT of this context, and the type of monad over which
 -- they can run.
-class (Monad m) => SoupContext c m where
-  -- | The parameters to construct that context
-  type CtxConstructorArgs c :: *
-  -- | The prefered monad trans to run that type of context
-  type CtxPrefMonadT c :: (* -> *) -> * -> *
+class SoupContext c t | c -> t where
   -- | Turn this monad trans into an actual ReaderT
-  toReaderT :: CtxPrefMonadT c m a -> ReaderT c m a
+  toReaderT :: (Monad m) => t m a -> ReaderT c m a
   -- | Reconstruct this monad trans from an actual ReaderT
-  fromReaderT :: ReaderT c m a -> CtxPrefMonadT c m a
-  -- | Run the CtxPrefMonadT
-  runPrefMonadT :: proxy c -> CtxConstructorArgs c -> CtxPrefMonadT c m a -> m a
+  fromReaderT :: (Monad m) => ReaderT c m a -> t m a
 
-type CanBeScoopedIn m ctxs l =
-  (IsInSoup ctxs l, KnownSymbol l, SoupContext (ContextFromName l) m)
+type CanBeScoopedIn t ctxs l =
+  (IsInSoup ctxs l, KnownSymbol l, SoupContext (ContextFromName l) t)
 
 -- | Converts an action in some ReaderT-like monad to 'Spoon', this
 -- monad being determined by @c@. This is for code that cannot cope with any
 -- MonadReader and want some specific monad.
-withSpoon :: forall l ctxs a.
-             (CanBeScoopedIn (ReaderSoup ctxs) ctxs l)
-          => CtxPrefMonadT (ContextFromName l) (ReaderSoup ctxs) a
+withSpoon :: forall l ctxs t a.
+             (CanBeScoopedIn t ctxs l)
+          => t (ReaderSoup ctxs) a
           -> Spoon ctxs l a
 withSpoon act = Spoon $ ReaderSoup $ ReaderT $ \record ->
   runReaderT (unReaderSoup $
@@ -213,31 +207,43 @@ withSpoon act = Spoon $ ReaderSoup $ ReaderT $ \record ->
 -- monad. That permits to reuse some already existing monad from an existing
 -- library (ResourceT, KatipContextT, etc.) if you cannot just use a MonadReader
 -- instance.
-picking :: (CanBeScoopedIn IO ctxs l)
+picking :: (CanBeScoopedIn t ctxs l)
         => Label l
-        -> CtxPrefMonadT (ContextFromName l) IO a
+        -> t IO a
         -> ReaderSoup ctxs a
 picking lbl = dipping lbl . rioToSpoon . toReaderT
 
 -- | Like 'picking', but gives you more context: instead of just running over
 -- IO, it makes the monad run over the whole soup (so instances of MonadXXX
 -- classes defined over the whole soup can still be used).
-scooping :: (CanBeScoopedIn (ReaderSoup ctxs) ctxs l)
+scooping :: (CanBeScoopedIn t ctxs l)
          => Label l
-         -> CtxPrefMonadT (ContextFromName l) (ReaderSoup ctxs) a
+         -> t (ReaderSoup ctxs) a
          -> ReaderSoup ctxs a
 scooping lbl = dipping lbl . withSpoon
 
 -- | The opposite of 'scooping'.
-pouring :: forall l ctxs a.
-           (CanBeScoopedIn (ReaderSoup ctxs) ctxs l)
+pouring :: forall l ctxs t a.
+           (CanBeScoopedIn t ctxs l)
         => Label l
         -> ReaderSoup ctxs a
-        -> CtxPrefMonadT (ContextFromName l) (ReaderSoup ctxs) a
+        -> t (ReaderSoup ctxs) a
 pouring _ act = fromReaderT $ spoonToReaderT (Spoon act :: Spoon ctxs l a)
 
 
 -- * Running a whole 'ReaderSoup'
+
+-- | A class for monad transformers than can be ran, given some args, over some
+-- monad
+class RunnableTransformer args t m where
+  runTransformer :: args -> t m a -> m a
+
+-- | Knowing the prefered monad to run some context, 'AltRunner' gives you a way
+-- to override this monad's runner.
+newtype AltRunner t m = AltRunner { unSpiced :: forall r. t m r -> m r }
+
+instance RunnableTransformer (AltRunner t m) t m where
+  runTransformer = unSpiced
 
 class ArgsForSoupConsumption args where
   type CtxsFromArgs args :: [(Symbol, *)]
@@ -248,16 +254,15 @@ instance ArgsForSoupConsumption '[] where
   consumeSoup_ _ = finishBroth
 
 instance ( ArgsForSoupConsumption restArgs
-         , CtxConstructorArgs (ContextFromName l) ~ args1
-         , SoupContext (ContextFromName l) (CookedReaderSoup (CtxsFromArgs restArgs)) )
+         , SoupContext (ContextFromName l) t
+         , RunnableTransformer args1 t
+                               (CookedReaderSoup (CtxsFromArgs restArgs)) )
       => ArgsForSoupConsumption ((l:::args1) : restArgs) where
   type CtxsFromArgs ((l:::args1) : restArgs) =
     (l:::ContextFromName l) : CtxsFromArgs restArgs
   consumeSoup_ (Field args :& restArgs) act =
     consumeSoup_ restArgs $
-      runPrefMonadT (Proxy :: Proxy (ContextFromName l))
-                    args
-                    (fromReaderT (pickTopping act))
+      runTransformer args (fromReaderT (pickTopping act))
 
 -- | From the list of the arguments to initialize the contexts, runs the whole
 -- 'ReaderSoup'

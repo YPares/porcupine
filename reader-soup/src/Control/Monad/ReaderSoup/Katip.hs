@@ -17,12 +17,12 @@ import           Katip.Monadic
 
 type instance ContextFromName "katip" = KatipContextTState
 
-instance (Monad m) => SoupContext KatipContextTState m where
-  type CtxPrefMonadT KatipContextTState = KatipContextT
-  type CtxConstructorArgs KatipContextTState = (LogEnv, Namespace)
+instance SoupContext KatipContextTState KatipContextT where
   toReaderT (KatipContextT act) = act
   fromReaderT = KatipContextT
-  runPrefMonadT _ (e,n) = runKatipContextT e () n
+
+instance RunnableTransformer (LogEnv, Namespace) KatipContextT m where
+  runTransformer (e,n) = runKatipContextT e () n
 
 instance (IsInSoup ctxs "katip") => Katip (ReaderSoup ctxs) where
   getLogEnv = picking #katip getLogEnv
