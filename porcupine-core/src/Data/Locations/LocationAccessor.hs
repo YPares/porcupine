@@ -5,6 +5,7 @@
 {-# LANGUAGE MultiParamTypeClasses      #-}
 {-# LANGUAGE TypeFamilies               #-}
 {-# LANGUAGE DefaultSignatures          #-}
+{-# LANGUAGE UndecidableInstances       #-}
 
 module Data.Locations.LocationAccessor where
 
@@ -12,6 +13,8 @@ import           Control.Lens                 ((^.))
 -- import           Control.Funflow.ContentHashable
 import           Control.Monad.Catch
 import           Control.Monad.IO.Unlift
+import           Control.Monad.ReaderSoup
+import           Control.Monad.ReaderSoup.Resource ()
 import           Control.Monad.Trans.Resource
 import           Data.Aeson
 import qualified Data.ByteString.Streaming    as BSS
@@ -27,8 +30,8 @@ import qualified System.IO.Temp                        as Tmp
 -- | Creates some Loc type, indexed over a symbol (see ReaderSoup for how that
 -- symbol should be used), and equipped with functions to access it in some
 -- Monad
-class (MonadMask m, MonadIO m
-      ,FromJSON (LocOf l), ToJSON (LocOf l))
+class ( MonadMask m, MonadIO m
+      , FromJSON (LocOf l), ToJSON (LocOf l) )
    => LocationAccessor (l::Symbol) m where
 
   data LocOf l :: *
@@ -37,9 +40,9 @@ class (MonadMask m, MonadIO m
 
   writeBSS :: LocOf l -> BSS.ByteString m r -> m r
 
-  readBSS :: LocOf l -> (BSS.ByteString m () -> m b) -> m b
+  readBSS :: LocOf l -> (BSS.ByteString m () -> m b) -> m (Either LM.Error b)
 
-  copy :: LocOf l -> LocOf l -> m ()
+  copy :: LocOf l -> LocOf l -> m (Either LM.Error ())
   copy locFrom locTo = readBSS locFrom (writeBSS locTo)
 
   withLocalBuffer :: (FilePath -> m a) -> LocOf l -> m a
@@ -62,13 +65,13 @@ instance (MonadResource m, MonadMask m) => LocationAccessor "resource" m where
   locExists (L l) = LM.checkLocal "locExists" LM.locExists_Local l
   writeBSS (L l) = LM.checkLocal "writeBSS" LM.writeBSS_Local l
   readBSS (L l) f =
-    LM.checkLocal "readBSS" (\l' -> LM.readBSS_Local l' f >>= LM.eitherToExn) l
+    LM.checkLocal "readBSS" (\l' -> LM.readBSS_Local l' f {->>= LM.eitherToExn-}) l
   withLocalBuffer f (L l) =
     LM.checkLocal "withLocalBuffer" (\l' -> f $ l'^.locFilePathAsRawFilePath) l
-  copy (L l1) (L l2) = do
+  copy (L l1) (L l2) =
     LM.checkLocal "copy" (\file1 ->
       LM.checkLocal "copy (2nd argument)" (LM.copy_Local file1) l2) l1
-    >>= LM.eitherToExn
+    -- >>= LM.eitherToExn
 
 -- TODO: Move "aws" instance in its own porcupine-s3 package
 
@@ -78,5 +81,12 @@ instance (MonadAWS m, MonadMask m, MonadResource m) => LocationAccessor "aws" m 
     deriving (FromJSON, ToJSON)
   locExists _ = return True -- TODO: Implement it
   writeBSS (S l) = LM.writeBSS_S3 l
-  readBSS (S l) f = LM.readBSS_S3 l f >>= LM.eitherToExn
-  copy (S l1) (S l2) = LM.copy_S3 l1 l2 >>= LM.eitherToExn
+  readBSS (S l) f = LM.readBSS_S3 l f -- >>= LM.eitherToExn
+  copy (S l1) (S l2) = LM.copy_S3 l1 l2 -- >>= LM.eitherToExn
+
+-- Temporary:
+instance (IsInSoup ctxs "resource") => LM.LocationMonad (ReaderSoup ctxs) where
+  locExists = locExists . L
+  writeBSS = writeBSS . L
+  readBSS = readBSS . L
+  copy l1 l2 = copy (L l1) (L l2)
