@@ -53,10 +53,12 @@ module Control.Monad.ReaderSoup
   ) where
 
 import           Control.Lens               (over)
+import           Control.Monad.Base         (MonadBase)
 import           Control.Monad.Catch
 import           Control.Monad.IO.Unlift
 import           Control.Monad.Morph        (hoist)
 import           Control.Monad.Reader.Class
+import           Control.Monad.Trans.Control (MonadBaseControl)
 import           Control.Monad.Trans.Reader hiding (ask, local, reader)
 import           Data.Vinyl                 hiding (record)
 import           Data.Vinyl.TypeLevel
@@ -68,12 +70,12 @@ import           GHC.TypeLits
 -- and host more Readers, in a way that's more generic than creating you own
 -- application stack of Reader and implementing a host of MonadXXX classes,
 -- because each of these MonadXXX classes can be implemented once and for all
--- for ReaderSoup.
+-- for the ReaderSoup type.
 newtype ReaderSoup_ (record::((Symbol, *) -> *) -> [(Symbol, *)] -> *) ctxs a = ReaderSoup
   { unReaderSoup ::
       ReaderT (record ElField ctxs) IO a }
   deriving ( Functor, Applicative, Monad
-           , MonadIO, MonadUnliftIO
+           , MonadIO, MonadUnliftIO, MonadBase IO, MonadBaseControl IO
            , MonadCatch, MonadThrow, MonadMask )
 
 -- | The type of 'ReaderSoup_' your application will eat
@@ -145,7 +147,7 @@ filtering (ReaderSoup (ReaderT act)) =
 newtype Spoon ctxs (l::Symbol) a = Spoon
   { unSpoon :: ReaderSoup ctxs a }
   deriving ( Functor, Applicative, Monad
-           , MonadIO, MonadUnliftIO
+           , MonadIO, MonadUnliftIO, MonadBase IO, MonadBaseControl IO
            , MonadCatch, MonadThrow, MonadMask )
 
 instance (IsInSoup ctxs l, c ~ ContextFromName l)

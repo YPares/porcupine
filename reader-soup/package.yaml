@@ -14,8 +14,10 @@ dependencies:
   - lens
   - exceptions
   - transformers
+  - transformers-base
   - mtl
   - mmorph
+  - monad-control
   - unliftio-core
   - vinyl
   - resourcet

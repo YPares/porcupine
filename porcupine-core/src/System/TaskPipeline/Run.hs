@@ -144,10 +144,9 @@ bindResourceTreeAndRun
              -- ^ What to do with the model
   -> IO r
 bindResourceTreeAndRun progName (NoConfig root) tree f =
-  selectRun root True $
-    runLogger progName defaultLoggerScribeParams $
-      f RunPipeline $
-        getPhysicalResourceTreeFromMappings $ ResourceTreeAndMappings tree (Left root) mempty
+  runReaderSoup progName defaultLoggerScribeParams $
+    f RunPipeline $
+      getPhysicalResourceTreeFromMappings $ ResourceTreeAndMappings tree (Left root) mempty
 bindResourceTreeAndRun progName (FullConfig defConfigFile defRoot) tree f =
   withCliParser progName "Run a task pipeline" getParser run
   where
@@ -156,10 +155,9 @@ bindResourceTreeAndRun progName (FullConfig defConfigFile defRoot) tree f =
         (fromMaybe defConfigFile mbConfigFile)
         (ResourceTreeAndMappings tree (Left defRoot) mempty)
     run rtam@(ResourceTreeAndMappings{rtamMappings=mappings'}) cmd lsp performConfigWrites =
-      selectRun refLoc True $
-        runLogger progName lsp $ do
-          unPreRun performConfigWrites
-          f cmd $ getPhysicalResourceTreeFromMappings rtam
+      runReaderSoup progName lsp $ do
+        unPreRun performConfigWrites
+        f cmd $ getPhysicalResourceTreeFromMappings rtam
       where
         refLoc = case mappings' of
           Left rootLoc -> fmap (const ()) rootLoc
@@ -168,7 +166,7 @@ bindResourceTreeAndRun progName (FullConfig defConfigFile defRoot) tree f =
 runReaderSoup progName scribeParams =
   consumeSoup (  #katip =: AltRunner (runLogger progName scribeParams)
               :& #resource =: UseResource
-              :& RNil) 
+              :& RNil)
 
 refLocFromMappings :: LocationMappings -> Loc_ ()
 refLocFromMappings m = foldr f (LocalFile $ LocFilePath () "")
