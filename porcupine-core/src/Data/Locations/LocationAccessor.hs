@@ -6,8 +6,18 @@
 {-# LANGUAGE TypeFamilies               #-}
 {-# LANGUAGE DefaultSignatures          #-}
 {-# LANGUAGE UndecidableInstances       #-}
+{-# LANGUAGE GADTs                      #-}
+{-# LANGUAGE TypeOperators              #-}
+{-# LANGUAGE TypeApplications           #-}
+{-# LANGUAGE ScopedTypeVariables        #-}
 
-module Data.Locations.LocationAccessor where
+module Data.Locations.LocationAccessor
+  ( LocationAccessor(..)
+  , LocationAccessors
+  , Rec(..), ElField(..)
+  , SomeLocationAccessor(..)
+  , accessor
+  ) where
 
 import           Control.Lens                 ((^.))
 -- import           Control.Funflow.ContentHashable
@@ -34,6 +44,9 @@ class ( MonadMask m, MonadIO m
       , FromJSON (LocOf l), ToJSON (LocOf l) )
    => LocationAccessor (l::Symbol) m where
 
+  type IsLocationAccessor_ l m :: Bool
+  type IsLocationAccessor_ l m = 'True
+  
   data LocOf l :: *
 
   locExists :: LocOf l -> m Bool
@@ -84,7 +97,52 @@ instance (MonadAWS m, MonadMask m, MonadResource m) => LocationAccessor "aws" m 
   readBSS (S l) f = LM.readBSS_S3 l f -- >>= LM.eitherToExn
   copy (S l1) (S l2) = LM.copy_S3 l1 l2 -- >>= LM.eitherToExn
 
--- Temporary:
+-- | Packs together all the information necessary to run a context and access
+-- locations related to that context
+data LocationAccessorRunner m (a::(Symbol,*)) where
+  LocationAccessorRunner :: ( LocationAccessor l m
+                            , CanRunSoupContext l args t m )
+                         => ElField '(l,args) -> LocationAccessorRunner m '(l,args)
+
+type LocationAccessors m = Rec (LocationAccessorRunner m)
+
+accessor :: (KnownSymbol l, LocationAccessor l m, CanRunSoupContext l args t m)
+         => Label l -> args -> LocationAccessorRunner m '(l,args)
+accessor lbl args = LocationAccessorRunner $ lbl =: args
+
+data SomeLocationAccessor m where
+  SomeLocationAccessor :: (LocationAccessor l m)
+                       => Label l -> SomeLocationAccessor m
+newtype LocParserCtx m = LocParserCtx [SomeLocationAccessor m]
+
+type family IsDefinedTrue a where
+  IsDefinedTrue True = True
+  IsDefinedTrue a = False
+
+type IsLocationAccessor l m = IsDefinedTrue (IsLocationAccessor_ l m)
+
+type family LAWitnesses m ctxs :: [Bool] where
+  LAWitnesses m '[] = '[]
+  LAWitnesses m ('(l,a) : ctxs) =
+    IsLocationAccessor l m : LAWitnesses m ctxs
+
+class (laWitnesses ~ LAWitnesses m ctxs)
+   => GetLocParserCtx m ctxs laWitnesses where
+  getLocParserCtx :: Rec ElField ctxs -> LocParserCtx m
+
+instance GetLocParserCtx m '[] '[] where
+  getLocParserCtx _ = LocParserCtx []
+
+instance (GetLocParserCtx m ctxs ws, IsLocationAccessor l m ~ False)
+      => GetLocParserCtx m ('(l,a) : ctxs) ('False : ws) where
+  getLocParserCtx (_ :& ctxs) = getLocParserCtx ctxs
+
+instance (GetLocParserCtx m ctxs ws, LocationAccessor l m, IsLocationAccessor l m ~ True)
+      => GetLocParserCtx m ('(l,a) : ctxs) ('True : ws) where
+  getLocParserCtx (_ :& ctxs) = LocParserCtx $ SomeLocationAccessor (fromLabel @l) : rest
+    where LocParserCtx rest = getLocParserCtx ctxs
+
+-- temporary:
 instance (IsInSoup ctxs "resource") => LM.LocationMonad (ReaderSoup ctxs) where
   locExists = locExists . L
   writeBSS = writeBSS . L

@@ -22,6 +22,7 @@ module Control.Monad.ReaderSoup
   , IsInSoup
   , ArgsForSoupConsumption
   , AltRunner(..)
+  , Label
   , (=:)
   , (:::)
   , Rec(..)
@@ -36,11 +37,13 @@ module Control.Monad.ReaderSoup
   , RunnableTransformer(..)
   , SoupContext(..)
   , CanBeScoopedIn
+  , CanRunSoupContext
   , askSoup
   , filtering
   , picking, scooping, pouring
 
   -- * Low-level API
+  , ElField(..)
   , Spoon(..)
   , CookedReaderSoup
   , cookReaderSoup
@@ -50,6 +53,7 @@ module Control.Monad.ReaderSoup
   , rioToSpoon, spoonToReaderT
   , dipping
   , withSpoon
+  , fromLabel
   ) where
 
 import           Control.Lens               (over)
@@ -257,10 +261,11 @@ instance ArgsForSoupConsumption '[] where
   type CtxsFromArgs '[] = '[]
   consumeSoup_ _ = finishBroth
 
+type CanRunSoupContext l args t m =
+  (SoupContext (ContextFromName l) t, RunnableTransformer args t m)
+
 instance ( ArgsForSoupConsumption restArgs
-         , SoupContext (ContextFromName l) t
-         , RunnableTransformer args1 t
-                               (CookedReaderSoup (CtxsFromArgs restArgs)) )
+         , CanRunSoupContext l args1 t (CookedReaderSoup (CtxsFromArgs restArgs)) )
       => ArgsForSoupConsumption ((l:::args1) : restArgs) where
   type CtxsFromArgs ((l:::args1) : restArgs) =
     (l:::ContextFromName l) : CtxsFromArgs restArgs

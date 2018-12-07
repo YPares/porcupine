@@ -55,11 +55,12 @@ runPipelineTask
   :: String            -- ^ The program name (for CLI --help)
   -> PipelineConfigMethod o  -- ^ Whether to use the CLI and load the yaml
                              -- config or not
-  -> PipelineTask i o  -- ^ The whole pipeline task to run
+  -> LocationAccessors m ctxs  -- ^ The extra LocationAccessors to add
+  -> PTask m i o  -- ^ The whole pipeline task to run
   -> i                 -- ^ The pipeline task input
   -> IO o -- , RscAccessTree (ResourceTreeNode m))
                        -- ^ The pipeline task output and the final LocationTree
-runPipelineTask progName cliUsage ptask input = do
+runPipelineTask progName cliUsage lacs ptask input = do
   let -- cliUsage' = pipelineConfigMethodChangeResult cliUsage
       tree = getTaskTree ptask
         -- We temporarily instanciate ptask so we can get the tree (which
@@ -72,7 +73,7 @@ runPipelineTask progName cliUsage ptask input = do
         exitWith $ ExitFailure 1)
 
 -- | Like 'runPipelineTask' if the task is self-contained and doesn't have a
--- specific input, and if you don't care about the final LocationTree
+-- specific input and you don't need any specific LocationAccessor.
 runPipelineTask_
   :: String
   -> PipelineConfigMethod o
@@ -80,7 +81,7 @@ runPipelineTask_
   -> IO o
 runPipelineTask_ name cliUsage ptask =
   -- fst <$>
-  runPipelineTask name cliUsage ptask ()
+  runPipelineTask name cliUsage RNil ptask ()
 
 -- pipelineConfigMethodChangeResult
 --   :: PipelineConfigMethod o
