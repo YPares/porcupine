@@ -91,7 +91,7 @@ getTaskTree = view $ splittedPTask . _1
 
 -- | Runs the required 'PipelineCommand' on an 'PTask'
 runPipelineCommandOnPTask
-  :: (CanRunPTask m, LocationMonad m)
+  :: (CanRunPTask m)
   => PTask m i o
   -> i
   -> PipelineCommand o --, RscAccessTree (ResourceTreeNode m))
@@ -109,6 +109,7 @@ runPipelineCommandOnPTask ptask input cmd boundTree = do
         FunflowPaths
           <$> (fromMaybe (pwd </> "_funflow/store") <$> lookupEnv "FUNFLOW_STORE")
           <*> (fromMaybe (pwd </> "_funflow/coordinator.db") <$> lookupEnv "FUNFLOW_COORDINATOR")
+          <*> getRemoteCacheLocation
       withPTaskState ffPaths dataTree $ \initState -> do
         $(logTM) DebugS $ logStr $ "Using funflow store in '" ++ storePath ffPaths
               ++ "' and coordinator '" ++ coordPath ffPaths ++ "'."
@@ -118,6 +119,14 @@ runPipelineCommandOnPTask ptask input cmd boundTree = do
         NoMappings   -> prettyLocTree origTree
         FullMappings -> prettyLocTree boundTree
       return mempty
+
+getRemoteCacheLocation :: IO (Maybe Loc)
+getRemoteCacheLocation = do
+  fromEnv <- fmap parseURL <$> lookupEnv "FUNFLOW_REMOTE_CACHE"
+  case fromEnv of
+    Just (Right x)  -> pure (Just x)
+    Just (Left err) -> error err
+    Nothing         -> pure Nothing
 
 -- | Runs the cli if using FullConfig, binds every location in the resource tree
 -- to its final value/path, and passes the continuation the bound resource tree.
