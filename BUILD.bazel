@@ -64,6 +64,7 @@ jinko_haskell_library(
             "@hackage//:profunctors",
             "@hackage//:resourcet",
             "@hackage//:retry",
+            "@hackage//:safe-exceptions",
             "@hackage//:store",
             "@hackage//:streaming",
             "@hackage//:streaming-bytestring",

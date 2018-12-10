@@ -43,6 +43,7 @@ dependencies:
   - profunctors
   - resourcet
   - retry
+  - safe-exceptions
   - store
   - streaming
   - streaming-bytestring
