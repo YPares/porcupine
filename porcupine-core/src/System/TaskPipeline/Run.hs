@@ -19,9 +19,10 @@ import           Control.Monad.IO.Class
 import           Data.Locations                     hiding ((</>))
 import           Data.Maybe
 import           Katip
-import           System.Environment                 (getEnv, lookupEnv)
+import           System.Environment                 (lookupEnv)
 import           System.Exit
 import           System.FilePath                    ((</>))
+import           System.Posix.Directory             (getWorkingDirectory)
 import           System.TaskPipeline.CLI
 import           System.TaskPipeline.Logger         (defaultLoggerScribeParams,
                                                      runLogger)
@@ -105,7 +106,7 @@ runPipelineCommandOnPTask ptask input cmd boundTree = do
     RunPipeline -> do
       dataTree <- traverse resolveDataAccess boundTree
       ffPaths <- liftIO $ do
-        pwd <- getEnv "PWD"
+        pwd <- getWorkingDirectory
         FunflowPaths
           <$> (fromMaybe (pwd </> "_funflow/store") <$> lookupEnv "FUNFLOW_STORE")
           <*> (fromMaybe (pwd </> "_funflow/coordinator.db") <$> lookupEnv "FUNFLOW_COORDINATOR")

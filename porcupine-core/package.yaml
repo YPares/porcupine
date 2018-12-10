@@ -52,6 +52,7 @@ dependencies:
   - text
   - transformers
   - transformers-base
+  - unix
   - unliftio-core
   - unordered-containers
   - url
