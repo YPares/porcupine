@@ -72,7 +72,8 @@ cacheWithVFile props inputHashablePart vf action = proc input -> do
       NoCache -> NoCache
       Cache key sv rv ->
         let key' salt = key salt . getH
-            sv' (Left e) = mempty
+            sv' (Left e) = error $
+              "cacheWithVFile: An exception occured during the cached function: " ++ displayException e
             sv' (Right x) = sv x
             rv' = Right . rv
         in Cache key' sv' rv'
