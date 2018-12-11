@@ -3,6 +3,8 @@
 {-# LANGUAGE FlexibleContexts  #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE TypeApplications  #-}
+{-# LANGUAGE QuasiQuotes #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 
 import           Data.Aeson
 import           Data.DocRecord
@@ -12,7 +14,10 @@ import           GHC.Generics
 import           Porcupine.Run
 import           Porcupine.Serials
 import           Porcupine.Tasks
+import Control.Funflow
+import Data.Default
 
+import Path
 
 data User = User { userName    :: T.Text
                  , userSurname :: T.Text
@@ -60,7 +65,18 @@ mainTask =
   -- Then we just map over these ids and call analyseOneUser each time:
   >>> parMapTask_ (repIndex "userId") analyseOneUser
 
+-- testFail :: _
+testFail _ = stepIO $
+
+           -- (def { cache = defaultCacherWithIdent 4783264871236 }) $
+           \(ints::()) -> error "plop" :: IO Int
+
+-- main :: IO ()
+-- main = runPipelineTask_ "example1"
+--                         (FullConfig "porcupine.yaml" "porcupine-core/examples/data")
+--                         (mainTask >>> testFail 0)
+
 main :: IO ()
-main = runPipelineTask_ "example1"
-                        (FullConfig "porcupine.yaml" "porcupine-core/examples/data")
-                        mainTask
+main = withSimpleLocalRunner [absdir|/home/yves/store.ff|] $ \runner -> do
+   r <- runner (testFail 0) ()
+   print r
