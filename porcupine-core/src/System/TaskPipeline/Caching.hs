@@ -1,4 +1,4 @@
-{-# LANGUAGE Arrows #-}
+{-# LANGUAGE Arrows        #-}
 {-# LANGUAGE TupleSections #-}
 
 module System.TaskPipeline.Caching
@@ -19,7 +19,6 @@ import           Data.Default                          (Default (..))
 import           Data.Locations.Loc
 import           Data.Locations.LogAndErrors
 import           Data.Locations.VirtualFile
-import           Data.Store
 import qualified Data.Text                             as T
 import           System.TaskPipeline.PTask
 import           System.TaskPipeline.ResourceTree
@@ -62,7 +61,7 @@ cacheWithVFile props inputHashablePart vf action = proc input -> do
 
     afterCached (output,accessor) = do
       case output of
-        Right o -> (o,) <$> daPerformRead accessor
+        Right o  -> (o,) <$> daPerformRead accessor
         Left err -> throwWithPrefix $ displayException err
 
     props' = props { cache = cache'
@@ -78,4 +77,4 @@ cacheWithVFile props inputHashablePart vf action = proc input -> do
             rv' = Right . rv
         in Cache key' sv' rv'
     updMdw mdWriter i (Right o) = mdWriter (getH i) o
-    updMdw mdWriter i (Left err) = []
+    updMdw _        _ (Left  _) = []
