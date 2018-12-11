@@ -102,16 +102,16 @@ class (MonadMask m, MonadIO m) => LocationMonad m where
 defaultCopy :: LocationMonad m => Loc -> Loc -> m (Either Error ())
 defaultCopy locFrom locTo = readBSS locFrom (writeBSS locTo)
 
--- | Any ReaderT of some LocationMonad is also a LocationMonad
-instance (LocationMonad m) => LocationMonad (ReaderT r m) where
-  locExists = lift . locExists
-  writeBSS loc bs = do
-    st <- ask
-    lift $ writeBSS loc $ hoist (flip runReaderT st) bs
-  readBSS loc f = do
-    st <- ask
-    lift $ readBSS loc $ flip runReaderT st . f . hoist lift
-  copy locfrom locto = lift $ copy locfrom locto
+-- -- | Any ReaderT of some LocationMonad is also a LocationMonad
+-- instance (LocationMonad m) => LocationMonad (ReaderT r m) where
+--   locExists = lift . locExists
+--   writeBSS loc bs = do
+--     st <- ask
+--     lift $ writeBSS loc $ hoist (flip runReaderT st) bs
+--   readBSS loc f = do
+--     st <- ask
+--     lift $ readBSS loc $ flip runReaderT st . f . hoist lift
+--   copy locfrom locto = lift $ copy locfrom locto
 
 -- | Same than the previous instance, we just lift through the @KatipContextT@
 -- constructor

@@ -10,6 +10,7 @@
 {-# LANGUAGE TypeOperators              #-}
 {-# LANGUAGE TypeApplications           #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
+{-# LANGUAGE RankNTypes #-}
 
 module Data.Locations.LocationAccessor
   ( LocationAccessor(..)
@@ -17,6 +18,8 @@ module Data.Locations.LocationAccessor
   , Rec(..), ElField(..)
   , SomeLocationAccessor(..)
   , accessor
+  , runPorcupineM
+  , withParsedLocs
   ) where
 
 import           Control.Lens                 ((^.))
@@ -25,14 +28,16 @@ import           Control.Monad.Catch
 import           Control.Monad.IO.Unlift
 import           Control.Monad.ReaderSoup
 import           Control.Monad.ReaderSoup.Resource ()
+import           Control.Monad.Trans
 import           Control.Monad.Trans.Resource
 import           Data.Aeson
 import qualified Data.ByteString.Streaming    as BSS
 import           Data.Locations.Loc
 import qualified Data.Locations.LocationMonad as LM
+import           Data.Locations.LogAndErrors
 -- import           Data.Store                      (Store)
 import           GHC.TypeLits
-import           Network.AWS
+import           Network.AWS (MonadAWS)
 import qualified System.FilePath                       as Path
 import qualified System.IO.Temp                        as Tmp
 
@@ -110,14 +115,26 @@ accessor :: (KnownSymbol l, LocationAccessor l m, CanRunSoupContext l args t m)
          => Label l -> args -> LocationAccessorRunner m '(l,args)
 accessor lbl args = LocationAccessorRunner $ lbl =: args
 
+-- | Reifies an instance of LocationAccessor
 data SomeLocationAccessor m where
   SomeLocationAccessor :: (LocationAccessor l m)
                        => Label l -> SomeLocationAccessor m
+
+-- | All the LocationAccessors available to the system during a run, so that
+-- when we encounter an Aeson Value corresponding to some LocOf, we may try them
+-- all and use the first one that matches.
 newtype LocParserCtx m = LocParserCtx [SomeLocationAccessor m]
 
+
+-- * Retreiving the list of all available LocationAccessors
+
+-- NOTE: This part of the code (looking up a type-level list to find the types
+-- that satisfy the LocationAccessor constraint) is probably a bit
+-- over-engineered currently. We should find a way to make it leaner.
+
 type family IsDefinedTrue a where
-  IsDefinedTrue True = True
-  IsDefinedTrue a = False
+  IsDefinedTrue 'True = 'True
+  IsDefinedTrue a = 'False
 
 type IsLocationAccessor l m = IsDefinedTrue (IsLocationAccessor_ l m)
 
@@ -133,18 +150,54 @@ class (laWitnesses ~ LAWitnesses m ctxs)
 instance GetLocParserCtx m '[] '[] where
   getLocParserCtx _ = LocParserCtx []
 
-instance (GetLocParserCtx m ctxs ws, IsLocationAccessor l m ~ False)
+instance (GetLocParserCtx m ctxs ws, IsLocationAccessor l m ~ 'False)
       => GetLocParserCtx m ('(l,a) : ctxs) ('False : ws) where
   getLocParserCtx (_ :& ctxs) = getLocParserCtx ctxs
 
-instance (GetLocParserCtx m ctxs ws, LocationAccessor l m, IsLocationAccessor l m ~ True)
+instance (GetLocParserCtx m ctxs ws, LocationAccessor l m, IsLocationAccessor l m ~ 'True)
       => GetLocParserCtx m ('(l,a) : ctxs) ('True : ws) where
   getLocParserCtx (_ :& ctxs) = LocParserCtx $ SomeLocationAccessor (fromLabel @l) : rest
     where LocParserCtx rest = getLocParserCtx ctxs
 
--- temporary:
-instance (IsInSoup ctxs "resource") => LM.LocationMonad (ReaderSoup ctxs) where
-  locExists = locExists . L
-  writeBSS = writeBSS . L
-  readBSS = readBSS . L
-  copy l1 l2 = copy (L l1) (L l2)
+-- * The monad the application runs in, and how to run it
+
+type PorcupineM ctxs = ReaderT (LocParserCtx (ReaderSoup ctxs)) (ReaderSoup ctxs)
+
+runPorcupineM :: (ArgsForSoupConsumption args
+                 ,GetLocParserCtx (ReaderSoup (CtxsFromArgs args)) args
+                   (LAWitnesses (ReaderSoup (CtxsFromArgs args)) args))
+              => Rec ElField args
+              -> PorcupineM (CtxsFromArgs args) a
+              -> IO a
+runPorcupineM argRecord act = consumeSoup argRecord $ runReaderT act parserCtx
+  where parserCtx = getLocParserCtx argRecord
+
+withParsedLocs :: (KatipContext (PorcupineM ctxs))
+               => [Value]
+               -> (forall l. (LocationAccessor l (ReaderSoup ctxs))
+                   => [LocOf l] -> PorcupineM ctxs r)
+               -> PorcupineM ctxs r
+withParsedLocs aesonVals f = do
+  LocParserCtx allAccessors <- ask
+  loop allAccessors []
+  where
+    loop [] errs = throwWithPrefix $ "Locations '" ++ show aesonVals
+                   ++ "': Accessors returned the following errors: "
+                   ++ show (reverse errs)
+    loop (SomeLocationAccessor (_ :: Label l) : accs) errs =
+      case mapM fromJSON aesonVals of
+        Success a -> f (a::[LocOf l])
+        Error e -> loop accs (e:errs)
+
+-- Temporary, until LocationMonad is removed and LocOf types are directly
+-- integrated into the resource tree:
+instance (KatipContext (ReaderSoup ctxs)) => LM.LocationMonad (PorcupineM ctxs) where
+  locExists l = withParsedLocs [toJSON l] $ lift . locExists . head
+  writeBSS l bs = withParsedLocs [toJSON l] $ \[l'] -> do
+    lpc <- ask
+    lift $ writeBSS l' $ hoist (flip runReaderT lpc) bs
+  readBSS l f = withParsedLocs [toJSON l] $ \[l'] -> do
+    lpc <- ask
+    lift $ readBSS l' (flip runReaderT lpc . f . hoist (ReaderT . const))
+  copy l1 l2 = withParsedLocs [toJSON l1, toJSON l2] $ \[l1', l2'] -> do
+    lift $ copy l1' l2'

@@ -20,7 +20,7 @@ module Control.Monad.ReaderSoup
   ( -- * API for running a ReaderSoup
     ReaderSoup_(..)
   , IsInSoup
-  , ArgsForSoupConsumption
+  , ArgsForSoupConsumption(..)
   , AltRunner(..)
   , Label
   , (=:)
@@ -253,7 +253,7 @@ newtype AltRunner t m = AltRunner
 instance RunnableTransformer (AltRunner t m) t m where
   runTransformer = unAltRunner
 
-class ArgsForSoupConsumption args where
+class (NatToInt (RLength (CtxsFromArgs args))) => ArgsForSoupConsumption args where
   type CtxsFromArgs args :: [(Symbol, *)]
   consumeSoup_ :: Rec ElField args -> CookedReaderSoup (CtxsFromArgs args) a -> IO a
 
@@ -275,6 +275,6 @@ instance ( ArgsForSoupConsumption restArgs
 
 -- | From the list of the arguments to initialize the contexts, runs the whole
 -- 'ReaderSoup'
-consumeSoup :: (ArgsForSoupConsumption args, NatToInt (RLength (CtxsFromArgs args)))
+consumeSoup :: (ArgsForSoupConsumption args)
             => Rec ElField args -> ReaderSoup (CtxsFromArgs args) a -> IO a
 consumeSoup args = consumeSoup_ args . cookReaderSoup
