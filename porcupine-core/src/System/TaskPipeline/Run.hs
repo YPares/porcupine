@@ -1,8 +1,8 @@
 {-# LANGUAGE FlexibleContexts  #-}
+{-# LANGUAGE OverloadedLabels  #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RankNTypes        #-}
 {-# LANGUAGE TemplateHaskell   #-}
-{-# LANGUAGE OverloadedLabels           #-}
 
 module System.TaskPipeline.Run
   ( PipelineConfigMethod(..)
@@ -33,8 +33,7 @@ import           System.TaskPipeline.ResourceTree
 import           Prelude                            hiding (id, (.))
 
 import           Control.Monad.ReaderSoup
-import           Control.Monad.ReaderSoup.Resource
-import           Control.Monad.ReaderSoup.Katip
+import           Control.Monad.ReaderSoup.Katip     ()
 import           Data.Locations.LocationAccessor
 
 -- | A task defining a whole pipeline, and that may run in any LocationMonad. It
@@ -55,12 +54,12 @@ runPipelineTask
   :: String            -- ^ The program name (for CLI --help)
   -> PipelineConfigMethod o  -- ^ Whether to use the CLI and load the yaml
                              -- config or not
-  -> LocationAccessors m ctxs  -- ^ The extra LocationAccessors to add
-  -> PTask m i o  -- ^ The whole pipeline task to run
+--  -> LocationAccessors m ctxs  -- ^ The extra LocationAccessors to add
+  -> PipelineTask i o  -- ^ The whole pipeline task to run
   -> i                 -- ^ The pipeline task input
   -> IO o -- , RscAccessTree (ResourceTreeNode m))
                        -- ^ The pipeline task output and the final LocationTree
-runPipelineTask progName cliUsage lacs ptask input = do
+runPipelineTask progName cliUsage {-lacs-} ptask input = do
   let -- cliUsage' = pipelineConfigMethodChangeResult cliUsage
       tree = getTaskTree ptask
         -- We temporarily instanciate ptask so we can get the tree (which
@@ -81,7 +80,7 @@ runPipelineTask_
   -> IO o
 runPipelineTask_ name cliUsage ptask =
   -- fst <$>
-  runPipelineTask name cliUsage RNil ptask ()
+  runPipelineTask name cliUsage {-RNil-} ptask ()
 
 -- pipelineConfigMethodChangeResult
 --   :: PipelineConfigMethod o
@@ -165,9 +164,9 @@ bindResourceTreeAndRun progName (FullConfig defConfigFile defRoot) tree f =
           Right m      -> refLocFromMappings m
 
 runReaderSoup progName scribeParams =
-  consumeSoup (  #katip =: AltRunner (runLogger progName scribeParams)
-              :& #resource =: UseResource
-              :& RNil)
+  runPorcupineM (  #katip    <-- AltRunner (runLogger progName scribeParams)
+                :& #resource <-- UseResource
+                :& RNil)
 
 refLocFromMappings :: LocationMappings -> Loc_ ()
 refLocFromMappings m = foldr f (LocalFile $ LocFilePath () "")

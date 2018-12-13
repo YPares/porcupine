@@ -17,22 +17,22 @@ module Network.AWS.S3.TaskPipelineUtils
   )
 where
 
-import           Control.Lens                hiding ((:>))
-import           Control.Monad               (when)
-import           Control.Monad.Catch         (catch, try)
+import           Control.Lens                 hiding ((:>))
+import           Control.Monad                (when)
+import           Control.Monad.Catch          (catch, try)
 import           Control.Monad.Trans.Resource
-import           Control.Retry               (RetryPolicyM (..), limitRetries,
-                                              retrying, rsIterNumber)
-import qualified Data.ByteString.Streaming   as BSS
-import           Data.Conduit.Binary         (sinkLbs)
+import           Control.Retry                (RetryPolicyM (..), limitRetries,
+                                               retrying, rsIterNumber)
+import qualified Data.ByteString.Streaming    as BSS
+import           Data.Conduit.Binary          (sinkLbs)
 import           Data.String
-import           Data.Text                   (Text)
+import           Data.Text                    (Text)
 import           Network.AWS
-import           Network.AWS.Auth            (AuthError)
+import           Network.AWS.Auth             (AuthError)
 import           Network.AWS.S3
-import           Streaming.TaskPipelineUtils as S
-import           System.Directory            (createDirectoryIfMissing)
-import           System.FilePath             (takeDirectory, (</>))
+import           Streaming.TaskPipelineUtils  as S
+import           System.Directory             (createDirectoryIfMissing)
+import           System.FilePath              (takeDirectory, (</>))
 
 runAll :: AWS b -> IO b
 runAll f = do

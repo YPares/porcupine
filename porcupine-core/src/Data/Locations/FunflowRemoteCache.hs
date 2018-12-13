@@ -27,7 +27,7 @@ newtype LocationCacher = LocationCacher Loc
 instance (LocationMonad m, KatipContext m)
       => Remote.Cacher m LocationCacher where
   push (LocationCacher loc) = Remote.pushAsArchive aliasPath $ \hash body -> do
-    logFM DebugS $ logStr $ 
+    logFM DebugS $ logStr $
       "Remote cacher: Writing to file " ++ show (loc </> hashToFilePath hash)
     writeLazyByte (loc </> hashToFilePath hash) body
     pure Remote.PushOK

@@ -56,15 +56,15 @@ module Control.Monad.ReaderSoup
   , fromLabel
   ) where
 
-import           Control.Lens               (over)
-import           Control.Monad.Base         (MonadBase)
+import           Control.Lens                (over)
+import           Control.Monad.Base          (MonadBase)
 import           Control.Monad.Catch
 import           Control.Monad.IO.Unlift
-import           Control.Monad.Morph        (hoist)
+import           Control.Monad.Morph         (hoist)
 import           Control.Monad.Reader.Class
 import           Control.Monad.Trans.Control (MonadBaseControl)
-import           Control.Monad.Trans.Reader hiding (ask, local, reader)
-import           Data.Vinyl                 hiding (record)
+import           Control.Monad.Trans.Reader  hiding (ask, local, reader)
+import           Data.Vinyl                  hiding (record)
 import           Data.Vinyl.TypeLevel
 import           GHC.OverloadedLabels
 import           GHC.TypeLits
