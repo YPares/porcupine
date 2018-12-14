@@ -17,7 +17,10 @@ module System.TaskPipeline.Run
 import           Control.Lens
 import           Control.Monad.Catch
 import           Control.Monad.IO.Class
+import           Control.Monad.ReaderSoup
+import           Control.Monad.ReaderSoup.Katip     ()
 import           Data.Locations                     hiding ((</>))
+import           Data.Locations.Accessors
 import           Data.Maybe
 import           Katip
 import           System.Environment                 (getEnv, lookupEnv)
@@ -32,9 +35,6 @@ import           System.TaskPipeline.ResourceTree
 
 import           Prelude                            hiding (id, (.))
 
-import           Control.Monad.ReaderSoup
-import           Control.Monad.ReaderSoup.Katip     ()
-import           Data.Locations.LocationAccessor
 
 -- | A task defining a whole pipeline, and that may run in any LocationMonad. It
 -- is an Arrow, which means you obtain it by composing subtasks either

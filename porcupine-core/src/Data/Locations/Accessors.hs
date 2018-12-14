@@ -13,8 +13,9 @@
 {-# LANGUAGE TypeOperators              #-}
 {-# LANGUAGE UndecidableInstances       #-}
 
-module Data.Locations.LocationAccessor
+module Data.Locations.Accessors
   ( module Control.Monad.ReaderSoup.Resource
+  , FromJSON(..), ToJSON(..)
   , LocationAccessor(..)
   , Rec(..), ElField(..)
   , MayProvideLocationAccessors(..)
@@ -42,7 +43,6 @@ import           Data.Locations.LogAndErrors
 import           Data.Vinyl
 import           Data.Vinyl.Functor
 import           GHC.TypeLits
-import           Network.AWS                       (MonadAWS)
 import qualified System.FilePath                   as Path
 import qualified System.IO.Temp                    as Tmp
 
@@ -168,7 +168,7 @@ instance (KatipContext (ReaderSoup ctxs)) => LM.LocationMonad (PorcupineM ctxs) 
     lift $ copy l1' l2'
 
 
--- * Some LocationAccessors
+-- * Instances for Resource
 
 -- | Accessing local resources
 instance (MonadResource m, MonadMask m) => LocationAccessor m "resource" where
@@ -184,16 +184,5 @@ instance (MonadResource m, MonadMask m) => LocationAccessor m "resource" where
     LM.checkLocal "copy" (\file1 ->
       LM.checkLocal "copy (2nd argument)" (LM.copy_Local file1) l2) l1
     -- >>= LM.eitherToExn
+
 instance (MonadResource m, MonadMask m) => MayProvideLocationAccessors m "resource"
-
--- TODO: Move "aws" instance to its own porcupine-s3 package
-
--- | Accessing resources on S3
-instance (MonadAWS m, MonadMask m, MonadResource m) => LocationAccessor m "aws" where
-  newtype LocOf "aws" = S Loc
-    deriving (FromJSON, ToJSON)
-  locExists _ = return True -- TODO: Implement it
-  writeBSS (S l) = LM.writeBSS_S3 l
-  readBSS (S l) f = LM.readBSS_S3 l f -- >>= LM.eitherToExn
-  copy (S l1) (S l2) = LM.copy_S3 l1 l2 -- >>= LM.eitherToExn
-instance (MonadAWS m, MonadMask m, MonadResource m) => MayProvideLocationAccessors m "aws"
