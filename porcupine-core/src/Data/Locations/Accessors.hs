@@ -55,9 +55,6 @@ class ( MonadMask m, MonadIO m
       , FromJSON (LocOf l), ToJSON (LocOf l) )
    => LocationAccessor m (l::Symbol) where
 
-  type IsLocationAccessor_ m l :: Bool
-  type IsLocationAccessor_ m l = 'True
-
   data LocOf l :: *
 
   locExists :: LocOf l -> m Bool
@@ -108,7 +105,7 @@ type FieldWithAccessors m =
 -- LocationAccessors (if available)
 (<--) :: (KnownSymbol l, MayProvideLocationAccessors m l)
       => Label l -> args -> FieldWithAccessors m (l:::args)
-lbl <-- args = Compose $ (getLocationAccessors lbl, lbl =: args)
+lbl <-- args = Compose (getLocationAccessors lbl, lbl =: args)
 
 -- | All the LocationAccessors available to the system during a run, so that
 -- when we encounter an Aeson Value corresponding to some LocOf, we may try them
@@ -121,6 +118,29 @@ splitAccessorsFromRec ::
 splitAccessorsFromRec = over _1 AvailableAccessors . rtraverse getCompose
   -- `(,) a` is an Applicative if a is a Monoid, so this will merge all the lists
   -- of SomeLocationAccessors
+
+-- * Making "resource" a LocationAccessor
+
+-- | Accessing local resources
+instance (MonadResource m, MonadMask m) => LocationAccessor m "resource" where
+  newtype LocOf "resource" = L Loc
+    deriving (FromJSON, ToJSON)
+  locExists (L l) = LM.checkLocal "locExists" LM.locExists_Local l
+  writeBSS (L l) = LM.checkLocal "writeBSS" LM.writeBSS_Local l
+  readBSS (L l) f =
+    LM.checkLocal "readBSS" (\l' -> LM.readBSS_Local l' f {->>= LM.eitherToExn-}) l
+  withLocalBuffer f (L l) =
+    LM.checkLocal "withLocalBuffer" (\l' -> f $ l'^.locFilePathAsRawFilePath) l
+  copy (L l1) (L l2) =
+    LM.checkLocal "copy" (\file1 ->
+      LM.checkLocal "copy (2nd argument)" (LM.copy_Local file1) l2) l1
+    -- >>= LM.eitherToExn
+
+instance (MonadResource m, MonadMask m) => MayProvideLocationAccessors m "resource"
+
+
+--- The rest of the file is used as a compatiblity layer with the LocationMonad
+--- class
 
 -- | Temporary type until LocationMonad is removed.
 type PorcupineM ctxs = ReaderT (AvailableAccessors (ReaderSoup ctxs)) (ReaderSoup ctxs)
@@ -172,23 +192,3 @@ instance (KatipContext (ReaderSoup ctxs)) => LM.LocationMonad (PorcupineM ctxs) 
     lift $ readBSS l' (flip runReaderT lpc . f . hoist (ReaderT . const))
   copy l1 l2 = withParsedLocs [toJSON l1, toJSON l2] $ \[l1', l2'] -> do
     lift $ copy l1' l2'
-
-
--- * Declaring Resource a LocationAccessor
-
--- | Accessing local resources
-instance (MonadResource m, MonadMask m) => LocationAccessor m "resource" where
-  newtype LocOf "resource" = L Loc
-    deriving (FromJSON, ToJSON)
-  locExists (L l) = LM.checkLocal "locExists" LM.locExists_Local l
-  writeBSS (L l) = LM.checkLocal "writeBSS" LM.writeBSS_Local l
-  readBSS (L l) f =
-    LM.checkLocal "readBSS" (\l' -> LM.readBSS_Local l' f {->>= LM.eitherToExn-}) l
-  withLocalBuffer f (L l) =
-    LM.checkLocal "withLocalBuffer" (\l' -> f $ l'^.locFilePathAsRawFilePath) l
-  copy (L l1) (L l2) =
-    LM.checkLocal "copy" (\file1 ->
-      LM.checkLocal "copy (2nd argument)" (LM.copy_Local file1) l2) l1
-    -- >>= LM.eitherToExn
-
-instance (MonadResource m, MonadMask m) => MayProvideLocationAccessors m "resource"
