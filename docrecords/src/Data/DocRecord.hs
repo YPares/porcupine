@@ -122,7 +122,7 @@ import qualified Data.Text            as T
 import           Data.Typeable
 import           Data.Vinyl.Core
 import           Data.Vinyl.Curry
-import           Data.Vinyl.Derived   hiding (Field, HasField, rfield, (=:))
+import           Data.Vinyl.Derived   hiding (HasField, rfield, (=:))
 import qualified Data.Vinyl.Functor   as F
 import           Data.Vinyl.Lens      (RElem, RSubset, rlens)
 import qualified Data.Vinyl.Lens      as VL

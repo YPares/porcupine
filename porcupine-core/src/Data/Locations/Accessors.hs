@@ -21,6 +21,7 @@ module Data.Locations.Accessors
   , MayProvideLocationAccessors(..)
   , SomeLocationAccessor(..)
   , AvailableAccessors
+  , PorcupineM, SimplePorcupineM
   , (<--)
   , runPorcupineM
   , withParsedLocs
@@ -78,7 +79,7 @@ class ( MonadMask m, MonadIO m
       writeAndUpload tmpDir = do
         let tmpFile = tmpDir Path.</> "out"
         res <- f tmpFile
-        readBSS (L (localFile tmpFile)) (writeBSS loc)
+        _ <- readBSS (L (localFile tmpFile)) (writeBSS loc)
         return res
 
 -- | Reifies an instance of LocationAccessor
@@ -124,6 +125,11 @@ splitAccessorsFromRec = over _1 AvailableAccessors . rtraverse getCompose
 -- | Temporary type until LocationMonad is removed.
 type PorcupineM ctxs = ReaderT (AvailableAccessors (ReaderSoup ctxs)) (ReaderSoup ctxs)
 
+-- | The simplest, minimal ReaderSoup to run a local accessor
+type SimplePorcupineM =
+  PorcupineM '[ "katip" ::: ContextFromName "katip"
+              , "resource" ::: ContextFromName "resource" ]
+
 -- | Temporary runner until LocationMonad is removed
 runPorcupineM :: (ArgsForSoupConsumption args)
               => Rec (FieldWithAccessors (ReaderSoup (CtxsFromArgs args))) args
@@ -168,7 +174,7 @@ instance (KatipContext (ReaderSoup ctxs)) => LM.LocationMonad (PorcupineM ctxs) 
     lift $ copy l1' l2'
 
 
--- * Instances for Resource
+-- * Declaring Resource a LocationAccessor
 
 -- | Accessing local resources
 instance (MonadResource m, MonadMask m) => LocationAccessor m "resource" where

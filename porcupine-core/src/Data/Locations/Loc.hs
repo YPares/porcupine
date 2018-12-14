@@ -109,6 +109,18 @@ instance (IsLocString a) => IsString (LocFilePath a) where
 instance (IsLocString a) => Show (LocFilePath a) where
   show p = fmap (view locStringAsRawString) p ^. locFilePathAsRawFilePath
 
+
+-- * The location type: URLLoc
+
+data URLLoc a = URLLoc
+  { locProtocol           :: String  -- ^ Just "" if is is a local path
+  , locServer             :: String  -- ^ Just "/" if it is a local path
+  , locServerRelativePath :: LocFilePath a }
+  deriving ( Eq, Ord, Generic, ToJSON, FromJSON
+           , Functor, Foldable, Traversable, Binary, Store )
+
+instance (Monad m, ContentHashable m a) => ContentHashable m (URLLoc a)
+
 -- | Location's main type. A value of type 'Loc_' denotes a file or a folder
 -- that may be local or hosted remotely (s3).
 data Loc_ a

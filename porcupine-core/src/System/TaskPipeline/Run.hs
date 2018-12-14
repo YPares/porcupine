@@ -3,6 +3,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RankNTypes        #-}
 {-# LANGUAGE TemplateHaskell   #-}
+{-# OPTIONS_GHC "-fno-warn-missing-signatures" #-}
 
 module System.TaskPipeline.Run
   ( PipelineConfigMethod(..)
@@ -91,7 +92,7 @@ runPipelineTask_ name cliUsage ptask =
 --   FullConfig s r -> FullConfig s r
 
 getTaskTree
-  :: PTask (KatipContextT LocalM) i o
+  :: PTask SimplePorcupineM i o
   -> VirtualResourceTree
 getTaskTree = view $ splittedPTask . _1
 
@@ -160,7 +161,7 @@ bindResourceTreeAndRun progName (FullConfig defConfigFile defRoot) tree f =
         unPreRun performConfigWrites
         f cmd $ getPhysicalResourceTreeFromMappings rtam
       where
-        refLoc = case mappings' of
+        _refLoc = case mappings' of
           Left rootLoc -> fmap (const ()) rootLoc
           Right m      -> refLocFromMappings m
 

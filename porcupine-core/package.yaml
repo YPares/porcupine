@@ -34,7 +34,6 @@ dependencies:
   - foldl
   - funflow
   - hashable
-  - ifcxt
   - katip >= 0.6.3
   - lens
   - monad-control

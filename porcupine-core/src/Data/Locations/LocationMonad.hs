@@ -11,42 +11,31 @@
 {-# LANGUAGE TypeFamilies          #-}
 {-# LANGUAGE TypeSynonymInstances  #-}
 {-# OPTIONS_GHC -Wall #-}
-{-# OPTIONS_GHC -fno-warn-orphans #-}
 
 module Data.Locations.LocationMonad where
 
 import           Control.Lens
-import           Control.Monad.Base
 import           Control.Monad.Catch
 import           Control.Monad.IO.Class
 import           Control.Monad.Reader
-import           Control.Monad.Trans.Control
-import           Control.Monad.Trans.Resource          (MonadResource)
-import           Control.Monad.Trans.Resource.Internal (ResourceT (..))
-import qualified Data.ByteString.Lazy                  as LBS
-import qualified Data.ByteString.Streaming             as BSS
+import           Control.Monad.Trans.Resource
+import qualified Data.ByteString.Lazy             as LBS
+import qualified Data.ByteString.Streaming        as BSS
 import           Data.Locations.Loc
 import           Data.String
-import qualified Data.Text                             as Text
-import qualified Data.Text.Encoding                    as TE
-import           GHC.Generics                          (Generic)
-import           Katip.Monadic
-import           Network.AWS                           hiding (Error)
-import qualified Network.AWS                           as AWS
+import qualified Data.Text                        as Text
+import qualified Data.Text.Encoding               as TE
+import           GHC.Generics                     (Generic)
+import           Network.AWS                      hiding (Error)
+import qualified Network.AWS                      as AWS
 import           Network.AWS.S3
-import qualified Network.AWS.S3.TaskPipelineUtils      as S3
-import           Streaming
-import           System.Directory                      (createDirectoryIfMissing,
-                                                        createFileLink,
-                                                        doesPathExist)
-import qualified System.FilePath                       as Path
-import qualified System.IO.Temp                        as Tmp
+import qualified Network.AWS.S3.TaskPipelineUtils as S3
+import           System.Directory                 (createDirectoryIfMissing,
+                                                   createFileLink,
+                                                   doesPathExist)
+import qualified System.FilePath                  as Path
+import qualified System.IO.Temp                   as Tmp
 
-
--- | Alias for the constraints needed to manipulate remote files
--- type LocationConstraint m r = (MonadAWS m
---                               , AWSConstraint r m
---                               , MonadMask m)
 
 data RawError
   = AWSError AWS.Error
@@ -102,66 +91,6 @@ class (MonadMask m, MonadIO m) => LocationMonad m where
 defaultCopy :: LocationMonad m => Loc -> Loc -> m (Either Error ())
 defaultCopy locFrom locTo = readBSS locFrom (writeBSS locTo)
 
--- -- | Any ReaderT of some LocationMonad is also a LocationMonad
--- instance (LocationMonad m) => LocationMonad (ReaderT r m) where
---   locExists = lift . locExists
---   writeBSS loc bs = do
---     st <- ask
---     lift $ writeBSS loc $ hoist (flip runReaderT st) bs
---   readBSS loc f = do
---     st <- ask
---     lift $ readBSS loc $ flip runReaderT st . f . hoist lift
---   copy locfrom locto = lift $ copy locfrom locto
-
--- | Same than the previous instance, we just lift through the @KatipContextT@
--- constructor
-instance (LocationMonad m) => LocationMonad (KatipContextT m) where
-  locExists = lift . locExists
-  writeBSS loc bs = KatipContextT $ do
-    st <- ask
-    lift $ writeBSS loc $ hoist (flip (runReaderT . unKatipContextT) st) bs
-  readBSS loc f = KatipContextT $ do
-    st <- ask
-    lift $ readBSS loc $ flip (runReaderT . unKatipContextT) st . f . hoist lift
-  copy locfrom locto = lift $ copy locfrom locto
-
--- | Run a computation or a sequence of computations that will access some
--- locations. Selects whether to run in IO or AWS based on some Loc used as
--- selector.
---
--- You may want to use 'System.RunContext.runWithContext' which infers the Loc
--- switch and the verbosity level from the given context
-selectRun :: Loc_ t  -- ^ A Loc to use as switch (RunContext root or file)
-          -> Bool -- ^ Verbosity
-          -> (forall m. (LocationMonad m, MonadIO m, MonadBaseControl IO m) => m a)
-             -- ^ The action to run, either in AWS or IO
-          -> IO a
-selectRun (LocalFile{}) _verbose act =
-  runResourceT act
-selectRun (S3Obj{}) verbose act = do
-  putStrLn "Opening AWS connection"
-  awsEnv <- S3.getEnv verbose
-  runResourceT $ runAWS awsEnv act
-
--- These instances have been removed from resourcet in version 1.2.0
-instance MonadBase IO (ResourceT IO) where
-    liftBase = lift . liftBase
-instance MonadBaseControl IO (ResourceT IO) where
-     type StM (ResourceT IO) a = StM IO a
-     liftBaseWith f = ResourceT $ \reader' ->
-         liftBaseWith $ \runInBase ->
-             f $ runInBase . (\(ResourceT r) -> r reader'  )
-     restoreM = ResourceT . const . restoreM
-
-instance LocationMonad AWS where
-  locExists (LocalFile l) = locExists_Local l
-  locExists _             = return True -- TODO: Implement it
-  writeBSS (LocalFile l) = writeBSS_Local l
-  writeBSS l             = writeBSS_S3 l
-  readBSS (LocalFile l) = readBSS_Local l
-  readBSS l             = readBSS_S3 l
-  copy (LocalFile fileFrom) (LocalFile fileTo) = copy_Local fileFrom fileTo
-  copy objFrom objTo                           = copy_S3 objFrom objTo
 
 -- | Wrapper to use functions directly writing to a filepath.
 -- @withLocalBuffer f loc@ will apply @f@ to a temporary file and copy the
@@ -193,12 +122,6 @@ checkLocal funcName _ _ = error $ funcName ++ ": S3 location cannot be reached i
 
 -- | The LocationMonad for programs needing only to access local files.
 type LocalM = ResourceT IO
-
-instance LocationMonad LocalM where
-  locExists = checkLocal "locExists" locExists_Local
-  writeBSS = checkLocal "writeBSS" writeBSS_Local
-  readBSS  = checkLocal "readBSS" readBSS_Local
-  copy = checkLocal "copy" $ \file1 -> checkLocal "copy (2nd argument)" (copy_Local file1)
 
 writeText :: LocationMonad m
           => Loc
@@ -233,13 +156,6 @@ writeLazyByte
   -> LBS.ByteString
   -> m ()
 writeLazyByte loc = writeBSS loc . BSS.fromLazy
-
--- | Just a shortcut
-runWriteLazyByte
-  :: Loc
-  -> LBS.ByteString
-  -> IO ()
-runWriteLazyByte l bs = selectRun l True $ writeLazyByte l bs
 
 eitherToExn :: (MonadThrow m, Exception e) => Either e a -> m a
 eitherToExn (Left e)  = throwM e
@@ -307,14 +223,6 @@ readLazyByte_ :: LocationMonad m
                  => Loc
                  -> m LBS.ByteString
 readLazyByte_ loc = eitherToExn =<< readLazyByte loc
-
--- | Just a shortcut
-runReadLazyByte :: Loc -> IO (Either Error LBS.ByteString)
-runReadLazyByte l = selectRun l True $ readLazyByte l
-
--- | Just a shortcut
-runReadLazyByte_ :: Loc -> IO LBS.ByteString
-runReadLazyByte_ l = selectRun l True $ readLazyByte_ l
 
 readText :: LocationMonad m
             => Loc
