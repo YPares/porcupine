@@ -10,7 +10,7 @@
 
 module Control.Monad.ReaderSoup.AWS
   ( Credentials(..)
-  , UseAWS(..)
+  , useAWS
   ) where
 
 import           Control.Monad.Catch
@@ -31,11 +31,11 @@ instance SoupContext Env AWST where
 -- | The usual parameter type to run an AWS context
 newtype UseAWS (m :: * -> *) = UseAWS Credentials
 
-instance (MonadIO m, MonadCatch m) => RunnableTransformer (UseAWS m) AWST m where
-  runTransformer (UseAWS creds) act = do
-    env <- newEnv creds
-    runAWST env act
-
+useAWS :: (MonadIO m, MonadCatch m) => Credentials -> ContextRunner AWST m
+useAWS creds = ContextRunner $ \act -> do
+  env <- newEnv creds
+  runAWST env act
+  
 instance (IsInSoup ctxs "aws", IsInSoup ctxs "resource") => MonadAWS (ReaderSoup ctxs) where
   liftAWS act =
     scooping #aws $

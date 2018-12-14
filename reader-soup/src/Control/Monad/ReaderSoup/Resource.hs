@@ -24,10 +24,8 @@ instance SoupContext InternalState ResourceT where
   toReaderT act = ReaderT $ runInternalState act
   fromReaderT (ReaderT act) = withInternalState act
 
-data UseResource (m :: * -> *) = UseResource
-
-instance (MonadUnliftIO m) => RunnableTransformer (UseResource m) ResourceT m where
-  runTransformer _ = runResourceT
+useResource :: (MonadUnliftIO m) => ContextRunner ResourceT m
+useResource = ContextRunner runResourceT
 
 instance (IsInSoup ctxs "resource") => MonadResource (ReaderSoup ctxs) where
   liftResourceT act = picking #resource act

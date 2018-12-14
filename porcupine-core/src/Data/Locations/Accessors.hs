@@ -132,8 +132,8 @@ type SimplePorcupineM =
 
 -- | Temporary runner until LocationMonad is removed
 runPorcupineM :: (ArgsForSoupConsumption args)
-              => Rec (FieldWithAccessors (ReaderSoup (CtxsFromArgs args))) args
-              -> PorcupineM (CtxsFromArgs args) a
+              => Rec (FieldWithAccessors (ReaderSoup (ContextsFromArgs args))) args
+              -> PorcupineM (ContextsFromArgs args) a
               -> IO a
 runPorcupineM argsWithAccsRec act = consumeSoup argsRec $ runReaderT act parserCtx
   where (parserCtx, argsRec) = splitAccessorsFromRec argsWithAccsRec

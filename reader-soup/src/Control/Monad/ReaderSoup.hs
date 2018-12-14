@@ -21,7 +21,7 @@ module Control.Monad.ReaderSoup
     ReaderSoup_(..)
   , IsInSoup
   , ArgsForSoupConsumption(..)
-  , AltRunner(..)
+  , ContextRunner(..)
   , Label
   , (=:)
   , (:::)
@@ -34,7 +34,6 @@ module Control.Monad.ReaderSoup
   , MonadReader(..)
   , ReaderSoup
   , ContextFromName
-  , RunnableTransformer(..)
   , SoupContext(..)
   , CanBeScoopedIn
   , CanRunSoupContext
@@ -122,7 +121,7 @@ type family ContextFromName (l::Symbol) :: *
 
 type IsInSoup ctxs l =
   ( HasField ARec l ctxs ctxs (ContextFromName l) (ContextFromName l) )
-  -- , RecElemFCtx ARec ElField )
+  -- , RecElemFContext ARec ElField )
 
 
 -- * Working in a 'ReaderSoup'
@@ -240,41 +239,34 @@ pouring _ act = fromReaderT $ spoonToReaderT (Spoon act :: Spoon ctxs l a)
 
 -- * Running a whole 'ReaderSoup'
 
--- | A class for monad transformers than can be ran, given some args, over some
--- monad
-class RunnableTransformer args t m | args -> t m where
-  runTransformer :: args -> t m a -> m a
+-- | Knowing the prefered monad to run some context, gives you a way to override
+-- this monad's runner.
+newtype ContextRunner t m = ContextRunner
+  { runContext :: forall r. t m r -> m r }
 
--- | Knowing the prefered monad to run some context, 'AltRunner' gives you a way
--- to override this monad's runner.
-newtype AltRunner t m = AltRunner
-  { unAltRunner :: forall r. t m r -> m r }
-
-instance RunnableTransformer (AltRunner t m) t m where
-  runTransformer = unAltRunner
-
-class (NatToInt (RLength (CtxsFromArgs args))) => ArgsForSoupConsumption args where
-  type CtxsFromArgs args :: [(Symbol, *)]
-  consumeSoup_ :: Rec ElField args -> CookedReaderSoup (CtxsFromArgs args) a -> IO a
+class (NatToInt (RLength (ContextsFromArgs args))) => ArgsForSoupConsumption args where
+  type ContextsFromArgs args :: [(Symbol, *)]
+  consumeSoup_ :: Rec ElField args -> CookedReaderSoup (ContextsFromArgs args) a -> IO a
 
 instance ArgsForSoupConsumption '[] where
-  type CtxsFromArgs '[] = '[]
+  type ContextsFromArgs '[] = '[]
   consumeSoup_ _ = finishBroth
 
-type CanRunSoupContext l args t m =
-  (SoupContext (ContextFromName l) t, RunnableTransformer args t m)
+type CanRunSoupContext l t =
+  (SoupContext (ContextFromName l) t)
 
 instance ( ArgsForSoupConsumption restArgs
-         , CanRunSoupContext l args1 t (CookedReaderSoup (CtxsFromArgs restArgs)) )
-      => ArgsForSoupConsumption ((l:::args1) : restArgs) where
-  type CtxsFromArgs ((l:::args1) : restArgs) =
-    (l:::ContextFromName l) : CtxsFromArgs restArgs
+         , m ~ CookedReaderSoup (ContextsFromArgs restArgs)
+         , CanRunSoupContext l t )
+      => ArgsForSoupConsumption ((l:::ContextRunner t m) : restArgs) where
+  type ContextsFromArgs ((l:::ContextRunner t m) : restArgs) =
+    (l:::ContextFromName l) : ContextsFromArgs restArgs
   consumeSoup_ (Field args :& restArgs) act =
     consumeSoup_ restArgs $
-      runTransformer args (fromReaderT (pickTopping act))
+      runContext args (fromReaderT (pickTopping act))
 
 -- | From the list of the arguments to initialize the contexts, runs the whole
 -- 'ReaderSoup'
 consumeSoup :: (ArgsForSoupConsumption args)
-            => Rec ElField args -> ReaderSoup (CtxsFromArgs args) a -> IO a
+            => Rec ElField args -> ReaderSoup (ContextsFromArgs args) a -> IO a
 consumeSoup args = consumeSoup_ args . cookReaderSoup

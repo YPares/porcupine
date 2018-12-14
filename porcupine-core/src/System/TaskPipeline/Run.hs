@@ -162,8 +162,6 @@ bindResourceTreeAndRun progName (FullConfig defConfigFile defRoot) tree f =
         f cmd $ getPhysicalResourceTreeFromMappings rtam
 
 runReaderSoup progName scribeParams =
-  runPorcupineM (  #aws      <-- UseAWS Discover
-                :& #katip    <-- AltRunner (runLogger progName scribeParams)
-                :& #resource <-- UseResource
+  runPorcupineM (  #katip    <-- ContextRunner (runLogger progName scribeParams)
+                :& #resource <-- useResource
                 :& RNil)
-

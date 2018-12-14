@@ -21,11 +21,9 @@ instance SoupContext KatipContextTState KatipContextT where
   toReaderT (KatipContextT act) = act
   fromReaderT = KatipContextT
 
--- | The usual parameter types to run a katip context
-data UseKatip (m :: * -> *) = UseKatip LogEnv Namespace
-
-instance RunnableTransformer (UseKatip m) KatipContextT m where
-  runTransformer (UseKatip e n) = runKatipContextT e () n
+-- | Use a katip context, parameterized by a 'LogEnv' and a root 'Namespace'
+useKatip :: LogEnv -> Namespace -> ContextRunner KatipContextT m
+useKatip e n = ContextRunner $ runKatipContextT e () n
 
 instance (IsInSoup ctxs "katip") => Katip (ReaderSoup ctxs) where
   getLogEnv = picking #katip getLogEnv

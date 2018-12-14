@@ -69,11 +69,11 @@ selectRun :: Loc_ t  -- ^ A Loc to use as switch (RunContext root or file)
 selectRun refLoc _verbose act =
   case refLoc of
     LocalFile{} -> runPorcupineM (baseRec ()) act
-    S3Obj{}     -> runPorcupineM (#aws <-- UseAWS Discover :& baseRec ()) act
+    S3Obj{}     -> runPorcupineM (#aws <-- useAWS Discover :& baseRec ()) act
   where
            -- The unused arg is to prevent a too monomorphic type
-    baseRec () = #katip    <-- AltRunner (runLogger "" defaultLoggerScribeParams)
-              :& #resource <-- UseResource
+    baseRec () = #katip    <-- ContextRunner (runLogger "" defaultLoggerScribeParams)
+              :& #resource <-- useResource
               :& RNil
 
 -- | Just a shortcut
