@@ -156,14 +156,10 @@ bindResourceTreeAndRun progName (FullConfig defConfigFile defRoot) tree f =
       pipelineCliParser rscTreeConfigurationReader progName
         (fromMaybe defConfigFile mbConfigFile)
         (ResourceTreeAndMappings tree (Left defRoot) mempty)
-    run rtam@(ResourceTreeAndMappings{rtamMappings=mappings'}) cmd lsp performConfigWrites =
+    run rtam cmd lsp performConfigWrites =
       runReaderSoup progName lsp $ do
         unPreRun performConfigWrites
         f cmd $ getPhysicalResourceTreeFromMappings rtam
-      where
-        _refLoc = case mappings' of
-          Left rootLoc -> fmap (const ()) rootLoc
-          Right m      -> refLocFromMappings m
 
 runReaderSoup progName scribeParams =
   runPorcupineM (  #aws      <-- UseAWS Discover
@@ -171,10 +167,3 @@ runReaderSoup progName scribeParams =
                 :& #resource <-- UseResource
                 :& RNil)
 
-refLocFromMappings :: LocationMappings -> Loc_ ()
-refLocFromMappings m = foldr f (LocalFile $ LocFilePath () "")
-                               (map (fmap (const ())) $ allLocsInMappings m)
-  where
-    f a@(S3Obj{}) _ = a
-    f _ b@(S3Obj{}) = b
-    f a _           = a
