@@ -44,7 +44,6 @@ jinko_haskell_library(
             "@hackage//:vinyl",
             "@hackage//:resourcet",
             "@hackage//:katip",
-            "@hackage//:amazonka",
         ],
 )
 
@@ -56,16 +55,12 @@ jinko_haskell_library(
         [
             "@hackage//:aeson",
             "@hackage//:aeson-pretty",
-            "@hackage//:amazonka",
-            "@hackage//:amazonka-core",
-            "@hackage//:amazonka-s3",
             "@hackage//:base",
             "@hackage//:binary",
             "@hackage//:binary-orphans",
             "@hackage//:bytestring",
             "@hackage//:clock",
             "@hackage//:conduit",
-            "@hackage//:conduit-extra",
             "@hackage//:containers",
             "@hackage//:contravariant", # Won't be necessary in GHC 8.6
             "@hackage//:data-default",
@@ -85,7 +80,6 @@ jinko_haskell_library(
             "@hackage//:path",
             "@hackage//:profunctors",
             "@hackage//:resourcet",
-            "@hackage//:retry",
             "@hackage//:store",
             "@hackage//:streaming",
             "@hackage//:streaming-bytestring",
@@ -102,6 +96,35 @@ jinko_haskell_library(
             "@hackage//:void",
             "@hackage//:yaml",
             ":docrecords",
+	    ":reader-soup",
+        ],
+)
+
+jinko_haskell_library(
+    name = "porcupine-s3",
+    srcs = glob(["porcupine-s3/src/**/*.hs"]),
+    src_strip_prefix = "porcupine-s3/src",
+    deps =
+        [
+            "@hackage//:base",
+            "@hackage//:mtl",
+            "@hackage//:exceptions",
+            "@hackage//:amazonka",
+            "@hackage//:amazonka-core",
+            "@hackage//:amazonka-s3",
+            "@hackage//:lens",
+            "@hackage//:monad-control",
+            "@hackage//:resourcet",
+            "@hackage//:bytestring",
+            "@hackage//:streaming",
+            "@hackage//:streaming-bytestring",
+            "@hackage//:directory",
+            "@hackage//:retry",
+            "@hackage//:text",
+            "@hackage//:filepath",
+            "@hackage//:conduit",
+            "@hackage//:conduit-extra",
+            ":porcupine-core",
 	    ":reader-soup",
         ],
 )

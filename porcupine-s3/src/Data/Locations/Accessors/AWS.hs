@@ -38,8 +38,6 @@ import qualified Network.AWS.S3.TaskPipelineUtils as S3
 import           System.TaskPipeline.Logger
 
 
--- TODO: Move "aws" instance to its own porcupine-s3 package
-
 -- | Just a compatiblity overlay for code explicitly dealing with S3 URLs
 pattern S3Obj :: String -> LocFilePath a -> URLLikeLoc a
 pattern S3Obj{bucketName,objectName} = RemoteFile "s3" bucketName objectName
@@ -102,7 +100,7 @@ copy_S3 _ _ = undefined
 
 
 -- * Automatically switching from Resource to AWS monad, depending on some
--- reference Loc
+-- reference Loc.
 
 -- | Run a computation or a sequence of computations that will access some
 -- locations. Selects whether to run in IO or AWS based on some Loc used as

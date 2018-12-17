@@ -331,8 +331,7 @@ mergeWithDefault path (Object o1) (Object o2) =
 mergeWithDefault _ _ v = pure v
 
 -- | Tries to read a yaml filepath on CLI, then a JSON path, then command line
--- args as expected by the @callParser@ argument. If a filepath is found, this
--- can be an S3 location or a local filepath.
+-- args as expected by the @callParser@ argument.
 tryGetConfigFileOnCLI
   :: (Maybe LocalFilePath -> IO b)  -- If a filepath has been read as first argument
   -> IO b

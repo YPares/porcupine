@@ -22,7 +22,6 @@ dependencies:
   - vinyl
   - resourcet
   - katip
-  - amazonka
 
 library:
   source-dirs: src
