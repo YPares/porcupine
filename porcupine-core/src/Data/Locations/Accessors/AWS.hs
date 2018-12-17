@@ -49,7 +49,7 @@ instance FromJSON (LocOf "aws") where
     loc <- parseJSON v
     case loc of
       S3Obj{} -> return $ S loc
-      _       -> fail "Is a local file"
+      _       -> fail "Doesn't use 's3' protocol"
 
 
 -- * Automatically switching from Resource to AWS monad, depending on some
@@ -61,15 +61,18 @@ instance FromJSON (LocOf "aws") where
 --
 -- You may want to use 'System.RunContext.runWithContext' which infers the Loc
 -- switch and the verbosity level from the given context
-selectRun :: Loc_ t  -- ^ A Loc to use as switch (RunContext root or file)
+selectRun :: URLLikeLoc t  -- ^ A Loc to use as switch (RunContext root or file)
           -> Bool -- ^ Verbosity
           -> (forall m. (LocationMonad m, MonadIO m, MonadBaseControl IO m) => m a)
              -- ^ The action to run, either in AWS or IO
           -> IO a
 selectRun refLoc _verbose act =
   case refLoc of
-    LocalFile{} -> runPorcupineM (baseRec ()) act
-    S3Obj{}     -> runPorcupineM (#aws <-- useAWS Discover :& baseRec ()) act
+    LocalFile{} ->
+      runPorcupineM (baseRec ()) act
+    RemoteFile{rfProtocol="s3"} ->
+      runPorcupineM (#aws <-- useAWS Discover :& baseRec ()) act
+    _           -> error "selectRun only handles local and S3 locations"
   where
            -- The unused arg is to prevent a too monomorphic type
     baseRec () = #katip    <-- ContextRunner (runLogger "" defaultLoggerScribeParams)

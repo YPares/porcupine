@@ -35,7 +35,7 @@ useAWS :: (MonadIO m, MonadCatch m) => Credentials -> ContextRunner AWST m
 useAWS creds = ContextRunner $ \act -> do
   env <- newEnv creds
   runAWST env act
-  
+
 instance (IsInSoup ctxs "aws", IsInSoup ctxs "resource") => MonadAWS (ReaderSoup ctxs) where
   liftAWS act =
     scooping #aws $

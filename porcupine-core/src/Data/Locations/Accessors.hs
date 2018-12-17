@@ -124,7 +124,7 @@ splitAccessorsFromRec = over _1 AvailableAccessors . rtraverse getCompose
 -- | Accessing local resources
 instance (MonadResource m, MonadMask m) => LocationAccessor m "resource" where
   newtype LocOf "resource" = L Loc
-    deriving (FromJSON, ToJSON)
+    deriving (ToJSON)
   locExists (L l) = LM.checkLocal "locExists" LM.locExists_Local l
   writeBSS (L l) = LM.checkLocal "writeBSS" LM.writeBSS_Local l
   readBSS (L l) f =
@@ -135,6 +135,13 @@ instance (MonadResource m, MonadMask m) => LocationAccessor m "resource" where
     LM.checkLocal "copy" (\file1 ->
       LM.checkLocal "copy (2nd argument)" (LM.copy_Local file1) l2) l1
     -- >>= LM.eitherToExn
+
+instance FromJSON (LocOf "resource") where
+  parseJSON v = do
+    loc <- parseJSON v
+    case loc of
+      LocalFile{} -> return $ L loc
+      _           -> fail "Isn't a local file"
 
 instance (MonadResource m, MonadMask m) => MayProvideLocationAccessors m "resource"
 

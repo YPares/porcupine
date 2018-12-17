@@ -6,11 +6,13 @@
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE NamedFieldPuns        #-}
 {-# LANGUAGE OverloadedStrings     #-}
+{-# LANGUAGE PatternSynonyms       #-}
 {-# LANGUAGE RankNTypes            #-}
 {-# LANGUAGE ScopedTypeVariables   #-}
 {-# LANGUAGE TypeFamilies          #-}
 {-# LANGUAGE TypeSynonymInstances  #-}
 {-# OPTIONS_GHC -Wall #-}
+{-# OPTIONS_GHC -fno-warn-name-shadowing #-}
 
 module Data.Locations.LocationMonad where
 
@@ -140,6 +142,10 @@ writeBSS_Local path body = do
   liftIO $ createDirectoryIfMissing True (Path.takeDirectory raw)
   BSS.writeFile raw body
 
+-- | Just a compatiblity overlay for code explicitly dealing with S3 URLs
+pattern S3Obj :: String -> LocFilePath a -> URLLikeLoc a
+pattern S3Obj{bucketName,objectName} = RemoteFile "s3" bucketName objectName
+
 writeBSS_S3 :: MonadAWS m => Loc -> BSS.ByteString m a -> m a
 writeBSS_S3 S3Obj { bucketName, objectName } body = do
   let raw = objectName ^. locFilePathAsRawFilePath
@@ -204,7 +210,6 @@ readBSS_S3 obj@S3Obj{ bucketName, objectName } k =
         (fromString bucketName)
         (fromString $ objectName ^. locFilePathAsRawFilePath)
         k
-
 readBSS_S3 _ _ = undefined
 
 -- | Exception version of 'readBSS'

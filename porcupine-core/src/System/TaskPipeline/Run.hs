@@ -129,7 +129,7 @@ runPipelineCommandOnPTask ptask input cmd boundTree = do
 
 getRemoteCacheLocation :: IO (Maybe Loc)
 getRemoteCacheLocation = do
-  fromEnv <- fmap parseURL <$> lookupEnv "FUNFLOW_REMOTE_CACHE"
+  fromEnv <- fmap parseURLLikeLoc <$> lookupEnv "FUNFLOW_REMOTE_CACHE"
   case fromEnv of
     Just (Right x)  -> pure (Just x)
     Just (Left err) -> error err
@@ -162,6 +162,7 @@ bindResourceTreeAndRun progName (FullConfig defConfigFile defRoot) tree f =
         f cmd $ getPhysicalResourceTreeFromMappings rtam
 
 runReaderSoup progName scribeParams =
-  runPorcupineM (  #katip    <-- ContextRunner (runLogger progName scribeParams)
+  runPorcupineM (  #aws      <-- useAWS Discover
+                :& #katip    <-- ContextRunner (runLogger progName scribeParams)
                 :& #resource <-- useResource
                 :& RNil)
