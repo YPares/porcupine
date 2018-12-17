@@ -33,3 +33,14 @@ dependencies:
 
 library:
   source-dirs: src
+
+executables:
+  exampleS3:
+    source-dirs: examples
+    main: ExampleS3.hs
+    dependencies:
+      - porcupine-core
+      - porcupine-s3
+      - docrecords
+      - aeson
+      - unordered-containers
