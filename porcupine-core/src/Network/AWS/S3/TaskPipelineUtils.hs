@@ -1,8 +1,10 @@
 {-# LANGUAGE FlexibleContexts      #-}
+{-# LANGUAGE FlexibleInstances     #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE OverloadedStrings     #-}
 {-# LANGUAGE RecordWildCards       #-}
 {-# LANGUAGE ScopedTypeVariables   #-}
+{-# LANGUAGE TypeOperators         #-}
 {-# LANGUAGE ViewPatterns          #-}
 
 module Network.AWS.S3.TaskPipelineUtils
@@ -10,6 +12,7 @@ module Network.AWS.S3.TaskPipelineUtils
   , getEnv
   , uploadObj
   , uploadFolder
+  , streamS3Folder
   , streamObjInto
   , streamObjIntoExt
   , downloadFolder
@@ -27,18 +30,31 @@ import qualified Data.ByteString.Streaming    as BSS
 import           Data.Conduit.Binary          (sinkLbs)
 import           Data.String
 import           Data.Text                    (Text)
+import qualified Data.Text                    as T
 import           Network.AWS
+import           Network.AWS                  (MonadAWS, liftAWS, send)
 import           Network.AWS.Auth             (AuthError)
+import           Network.AWS.Env              (Env, HasEnv, environment)
 import           Network.AWS.S3
+import           Network.AWS.S3               (BucketName, ObjectKey (..), oKey)
+import qualified Network.AWS.S3.ListObjects   as LO
+import qualified Streaming.Prelude            as S
 import           Streaming.TaskPipelineUtils  as S
 import           System.Directory             (createDirectoryIfMissing)
-import           System.FilePath              (takeDirectory, (</>))
+import           System.FilePath              (normalise, takeDirectory, (</>))
+
 
 runAll :: AWS b -> IO b
 runAll f = do
   env <- getEnv True
   runResourceT $ runAWS env f
 
+-- These instances may overlap in theory, but in practice there is probably no
+-- good reason to have two AWS.Envs in the same program, so only one side
+-- should have one
+instance HasEnv a => HasEnv (a `With` b) where environment = elt.environment
+instance {-# OVERLAPPING #-} HasEnv (a `With` Env)
+  where environment = ann.environment
 
 getEnv :: Bool -- ^ Verbose
        -> IO Env
@@ -91,6 +107,17 @@ uploadFolder srcFolder destBucket destPath =
                   if view porsResponseStatus crs == 200
                   then objectName ++ " uploaded."
                   else objectName ++ " upload failed.")
+
+streamS3Folder ::
+     MonadAWS m => BucketName -> Maybe FilePath -> Stream (Of FilePath) m ()
+streamS3Folder bucketName prefix = do
+  let listCommand = LO.listObjects bucketName
+                      & LO.loPrefix .~ ((fromString . normalise) <$> prefix)
+  rs <- lift $ liftAWS $ send listCommand
+  view LO.lorsContents rs
+    & S.each
+    & S.map (view oKey)
+    & S.map (\(ObjectKey k) -> T.unpack k)
 
 downloadFolder :: (MonadAWS m, MonadResource m)
                   => BucketName

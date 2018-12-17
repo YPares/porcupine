@@ -22,7 +22,6 @@ import           Control.Monad.ReaderSoup
 import           Control.Monad.ReaderSoup.Katip     ()
 import           Data.Locations                     hiding ((</>))
 import           Data.Locations.Accessors
-import           Data.Locations.Accessors.AWS
 import           Data.Maybe
 import           Katip
 import           System.Environment                 (getEnv, lookupEnv)
@@ -162,7 +161,6 @@ bindResourceTreeAndRun progName (FullConfig defConfigFile defRoot) tree f =
         f cmd $ getPhysicalResourceTreeFromMappings rtam
 
 runReaderSoup progName scribeParams =
-  runPorcupineM (  #aws      <-- useAWS Discover
-                :& #katip    <-- ContextRunner (runLogger progName scribeParams)
+  runPorcupineM (  #katip    <-- ContextRunner (runLogger progName scribeParams)
                 :& #resource <-- useResource
                 :& RNil)

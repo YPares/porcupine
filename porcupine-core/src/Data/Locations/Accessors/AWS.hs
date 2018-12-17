@@ -3,7 +3,9 @@
 {-# LANGUAGE FlexibleInstances          #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE MultiParamTypeClasses      #-}
+{-# LANGUAGE NamedFieldPuns             #-}
 {-# LANGUAGE OverloadedLabels           #-}
+{-# LANGUAGE PatternSynonyms            #-}
 {-# LANGUAGE RankNTypes                 #-}
 {-# LANGUAGE TypeFamilies               #-}
 {-# OPTIONS_GHC "-fno-warn-orphans" #-}
@@ -16,31 +18,40 @@ module Data.Locations.Accessors.AWS
   , runReadLazyByte_
   ) where
 
+import           Control.Lens
 import           Control.Monad.Catch
 import           Control.Monad.IO.Class
 import           Control.Monad.ReaderSoup
 import           Control.Monad.ReaderSoup.AWS
-import           Control.Monad.ReaderSoup.Katip ()
+import           Control.Monad.ReaderSoup.Katip   ()
 import           Control.Monad.Trans.Control
 import           Control.Monad.Trans.Resource
-import qualified Data.ByteString.Lazy           as LBS
+import qualified Data.ByteString.Lazy             as LBS
+import qualified Data.ByteString.Streaming        as BSS
 import           Data.Locations.Accessors
 import           Data.Locations.Loc
-import           Data.Locations.LocationMonad   as LM
-import           Network.AWS                    hiding (Error)
+import           Data.Locations.LocationMonad     as LM
+import           Data.String
+import           Network.AWS                      hiding (Error)
+import           Network.AWS.S3
+import qualified Network.AWS.S3.TaskPipelineUtils as S3
 import           System.TaskPipeline.Logger
 
 
 -- TODO: Move "aws" instance to its own porcupine-s3 package
+
+-- | Just a compatiblity overlay for code explicitly dealing with S3 URLs
+pattern S3Obj :: String -> LocFilePath a -> URLLikeLoc a
+pattern S3Obj{bucketName,objectName} = RemoteFile "s3" bucketName objectName
 
 -- | Accessing resources on S3
 instance (MonadAWS m, MonadMask m, MonadResource m) => LocationAccessor m "aws" where
   newtype LocOf "aws" = S Loc
     deriving (ToJSON)
   locExists _ = return True -- TODO: Implement it
-  writeBSS (S l) = LM.writeBSS_S3 l
-  readBSS (S l) f = LM.readBSS_S3 l f -- >>= LM.eitherToExn
-  copy (S l1) (S l2) = LM.copy_S3 l1 l2 -- >>= LM.eitherToExn
+  writeBSS (S l) = writeBSS_S3 l
+  readBSS (S l) f = readBSS_S3 l f -- >>= LM.eitherToExn
+  copy (S l1) (S l2) = copy_S3 l1 l2 -- >>= LM.eitherToExn
 
 instance (MonadAWS m, MonadMask m, MonadResource m) => MayProvideLocationAccessors m "aws"
 
@@ -50,6 +61,44 @@ instance FromJSON (LocOf "aws") where
     case loc of
       S3Obj{} -> return $ S loc
       _       -> fail "Doesn't use 's3' protocol"
+
+
+writeBSS_S3 :: MonadAWS m => Loc -> BSS.ByteString m a -> m a
+writeBSS_S3 S3Obj { bucketName, objectName } body = do
+  let raw = objectName ^. locFilePathAsRawFilePath
+  (res, r) <- S3.uploadObj (fromString bucketName) (fromString raw) body
+  case res ^. porsResponseStatus of
+    200 -> pure ()
+    _   -> error $ "Unable to upload to the object " ++ raw ++ "."
+  return r
+writeBSS_S3 _ _ = undefined
+
+readBSS_S3
+  :: (MonadAWS m)
+  => Loc
+  -> (BSS.ByteString m () -> m b)
+  -> m (Either Error b)
+readBSS_S3 obj@S3Obj{ bucketName, objectName } k =
+  mapLeft (Error obj . OtherError . displayException) <$> S3.streamObjInto
+        (fromString bucketName)
+        (fromString $ objectName ^. locFilePathAsRawFilePath)
+        k
+readBSS_S3 _ _ = undefined
+
+copy_S3
+  :: (MonadResource m, MonadAWS m)
+  => Loc
+  -> Loc
+  -> m (Either Error ())
+copy_S3 locFrom@(S3Obj bucket1 obj1) locTo@(S3Obj bucket2 obj2)
+  | bucket1 == bucket2 = do
+    _ <- S3.copyObj
+          (fromString bucket1)
+          (fromString $ obj1^.locFilePathAsRawFilePath)
+          (fromString $ obj2^.locFilePathAsRawFilePath)
+    pure (Right ())
+  | otherwise = readBSS_S3 locFrom (writeBSS_S3 locTo)
+copy_S3 _ _ = undefined
 
 
 -- * Automatically switching from Resource to AWS monad, depending on some
@@ -70,7 +119,7 @@ selectRun refLoc _verbose act =
   case refLoc of
     LocalFile{} ->
       runPorcupineM (baseRec ()) act
-    RemoteFile{rfProtocol="s3"} ->
+    S3Obj{} ->
       runPorcupineM (#aws <-- useAWS Discover :& baseRec ()) act
     _           -> error "selectRun only handles local and S3 locations"
   where

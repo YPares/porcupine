@@ -6,7 +6,6 @@
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE NamedFieldPuns        #-}
 {-# LANGUAGE OverloadedStrings     #-}
-{-# LANGUAGE PatternSynonyms       #-}
 {-# LANGUAGE RankNTypes            #-}
 {-# LANGUAGE ScopedTypeVariables   #-}
 {-# LANGUAGE TypeFamilies          #-}
@@ -19,28 +18,21 @@ module Data.Locations.LocationMonad where
 import           Control.Lens
 import           Control.Monad.Catch
 import           Control.Monad.IO.Class
-import           Control.Monad.Reader
 import           Control.Monad.Trans.Resource
-import qualified Data.ByteString.Lazy             as LBS
-import qualified Data.ByteString.Streaming        as BSS
+import qualified Data.ByteString.Lazy         as LBS
+import qualified Data.ByteString.Streaming    as BSS
 import           Data.Locations.Loc
-import           Data.String
-import qualified Data.Text                        as Text
-import qualified Data.Text.Encoding               as TE
-import           GHC.Generics                     (Generic)
-import           Network.AWS                      hiding (Error)
-import qualified Network.AWS                      as AWS
-import           Network.AWS.S3
-import qualified Network.AWS.S3.TaskPipelineUtils as S3
-import           System.Directory                 (createDirectoryIfMissing,
-                                                   createFileLink,
-                                                   doesPathExist)
-import qualified System.FilePath                  as Path
-import qualified System.IO.Temp                   as Tmp
+import qualified Data.Text                    as Text
+import qualified Data.Text.Encoding           as TE
+import           GHC.Generics                 (Generic)
+import           System.Directory             (createDirectoryIfMissing,
+                                               createFileLink, doesPathExist)
+import qualified System.FilePath              as Path
+import qualified System.IO.Temp               as Tmp
 
 
 data RawError
-  = AWSError AWS.Error
+  = OtherError String
   | IOError IOError
   deriving (Generic, Show)
 
@@ -108,22 +100,14 @@ withLocalBuffer f loc =
         readBSS_ (localFile tmpFile) (writeBSS loc)
         return res
 
--- | A location monad that also contains an environment
-type LocationMonadReader r m =
-  (LocationMonad m, MonadReader r m, MonadIO m)
-
 -- Will be removed once we have pure models with initializers (as we won't need
 -- encapsulated lists of init functions anymore)
 
--- | Can be instantiated to any 'LocationMonadReader'
-newtype AnyLocationMR r a = AnyLocationMR { unAnyLocationMR :: forall m. (LocationMonadReader r m) => m a }
 
 checkLocal :: String -> (LocalFilePath -> p) -> Loc -> p
 checkLocal _ f (LocalFile fname) = f fname
-checkLocal funcName _ _ = error $ funcName ++ ": S3 location cannot be reached in IO! Need to use AWS"
+checkLocal funcName _ loc = error $ funcName ++ ": location " ++ show loc ++ " isn't a LocalFile"
 
--- | The LocationMonad for programs needing only to access local files.
-type LocalM = ResourceT IO
 
 writeText :: LocationMonad m
           => Loc
@@ -142,19 +126,6 @@ writeBSS_Local path body = do
   liftIO $ createDirectoryIfMissing True (Path.takeDirectory raw)
   BSS.writeFile raw body
 
--- | Just a compatiblity overlay for code explicitly dealing with S3 URLs
-pattern S3Obj :: String -> LocFilePath a -> URLLikeLoc a
-pattern S3Obj{bucketName,objectName} = RemoteFile "s3" bucketName objectName
-
-writeBSS_S3 :: MonadAWS m => Loc -> BSS.ByteString m a -> m a
-writeBSS_S3 S3Obj { bucketName, objectName } body = do
-  let raw = objectName ^. locFilePathAsRawFilePath
-  (res, r) <- S3.uploadObj (fromString bucketName) (fromString raw) body
-  case res ^. porsResponseStatus of
-    200 -> pure ()
-    _   -> error $ "Unable to upload to the object " ++ raw ++ "."
-  return r
-writeBSS_S3 _ _ = undefined
 
 writeLazyByte
   :: LocationMonad m
@@ -177,21 +148,6 @@ copy_Local fp1 fp2 =
     (fp1^.locFilePathAsRawFilePath)
     (fp2^.locFilePathAsRawFilePath)
 
-copy_S3
-  :: (MonadResource m, MonadAWS m)
-  => Loc
-  -> Loc
-  -> m (Either Error ())
-copy_S3 locFrom@(S3Obj bucket1 obj1) locTo@(S3Obj bucket2 obj2)
-  | bucket1 == bucket2 = do
-    _ <- S3.copyObj
-          (fromString bucket1)
-          (fromString $ obj1^.locFilePathAsRawFilePath)
-          (fromString $ obj2^.locFilePathAsRawFilePath)
-    pure (Right ())
-  | otherwise = readBSS_S3 locFrom (writeBSS_S3 locTo)
-copy_S3 _ _ = undefined
-
 readBSS_Local
   :: forall f m a. (MonadCatch f, MonadResource m)
   => LocalFilePath
@@ -199,18 +155,6 @@ readBSS_Local
   -> f (Either Error a)
 readBSS_Local f k = mapLeft (Error (LocalFile f) . IOError) <$>
   try (k $ BSS.readFile $ f ^. locFilePathAsRawFilePath)
-
-readBSS_S3
-  :: (MonadAWS m)
-  => Loc
-  -> (BSS.ByteString m () -> m b)
-  -> m (Either Error b)
-readBSS_S3 obj@S3Obj{ bucketName, objectName } k =
-  mapLeft (Error obj . AWSError) <$> S3.streamObjInto
-        (fromString bucketName)
-        (fromString $ objectName ^. locFilePathAsRawFilePath)
-        k
-readBSS_S3 _ _ = undefined
 
 -- | Exception version of 'readBSS'
 readBSS_ :: LocationMonad m
