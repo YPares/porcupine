@@ -57,15 +57,20 @@ data PipelineCommand r where
 -- NoConfig: No CLI, no Yaml file are used, in which case the root directory
 -- should be specified
 --
--- FullConfig: We require the config file path, default 'LocationTree' root mapping, and a
--- way to override ModelOpts arguments from CLI and config file.
+-- FullConfig: We require a name (for the help page in the CLI), the config file
+-- path, default 'LocationTree' root mapping, and a way to override ModelOpts
+-- arguments from CLI and config file.
 data PipelineConfigMethod r where
   NoConfig :: Loc -> PipelineConfigMethod r
-  FullConfig :: (Monoid r) => LocalFilePath -> Loc -> PipelineConfigMethod r
+  FullConfig :: (Monoid r)
+             => String
+             -> LocalFilePath
+             -> Loc
+             -> PipelineConfigMethod r
 
 -- | Set the default Loc that should be bound to the top of the 'LocationTree'
 pipelineConfigMethodDefRoot :: Traversal' (PipelineConfigMethod r) Loc
-pipelineConfigMethodDefRoot f (FullConfig s r) = FullConfig s <$> f r
+pipelineConfigMethodDefRoot f (FullConfig n s r) = FullConfig n s <$> f r
 pipelineConfigMethodDefRoot f (NoConfig r    ) = NoConfig <$> f r
 
 -- | Runs the new ModelCLI unless a Yaml or Json config file is given on the

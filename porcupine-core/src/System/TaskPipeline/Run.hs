@@ -14,6 +14,10 @@ module System.TaskPipeline.Run
   ( PipelineConfigMethod(..)
   , PipelineCommand(..)
   , CanRunPTask
+  , Rec(..)
+  , ContextRunner(..)
+  , (<--)
+  , baseContexts
   , runPipelineTask
   , runPipelineTask_
   , runPipelineCommandOnPTask
@@ -27,8 +31,7 @@ import           Control.Monad.ReaderSoup.Katip     ()
 import           Data.Locations                     hiding ((</>))
 import           Data.Locations.Accessors
 import           Data.Maybe
-import           Data.Vinyl.Derived                 (rlensf, FieldType, HasField)
-import           Data.Vinyl.Functor
+import           Data.Vinyl.Derived                 (rlensf, HasField)
 import           Katip
 import           System.Environment                 (getEnv, lookupEnv)
 import           System.Exit
@@ -42,6 +45,7 @@ import           System.TaskPipeline.ResourceTree
 import           Prelude                            hiding (id, (.))
 
 
+-- | Tells whether a record of args can be used to run a PTask
 type AcceptableArgsAndContexts args ctxs m =
   (ArgsForSoupConsumption args, ctxs ~ ContextsFromArgs args
   ,IsInSoup ctxs "katip", IsInSoup ctxs "resource"
@@ -59,8 +63,7 @@ type RunsKatipOver args m =
 -- exception.
 runPipelineTask
   :: (AcceptableArgsAndContexts args ctxs m)
-  => String            -- ^ The program name (for CLI --help)
-  -> PipelineConfigMethod o  -- ^ Whether to use the CLI and load the yaml
+  => PipelineConfigMethod o  -- ^ Whether to use the CLI and load the yaml
                              -- config or not
   -> Rec (FieldWithAccessors (ReaderSoup ctxs)) args  -- ^ The location
                                                       -- accessors to use
@@ -68,31 +71,33 @@ runPipelineTask
   -> i                 -- ^ The pipeline task input
   -> IO o -- , RscAccessTree (ResourceTreeNode m))
                        -- ^ The pipeline task output and the final LocationTree
-runPipelineTask progName cliUsage accessors ptask input = do
+runPipelineTask cliUsage accessors ptask input = do
   let -- cliUsage' = pipelineConfigMethodChangeResult cliUsage
       tree = ptask ^. splittedPTask . _1
   catch
-    (bindResourceTreeAndRun progName cliUsage accessors tree $
+    (bindResourceTreeAndRun cliUsage accessors tree $
       runPipelineCommandOnPTask ptask input)
     (\(SomeException e) -> do
         putStrLn $ displayException e
         exitWith $ ExitFailure 1)
 
+-- | Use it as the base of the record you give to 'runPipelineTask'. Use '(:&)'
+-- to stack other contexts and LocationAccessors on top of it
+baseContexts topNamespace =
+     #katip    <-- ContextRunner (runLogger topNamespace defaultLoggerScribeParams)
+  :& #resource <-- useResource
+  :& RNil
+
 -- | Like 'runPipelineTask' if the task is self-contained and doesn't have a
 -- specific input and you don't need any specific LocationAccessor aside
--- "resource".
+-- "resource". If FullConfig isn't used, the top namespace in the log will just
+-- be called "porcupine".
 runPipelineTask_
-  :: String
-  -> PipelineConfigMethod o
+  :: PipelineConfigMethod o
   -> PTask SimplePorcupineM () o
   -> IO o
-runPipelineTask_ name cliUsage ptask =
-  -- fst <$>
-  runPipelineTask name cliUsage baseRec ptask ()
-  where
-    baseRec = #katip    <-- ContextRunner (runLogger name defaultLoggerScribeParams)
-           :& #resource <-- useResource
-           :& RNil
+runPipelineTask_ cliUsage ptask =
+  runPipelineTask cliUsage (baseContexts "porcupine") ptask ()
 
 -- pipelineConfigMethodChangeResult
 --   :: PipelineConfigMethod o
@@ -144,18 +149,17 @@ getRemoteCacheLocation = do
 -- to its final value/path, and passes the continuation the bound resource tree.
 bindResourceTreeAndRun
   :: (AcceptableArgsAndContexts args ctxs m)
-  => String   -- ^ Program name (often model name)
-  -> PipelineConfigMethod r -- ^ How to get CLI args from ModelOpts
+  => PipelineConfigMethod r -- ^ How to get CLI args from ModelOpts
   -> Rec (FieldWithAccessors (ReaderSoup ctxs)) args
   -> VirtualResourceTree    -- ^ The tree to look for DocRecOfoptions in
   -> (PipelineCommand r -> PhysicalResourceTree -> PorcupineM ctxs r)
              -- ^ What to do with the tree
   -> IO r
-bindResourceTreeAndRun _progName (NoConfig root) accessors tree f =
+bindResourceTreeAndRun (NoConfig root) accessors tree f =
   runPorcupineM accessors $
     f RunPipeline $
       getPhysicalResourceTreeFromMappings $ ResourceTreeAndMappings tree (Left root) mempty
-bindResourceTreeAndRun progName (FullConfig defConfigFile defRoot) accessors tree f =
+bindResourceTreeAndRun (FullConfig progName defConfigFile defRoot) accessors tree f =
   withCliParser progName "Run a task pipeline" getParser run
   where
     getParser mbConfigFile =

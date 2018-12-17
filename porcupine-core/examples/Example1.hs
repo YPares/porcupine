@@ -62,6 +62,16 @@ mainTask =
   >>> parMapTask_ (repIndex "userId") analyseOneUser
 
 main :: IO ()
-main = runPipelineTask_ "example1"
-                        (FullConfig "porcupine.yaml" "porcupine-core/examples/data")
-                        mainTask
+main = runPipelineTask (FullConfig "example1" "porcupine.yaml" "porcupine-core/examples/data")
+                          -- The CLI/Yaml configuration to use (prog name,
+                          -- default config file to create, and default root to
+                          -- use for the resource tree)
+                       (baseContexts "")
+                          -- The contexts to use. 'baseContexts' is the
+                          -- minimum. It gives out katip logging and local files
+                          -- access (through ResourceT). The string param is the
+                          -- top namespace for the logger. When we use
+                          -- FullConfig (and therefore CLI), the progName for
+                          -- the CLI given above ("example1") will be inherited
+                          -- by the logger, so we can leave it blank
+                       mainTask ()
