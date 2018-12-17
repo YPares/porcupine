@@ -17,13 +17,15 @@ module Data.Locations.Accessors
   ( module Control.Monad.ReaderSoup.Resource
   , FromJSON(..), ToJSON(..)
   , LocationAccessor(..)
+  , FieldWithAccessors
   , Rec(..), ElField(..)
   , MayProvideLocationAccessors(..)
   , SomeLocationAccessor(..)
   , AvailableAccessors
-  , PorcupineM, SimplePorcupineM
+  , PorcupineM, SimplePorcupineM, BasePorcupineContexts
   , (<--)
   , runPorcupineM
+  , splitAccessorsFromRec
   , withParsedLocs
   ) where
 
@@ -152,10 +154,12 @@ instance (MonadResource m, MonadMask m) => MayProvideLocationAccessors m "resour
 -- | Temporary type until LocationMonad is removed.
 type PorcupineM ctxs = ReaderT (AvailableAccessors (ReaderSoup ctxs)) (ReaderSoup ctxs)
 
+type BasePorcupineContexts =
+  '[ "katip" ::: ContextFromName "katip"
+   , "resource" ::: ContextFromName "resource" ]
+
 -- | The simplest, minimal ReaderSoup to run a local accessor
-type SimplePorcupineM =
-  PorcupineM '[ "katip" ::: ContextFromName "katip"
-              , "resource" ::: ContextFromName "resource" ]
+type SimplePorcupineM = PorcupineM BasePorcupineContexts
 
 -- | Temporary runner until LocationMonad is removed
 runPorcupineM :: (ArgsForSoupConsumption args)
