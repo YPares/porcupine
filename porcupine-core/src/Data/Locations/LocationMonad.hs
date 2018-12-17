@@ -162,10 +162,7 @@ instance (LocationMonad m) => LocationMonad (KatipContextT m) where
 -- | Run a computation or a sequence of computations that will access some
 -- locations. Selects whether to run in IO or AWS based on some Loc used as
 -- selector.
---
--- You may want to use 'System.RunContext.runWithContext' which infers the Loc
--- switch and the verbosity level from the given context
-selectRun :: Loc_ t  -- ^ A Loc to use as switch (RunContext root or file)
+selectRun :: Loc_ t  -- ^ a loc
           -> Bool -- ^ Verbosity
           -> (forall m. (LocationMonad m, MonadIO m, MonadBaseControl IO m) => m a)
              -- ^ The action to run, either in AWS or IO
