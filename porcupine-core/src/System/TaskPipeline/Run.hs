@@ -82,14 +82,13 @@ runPipelineTask cliUsage accessors ptask input = do
 
 -- | Like 'runPipelineTask' if the task is self-contained and doesn't have a
 -- specific input and you don't need any specific LocationAccessor aside
--- "resource". If FullConfig isn't used, the top namespace in the log will just
--- be called "porcupine".
+-- "resource".
 runPipelineTask_
   :: PipelineConfigMethod o
   -> PTask SimplePorcupineM () o
   -> IO o
 runPipelineTask_ cliUsage ptask =
-  runPipelineTask cliUsage (baseContexts "porcupine") ptask ()
+  runPipelineTask cliUsage (baseContexts $ cliUsage ^. pipelineConfigMethodProgName) ptask ()
 
 -- pipelineConfigMethodChangeResult
 --   :: PipelineConfigMethod o
@@ -147,7 +146,7 @@ bindResourceTreeAndRun
   -> (PipelineCommand r -> PhysicalResourceTree -> PorcupineM ctxs r)
              -- ^ What to do with the tree
   -> IO r
-bindResourceTreeAndRun (NoConfig root) accessors tree f =
+bindResourceTreeAndRun (NoConfig _ root) accessors tree f =
   runPorcupineM accessors $
     f RunPipeline $
       getPhysicalResourceTreeFromMappings $ ResourceTreeAndMappings tree (Left root) mempty
