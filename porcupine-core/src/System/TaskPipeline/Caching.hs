@@ -32,7 +32,7 @@ import           Prelude                               hiding (id, (.))
 -- VirtualFile to compute the hash. That means that if the VirtualFile is bound
 -- to something else, the step will be re-executed.
 cacheWithVFile :: (MonadThrow m, MonadCatch m, KatipContext m, Typeable c, Typeable c')
-               => Properties (a', [Loc_ T.Text]) b  -- String isn't ContentHashable
+               => Properties (a', [URLLikeLoc T.Text]) b  -- String isn't ContentHashable
                -> (a -> a')
                -> VirtualFile c c'
                -> (a -> m (b,c))

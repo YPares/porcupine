@@ -17,7 +17,6 @@ module Streaming.TaskPipelineUtils
   , S.mapM_
   , asConduit
   , intoSink
-  , streamS3Folder
   , streamFolder
   , streamFolderRel
   , mapCopy
@@ -28,26 +27,20 @@ module Streaming.TaskPipelineUtils
   , mapStreamWM )
   where
 
-import           Control.Lens               hiding ((:>))
-import           Control.Monad              (forM_)
+import           Control.Lens           hiding ((:>))
+import           Control.Monad          (forM_)
 import           Control.Monad.IO.Class
 import           Data.Aeson
-import           Data.Conduit               (ConduitT, Void, runConduit, (.|))
-import           Data.Function              ((&))
+import           Data.Conduit           (ConduitT, Void, runConduit, (.|))
+import           Data.Function          ((&))
 import           GHC.Generics
 import           Streaming
-import           Streaming.Conduit          (asConduit, fromStreamSource)
-import qualified Streaming.Prelude          as S
-import           System.Directory           (doesDirectoryExist,
-                                             getDirectoryContents)
-import           System.FilePath            (normalise, (</>))
+import           Streaming.Conduit      (asConduit, fromStreamSource)
+import qualified Streaming.Prelude      as S
+import           System.Directory       (doesDirectoryExist,
+                                         getDirectoryContents)
+import           System.FilePath        ((</>))
 
-import           Data.String
-import qualified Data.Text                  as T
-import           Network.AWS                (MonadAWS, liftAWS, send)
-import           Network.AWS.Env            (Env, HasEnv, environment)
-import           Network.AWS.S3             (BucketName, ObjectKey (..), oKey)
-import qualified Network.AWS.S3.ListObjects as LO
 
 intoSink :: Monad m => ConduitT a Void m b -> Stream (Of a) m r -> m b
 intoSink snk src = runConduit $ fromStreamSource src .| snk
@@ -68,17 +61,6 @@ streamFolderRel topPath =
         if isDirectory
           then aux path
           else S.yield path
-
-streamS3Folder ::
-     MonadAWS m => BucketName -> Maybe FilePath -> Stream (Of FilePath) m ()
-streamS3Folder bucketName prefix = do
-  let listCommand = LO.listObjects bucketName
-                      & LO.loPrefix .~ ((fromString . normalise) <$> prefix)
-  rs <- lift $ liftAWS $ send listCommand
-  view LO.lorsContents rs
-    & S.each
-    & S.map (view oKey)
-    & S.map (\(ObjectKey k) -> T.unpack k)
 
 -- | Generalizes 'partitionEithers' from Streaming.Prelude to fork a stream into
 -- several substreams
@@ -151,13 +133,6 @@ data t `With` ann = With { _ann :: !ann, _elt :: t }
   deriving (Eq, Generic)
 
 makeLenses ''With
-
--- These instances may overlap in theory, but in practice there is probably no
--- good reason to have two AWS.Envs in the same program, so only one side
--- should have one
-instance HasEnv a => HasEnv (a `With` b) where environment = elt.environment
-instance {-# OVERLAPPING #-} HasEnv (a `With` Env)
-  where environment = ann.environment
 
 instance (ToJSON t, ToJSON ann) => ToJSON (t `With` ann)
 instance (FromJSON t, FromJSON ann) => FromJSON (t `With` ann)

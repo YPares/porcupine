@@ -64,13 +64,13 @@ instance NamedFieldTag SourceTag where
 -- | A DocField with a Source tag attached
 type SourcedDocField = Tagged SourceTag `F.Compose` DocField
 
-rmTags :: Rec SourcedDocField r -> Rec DocField r
+rmTags :: (RMap r) => Rec SourcedDocField r -> Rec DocField r
 rmTags r = (\(F.Compose (Tagged _ x)) -> x) <<$>> r
 
-tagWithDefaultSource :: Rec DocField rs -> Rec SourcedDocField rs
+tagWithDefaultSource :: (RMap rs) => Rec DocField rs -> Rec SourcedDocField rs
 tagWithDefaultSource r = F.Compose . Tagged Default <<$>> r
 
-tagWithYamlSource :: Rec DocField rs -> Rec SourcedDocField rs
+tagWithYamlSource :: (RMap rs) => Rec DocField rs -> Rec SourcedDocField rs
 tagWithYamlSource r = F.Compose . Tagged YAML <<$>> r
 
 
@@ -78,7 +78,8 @@ tagWithYamlSource r = F.Compose . Tagged YAML <<$>> r
 -- JSON and gettable from the CLI.
 type RecordUsableWithCLI rs =
   ( RecFromCLI (Rec (Tagged SourceTag `F.Compose` DocField) rs)
-  , ToJSONFields rs, FromJSON (Rec PossiblyEmptyField rs) )
+  , ToJSONFields rs, FromJSON (Rec PossiblyEmptyField rs)
+  , RMap rs, RApply rs )
 
 class (FromJSON (Snd r), m ~ MarkerOf (Snd r)) => FieldFromCLI_ m r where
   fieldFromCLI

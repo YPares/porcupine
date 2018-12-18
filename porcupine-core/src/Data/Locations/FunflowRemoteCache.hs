@@ -1,6 +1,7 @@
 {-# LANGUAGE FlexibleContexts      #-}
 {-# LANGUAGE FlexibleInstances     #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE OverloadedStrings     #-}
 
 module Data.Locations.FunflowRemoteCache
   ( locationCacher
@@ -13,17 +14,21 @@ import           Control.Monad.Trans
 import           Data.Bifunctor                  (first)
 import           Data.Locations.Loc
 import           Data.Locations.LocationMonad
+import           Katip
 import           Path                            (toFilePath)
 import           System.FilePath                 (dropTrailingPathSeparator)
+
 
 hashToFilePath :: ContentHash -> FilePath
 hashToFilePath = dropTrailingPathSeparator . toFilePath . hashToPath
 
 newtype LocationCacher = LocationCacher Loc
 
-instance LocationMonad m => Remote.Cacher m LocationCacher where
+instance (LocationMonad m, KatipContext m)
+      => Remote.Cacher m LocationCacher where
   push (LocationCacher loc) = Remote.pushAsArchive aliasPath $ \hash body -> do
-    logMsg $ "Writing to file " ++ show (loc </> hashToFilePath hash)
+    logFM DebugS $ logStr $
+      "Remote cacher: Writing to file " ++ show (loc </> hashToFilePath hash)
     writeLazyByte (loc </> hashToFilePath hash) body
     pure Remote.PushOK
     where
@@ -32,7 +37,8 @@ instance LocationMonad m => Remote.Cacher m LocationCacher where
           (loc </> hashToFilePath from)
           (loc </> hashToFilePath to)
   pull (LocationCacher loc) = Remote.pullAsArchive $ \hash -> do
-    logMsg $ "Reading from file " ++ show (loc </> hashToFilePath hash)
+    logFM DebugS $ logStr $
+      "Remote cacher: Reading from file " ++ show (loc </> hashToFilePath hash)
     readResult <- readLazyByte (loc </> hashToFilePath hash)
     pure $ case readResult of
       Right bs -> Remote.PullOK bs
