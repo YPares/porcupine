@@ -163,10 +163,9 @@ instance (IsInSoup ctxs l, c ~ ContextFromName l)
 -- | Brings forth one context of the whole soup, giving a MonadReader instance
 -- of just this context. This makes it possible that the same context type
 -- occurs several times in the broth, because the Label will disambiguate them.
-dipping :: (IsInSoup ctxs l)
-         => Label l
-         -> Spoon ctxs l a
-         -> ReaderSoup ctxs a
+dipping :: Label l
+        -> Spoon ctxs l a
+        -> ReaderSoup ctxs a
 dipping _ = unSpoon
 
 -- | If you have a code that cannot cope with any MonadReader but explicitly

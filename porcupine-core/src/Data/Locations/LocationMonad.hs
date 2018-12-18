@@ -89,7 +89,7 @@ defaultCopy locFrom locTo = readBSS locFrom (writeBSS locTo)
 -- | Wrapper to use functions directly writing to a filepath.
 -- @withLocalBuffer f loc@ will apply @f@ to a temporary file and copy the
 -- result to @loc@
-withLocalBuffer :: (MonadIO m, MonadMask m, LocationMonad m) => (FilePath -> m a) -> Loc -> m a
+withLocalBuffer :: (MonadIO m, LocationMonad m) => (FilePath -> m a) -> Loc -> m a
 withLocalBuffer f (LocalFile lf) = f $ lf ^. locFilePathAsRawFilePath
 withLocalBuffer f loc =
     Tmp.withSystemTempDirectory "pipeline-tools-tmp" writeAndUpload

@@ -6,6 +6,7 @@
 {-# LANGUAGE ScopedTypeVariables   #-}
 {-# LANGUAGE TypeOperators         #-}
 {-# LANGUAGE ViewPatterns          #-}
+{-# OPTIONS_GHC "-fno-warn-orphans" #-}
 
 module Network.AWS.S3.TaskPipelineUtils
   ( runAll
@@ -52,8 +53,8 @@ runAll f = do
 -- These instances may overlap in theory, but in practice there is probably no
 -- good reason to have two AWS.Envs in the same program, so only one side
 -- should have one
-instance HasEnv a => HasEnv (a `With` b) where environment = elt.environment
-instance {-# OVERLAPPING #-} HasEnv (a `With` Env)
+instance {-# OVERLAPPABLE #-} HasEnv a => HasEnv (a `With` b) where environment = elt.environment
+instance HasEnv (a `With` Env)
   where environment = ann.environment
 
 getEnv :: Bool -- ^ Verbose

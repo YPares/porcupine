@@ -9,6 +9,7 @@
 {-# LANGUAGE RankNTypes                 #-}
 {-# LANGUAGE TypeFamilies               #-}
 {-# OPTIONS_GHC "-fno-warn-orphans" #-}
+{-# OPTIONS_GHC "-fno-warn-name-shadowing" #-}
 
 module Data.Locations.Accessors.AWS
   ( module Control.Monad.ReaderSoup.AWS
@@ -35,7 +36,6 @@ import           Data.String
 import           Network.AWS                      hiding (Error)
 import           Network.AWS.S3
 import qualified Network.AWS.S3.TaskPipelineUtils as S3
-import           System.TaskPipeline.Logger
 
 
 -- | Just a compatiblity overlay for code explicitly dealing with S3 URLs
