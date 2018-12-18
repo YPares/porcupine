@@ -105,9 +105,6 @@ copy_S3 _ _ = undefined
 -- | Run a computation or a sequence of computations that will access some
 -- locations. Selects whether to run in IO or AWS based on some Loc used as
 -- selector.
---
--- You may want to use 'System.RunContext.runWithContext' which infers the Loc
--- switch and the verbosity level from the given context
 selectRun :: URLLikeLoc t  -- ^ A Loc to use as switch (RunContext root or file)
           -> Bool -- ^ Verbosity
           -> (forall m. (LocationMonad m, MonadIO m, MonadBaseControl IO m) => m a)
@@ -116,15 +113,10 @@ selectRun :: URLLikeLoc t  -- ^ A Loc to use as switch (RunContext root or file)
 selectRun refLoc _verbose act =
   case refLoc of
     LocalFile{} ->
-      runPorcupineM (baseRec ()) act
+      runPorcupineM (baseContexts "selectRun_Local") act
     S3Obj{} ->
-      runPorcupineM (#aws <-- useAWS Discover :& baseRec ()) act
-    _           -> error "selectRun only handles local and S3 locations"
-  where
-           -- The unused arg is to prevent a too monomorphic type
-    baseRec () = #katip    <-- ContextRunner (runLogger "" defaultLoggerScribeParams)
-              :& #resource <-- useResource
-              :& RNil
+      runPorcupineM (#aws <-- useAWS Discover :& baseContexts "selectRun_AWS") act
+    _ -> error "selectRun only handles local and S3 locations"
 
 -- | Just a shortcut
 runWriteLazyByte

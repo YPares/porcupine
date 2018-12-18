@@ -38,8 +38,7 @@ import           System.Exit
 import           System.FilePath                    ((</>))
 import           System.Posix.Directory             (getWorkingDirectory)
 import           System.TaskPipeline.CLI
-import           System.TaskPipeline.Logger         (defaultLoggerScribeParams,
-                                                     runLogger)
+import           System.TaskPipeline.Logger         (runLogger)
 import           System.TaskPipeline.PTask
 import           System.TaskPipeline.PTask.Internal
 import           System.TaskPipeline.ResourceTree
@@ -80,13 +79,6 @@ runPipelineTask cliUsage accessors ptask input = do
     (\(SomeException e) -> do
         putStrLn $ displayException e
         exitWith $ ExitFailure 1)
-
--- | Use it as the base of the record you give to 'runPipelineTask'. Use '(:&)'
--- to stack other contexts and LocationAccessors on top of it
-baseContexts topNamespace =
-     #katip    <-- ContextRunner (runLogger topNamespace defaultLoggerScribeParams)
-  :& #resource <-- useResource
-  :& RNil
 
 -- | Like 'runPipelineTask' if the task is self-contained and doesn't have a
 -- specific input and you don't need any specific LocationAccessor aside

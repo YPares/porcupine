@@ -5,6 +5,7 @@
 {-# LANGUAGE GADTs                      #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE MultiParamTypeClasses      #-}
+{-# LANGUAGE OverloadedLabels           #-}
 {-# LANGUAGE OverloadedStrings          #-}
 {-# LANGUAGE RankNTypes                 #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
@@ -25,6 +26,7 @@ module Data.Locations.Accessors
   , AvailableAccessors
   , PorcupineM, SimplePorcupineM, BasePorcupineContexts
   , (<--)
+  , baseContexts
   , runPorcupineM
   , splitAccessorsFromRec
   , withParsedLocs
@@ -53,6 +55,8 @@ import           GHC.TypeLits
 import           Katip
 import qualified System.FilePath                   as Path
 import qualified System.IO.Temp                    as Tmp
+import           System.TaskPipeline.Logger        (defaultLoggerScribeParams,
+                                                    runLogger)
 
 
 -- | Creates some Loc type, indexed over a symbol (see ReaderSoup for how that
@@ -157,12 +161,19 @@ instance (MonadResource m, MonadMask m) => MayProvideLocationAccessors m "resour
 --- The rest of the file is used as a compatiblity layer with the LocationMonad
 --- class
 
--- | Temporary type until LocationMonad is removed.
-type PorcupineM ctxs = ReaderT (AvailableAccessors (ReaderSoup ctxs)) (ReaderSoup ctxs)
-
 type BasePorcupineContexts =
   '[ "katip" ::: ContextFromName "katip"
    , "resource" ::: ContextFromName "resource" ]
+
+-- | Use it as the base of the record you give to 'runPipelineTask'. Use '(:&)'
+-- to stack other contexts and LocationAccessors on top of it
+baseContexts topNamespace =
+     #katip    <-- ContextRunner (runLogger topNamespace defaultLoggerScribeParams)
+  :& #resource <-- useResource
+  :& RNil
+
+-- | Temporary type until LocationMonad is removed.
+type PorcupineM ctxs = ReaderT (AvailableAccessors (ReaderSoup ctxs)) (ReaderSoup ctxs)
 
 -- | The simplest, minimal ReaderSoup to run a local accessor
 type SimplePorcupineM = PorcupineM BasePorcupineContexts
