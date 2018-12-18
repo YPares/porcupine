@@ -5,6 +5,7 @@
 {-# LANGUAGE GADTs                      #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE MultiParamTypeClasses      #-}
+{-# LANGUAGE OverloadedStrings          #-}
 {-# LANGUAGE RankNTypes                 #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
 {-# LANGUAGE TupleSections              #-}
@@ -43,9 +44,13 @@ import           Data.Locations.Loc
 import qualified Data.Locations.LocationMonad      as LM
 import           Data.Locations.LogAndErrors
 -- import           Data.Store                      (Store)
+import qualified Data.Text                         as T
+import qualified Data.Text.Lazy                    as LT
+import           Data.Text.Lazy.Encoding           (decodeUtf8)
 import           Data.Vinyl
 import           Data.Vinyl.Functor
 import           GHC.TypeLits
+import           Katip
 import qualified System.FilePath                   as Path
 import qualified System.IO.Temp                    as Tmp
 
@@ -83,7 +88,7 @@ class ( MonadMask m, MonadIO m
 
 -- | Reifies an instance of LocationAccessor
 data SomeLocationAccessor m where
-  SomeLocationAccessor :: (LocationAccessor m l)
+  SomeLocationAccessor :: (KnownSymbol l, LocationAccessor m l)
                        => Label l -> SomeLocationAccessor m
 
 -- | This class is meant to be implemented by every label used in the reader
@@ -91,7 +96,8 @@ data SomeLocationAccessor m where
 -- 1).
 class MayProvideLocationAccessors m l where
   getLocationAccessors :: Label l -> [SomeLocationAccessor m]
-  default getLocationAccessors :: (LocationAccessor m l) => Label l -> [SomeLocationAccessor m]
+  default getLocationAccessors :: (KnownSymbol l, LocationAccessor m l)
+                               => Label l -> [SomeLocationAccessor m]
   getLocationAccessors x = [SomeLocationAccessor x]
 
 -- | By default, no accessor is provided
@@ -181,15 +187,17 @@ withParsedLocs aesonVals f = do
   case allAccessors of
     [] -> throwWithPrefix $ "List of accessors is empty"
     _  -> return ()
-  loop allAccessors []
+  loop allAccessors mempty
   where
-    loop [] errs = throwWithPrefix $ "Locations '" ++ show aesonVals
-                   ++ "': Accessors returned the following errors: "
-                   ++ show (reverse errs)
-    loop (SomeLocationAccessor (_ :: Label l) : accs) errs =
+    showJ = LT.unpack . LT.intercalate ", " . map (decodeUtf8 . encode)
+    loop [] errCtxs =
+      katipAddContext (sl "errorsFromAccessors" errCtxs) $
+      throwWithPrefix $ "Location(s) " ++ showJ aesonVals
+      ++ " cannot be used by the location accessors in place."
+    loop (SomeLocationAccessor (lbl :: Label l) : accs) errCtxs =
       case mapM fromJSON aesonVals of
-        Success a -> f (a::[LocOf l])
-        Error e   -> loop accs (e:errs)
+        Success a -> f (a :: [LocOf l])
+        Error e   -> loop accs (errCtxs <> sl (T.pack $ symbolVal lbl) e)
 
 -- Temporary, until LocationMonad is removed and LocOf types are directly
 -- integrated into the resource tree:

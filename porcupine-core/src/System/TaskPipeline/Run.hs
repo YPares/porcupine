@@ -1,13 +1,12 @@
-{-# LANGUAGE FlexibleContexts  #-}
-{-# LANGUAGE OverloadedLabels  #-}
-{-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE RankNTypes        #-}
-{-# LANGUAGE TemplateHaskell   #-}
-{-# LANGUAGE DataKinds #-}
-{-# LANGUAGE OverloadedLabels           #-}
-{-# LANGUAGE ConstraintKinds #-}
-{-# LANGUAGE GADTs #-}
+{-# LANGUAGE ConstraintKinds     #-}
+{-# LANGUAGE DataKinds           #-}
+{-# LANGUAGE FlexibleContexts    #-}
+{-# LANGUAGE GADTs               #-}
+{-# LANGUAGE OverloadedLabels    #-}
+{-# LANGUAGE OverloadedStrings   #-}
+{-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TemplateHaskell     #-}
 {-# OPTIONS_GHC "-fno-warn-missing-signatures" #-}
 
 module System.TaskPipeline.Run
@@ -31,8 +30,9 @@ import           Control.Monad.ReaderSoup.Katip     ()
 import           Data.Locations                     hiding ((</>))
 import           Data.Locations.Accessors
 import           Data.Maybe
-import           Data.Vinyl.Derived                 (rlensf, HasField)
+import           Data.Vinyl.Derived                 (HasField, rlensf)
 import           Katip
+import           Prelude                            hiding (id, (.))
 import           System.Environment                 (getEnv, lookupEnv)
 import           System.Exit
 import           System.FilePath                    ((</>))
@@ -42,7 +42,6 @@ import           System.TaskPipeline.Logger         (defaultLoggerScribeParams,
 import           System.TaskPipeline.PTask
 import           System.TaskPipeline.PTask.Internal
 import           System.TaskPipeline.ResourceTree
-import           Prelude                            hiding (id, (.))
 
 
 -- | Tells whether a record of args can be used to run a PTask
