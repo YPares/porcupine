@@ -20,6 +20,7 @@ import           Control.Lens
 import           Control.Monad                   (foldM)
 import           Data.Aeson
 import           Data.Binary                     (Binary)
+import           Data.Char                       (toLower)
 import qualified Data.HashMap.Strict             as HM
 import           Data.Locations.LocVariable
 import           Data.Representable
@@ -109,42 +110,40 @@ instance (IsLocString a) => IsString (LocFilePath a) where
 instance (IsLocString a) => Show (LocFilePath a) where
   show p = fmap (view locStringAsRawString) p ^. locFilePathAsRawFilePath
 
--- | Location's main type. A value of type 'Loc_' denotes a file or a folder
--- that may be local or hosted remotely (s3).
-data Loc_ a
+
+-- | Location's main type. A value of type 'URLLikeLoc' denotes a file or a
+-- folder that may be local or hosted remotely
+data URLLikeLoc a
   = LocalFile { filePath :: LocFilePath a }
-  | S3Obj { bucketName :: String
-          , objectName :: LocFilePath a }
-  {- In the future, we might want to add the following locations
-     | ParquetObj ...
-     | SQLTableObj ...
-  -}
-  deriving ( Eq, Ord, Generic, ToJSON, FromJSON
+  | RemoteFile { rfProtocol    :: String
+               , rfServerName  :: String
+               , rfLocFilePath :: LocFilePath a }
+  deriving ( Eq, Ord, Generic
            , Functor, Foldable, Traversable, Binary, Store )
 
-instance (Monad m, ContentHashable m a) => ContentHashable m (Loc_ a)
+instance (Monad m, ContentHashable m a) => ContentHashable m (URLLikeLoc a)
 
-instance (IsLocString a) => Show (Loc_ a) where
+instance (IsLocString a) => Show (URLLikeLoc a) where
   show LocalFile{ filePath } = show filePath
-  show S3Obj{ bucketName, objectName } =
-    "s3://" ++ bucketName ++ "/" ++ show objectName
+  show RemoteFile{ rfProtocol, rfServerName, rfLocFilePath } =
+    rfProtocol ++ "://" ++ rfServerName ++ "/" ++ show rfLocFilePath
 
 -- | Lens to the 'LocFilePath' of the 'Loc'
-locFilePath :: Lens (Loc_ a) (Loc_ b) (LocFilePath a) (LocFilePath b)
-locFilePath f (LocalFile fp) = LocalFile <$> f fp
-locFilePath f (S3Obj b fp)   = S3Obj b <$> f fp
+locFilePath :: Lens (URLLikeLoc a) (URLLikeLoc b) (LocFilePath a) (LocFilePath b)
+locFilePath f (LocalFile fp)      = LocalFile <$> f fp
+locFilePath f (RemoteFile p b fp) = RemoteFile p b <$> f fp
 
 -- | Lens to the extension of the 'Loc'
-locExt :: Lens' (Loc_ a) String
+locExt :: Lens' (URLLikeLoc a) String
 locExt = locFilePath . pathExtension
 
--- | A 'Loc_' that might contain some names holes, called variables, that we
+-- | A 'URLLikeLoc' that might contain some names holes, called variables, that we
 -- have first to replace by a value before we can get a definite physical
 -- location.
-type LocWithVars = Loc_ LocString
+type LocWithVars = URLLikeLoc LocString
 
--- | A 'Loc_' that can directly be accessed as is.
-type Loc = Loc_ String
+-- | A 'URLLikeLoc' that can directly be accessed as is.
+type Loc = URLLikeLoc String
 
 type LocalFilePath = LocFilePath String
 
@@ -223,24 +222,27 @@ instance IsLocString LocString where
     LocFilePath <$> parseLocString p <*> refuseVarRefs "extension" e
     where (p, e) = splitExtension' s
 
--- | The main way to parse a 'Loc_'.
-parseURL :: (IsLocString a) => String -> Either String (Loc_ a)
-parseURL "." = Right $ LocalFile $ LocFilePath ("." ^. from locStringAsRawString) ""
-parseURL litteralPath = do
-  pathUrl <- maybe (Left $ "parseURL: Invalid URL '" ++ litteralPath ++ "'") Right $
+-- | The main way to parse an 'URLLikeLoc'.
+parseURLLikeLoc :: (IsLocString a) => String -> Either String (URLLikeLoc a)
+parseURLLikeLoc "." = Right $ LocalFile $ LocFilePath ("." ^. from locStringAsRawString) ""
+parseURLLikeLoc litteralPath = do
+  pathUrl <- maybe (Left $ "parseURLLikeLoc: Invalid URL '" ++ litteralPath ++ "'") Right $
              URL.importURL litteralPath
   case URL.url_type pathUrl of
     URL.Absolute h ->
-      case URL.protocol h of
-        URL.RawProt "s3" ->
-          S3Obj <$> (refuseVarRefs "bucket" $ URL.host h)
-                <*> (parseLocStringAndExt $ URL.url_path pathUrl)
-        p -> Left $ "Unsupported protocol: " ++ show p
+       RemoteFile <$> (refuseVarRefs "protocol" $ getProtocol $ URL.protocol h)
+                  <*> (refuseVarRefs "server" $ URL.host h)
+                  <*> (parseLocStringAndExt $ URL.url_path pathUrl)
     URL.HostRelative -> LocalFile <$> (parseLocStringAndExt $ "/" ++ URL.url_path pathUrl)
     URL.PathRelative -> LocalFile <$> (parseLocStringAndExt $ URL.url_path pathUrl)
+  where getProtocol (URL.RawProt h)  = map toLower h
+        getProtocol (URL.HTTP False) = "http"
+        getProtocol (URL.HTTP True)  = "https"
+        getProtocol (URL.FTP False)  = "ftp"
+        getProtocol (URL.FTP True)   = "ftps"
 
-instance (IsLocString a) => IsString (Loc_ a) where
-  fromString s = case parseURL s of
+instance (IsLocString a) => IsString (URLLikeLoc a) where
+  fromString s = case parseURLLikeLoc s of
     Right l -> l
     Left e  -> error e
 
@@ -250,11 +252,18 @@ instance (IsLocString a) => Representable (LocFilePath a) where
     Left _   -> empty
     Right x' -> pure x'
 
-instance (IsLocString a) => Representable (Loc_ a) where
+instance (IsLocString a) => Representable (URLLikeLoc a) where
   toTextRepr = T.pack . show
-  fromTextRepr x = case parseURL $ T.unpack x of
+  fromTextRepr x = case parseURLLikeLoc $ T.unpack x of
     Left _   -> empty
     Right x' -> pure x'
+
+instance (IsLocString a) => FromJSON (URLLikeLoc a) where
+  parseJSON (String j) = fromTextRepr j
+  parseJSON _          = fail "URLLikeLoc must be read from a JSON String"
+
+instance (IsLocString a) => ToJSON (URLLikeLoc a) where
+  toJSON = String . toTextRepr
 
 -- | The equivalent of </> from `filepath` package on 'LocFilePath's
 appendToLocFilePathAsSubdir :: (IsLocString a) => LocFilePath a -> String -> LocFilePath a
@@ -262,12 +271,12 @@ fp `appendToLocFilePathAsSubdir` s = fp <> (('/':s) ^. from locFilePathAsRawFile
 
 -- | Appends a path to a location. The Loc is considered to be a folder, so its
 -- possible extension will be /ignored/.
-(</>) :: (IsLocString a) => Loc_ a -> String -> Loc_ a
+(</>) :: (IsLocString a) => URLLikeLoc a -> String -> URLLikeLoc a
 f </> p = f & over locFilePath (`appendToLocFilePathAsSubdir` p)
 infixl 4 </>
 
 -- | Alias for '</>'
-(<//>) :: (IsLocString a) => Loc_ a -> String -> Loc_ a
+(<//>) :: (IsLocString a) => URLLikeLoc a -> String -> URLLikeLoc a
 (<//>) = (</>)
 infixl 4 <//>
 
@@ -281,16 +290,16 @@ infixl 3 -<.>
 initDir :: Loc -> IO ()
 initDir f@(LocalFile{}) =
   Dir.createDirectoryIfMissing True $ f ^. locFilePath . pathWithoutExt
-initDir S3Obj{} = pure ()
+initDir _ = pure ()
 
 -- | Analog to 'Path.takeDirectory' for generalized locations
 takeDirectory :: Loc -> Loc
 takeDirectory = over (locFilePath . pathWithoutExt) Path.takeDirectory . dropExtension
 
 -- | Analog of 'Path.dropExtension'
-dropExtension :: Loc_ a -> Loc_ a
+dropExtension :: URLLikeLoc a -> URLLikeLoc a
 dropExtension f = f & locFilePath . pathExtension .~ ""
 
--- | Sets the extension unless the 'Loc_' already has one
-addExtToLocIfMissing :: Loc_ a -> String -> Loc_ a
+-- | Sets the extension unless the 'URLLikeLoc' already has one
+addExtToLocIfMissing :: URLLikeLoc a -> String -> URLLikeLoc a
 addExtToLocIfMissing loc newExt = loc & over locExt (`firstNonEmptyExt` newExt)

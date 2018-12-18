@@ -136,7 +136,7 @@ instance FromJSON LocShortcut where
   parseJSON (String (T.uncons -> Just ('_', s))) = case parseLocStringAndExt $ T.unpack s of
     Left e  -> fail e
     Right r -> pure $ DeriveLocPrefixFromTree r
-  parseJSON (String s) = case parseURL $ T.unpack s of
+  parseJSON (String s) = case parseURLLikeLoc $ T.unpack s of
     Left e  -> fail e
     Right r -> pure $ FullySpecifiedLoc r
   parseJSON _ = fail "LocShortcut only readable from a JSON String"

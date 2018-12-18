@@ -260,7 +260,7 @@ data FunflowPaths = FunflowPaths
   { storePath :: FilePath, coordPath :: FilePath, remoteCacheLoc :: Maybe Loc }
 
 withFunflowRunConfig
-  :: (LocationMonad m)
+  :: (LocationMonad m, KatipContext m)
   => FunflowPaths
   -> (FunflowRunConfig m -> m r)
   -> m r

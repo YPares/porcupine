@@ -13,15 +13,11 @@ dependencies:
   - base
   - aeson
   - aeson-pretty
-  - amazonka
-  - amazonka-core
-  - amazonka-s3
   - binary
   - binary-orphans
   - bytestring
   - clock
   - conduit
-  - conduit-extra
   - containers
   - contravariant
   - data-default
@@ -41,8 +37,8 @@ dependencies:
   - optparse-applicative
   - path
   - profunctors
+  - reader-soup
   - resourcet
-  - retry
   - safe-exceptions
   - store
   - streaming
@@ -57,6 +53,7 @@ dependencies:
   - unliftio-core
   - unordered-containers
   - url
+  - vinyl
   - void
   - yaml
 
