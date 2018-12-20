@@ -21,6 +21,7 @@ module System.TaskPipeline.VirtualFileAccess
     -- * High-level API
   , loadData
   , loadDataStream
+  , tryLoadDataStream
   , writeData
   , writeDataStream
 
@@ -28,8 +29,7 @@ module System.TaskPipeline.VirtualFileAccess
   , EffectSeq(..), EffectSeqFromList(..)
   , SingletonES(..), ListES(..), StreamES(..)
   , AccessToPerform(..)
-  , (:~:)(..)
-  , loadDataES, writeDataES
+  , accessVirtualFile'
   , accessVirtualFile
   , withVFileAccessFunction
   , withFolderDataAccessNodes
@@ -38,6 +38,7 @@ module System.TaskPipeline.VirtualFileAccess
 
 import           Prelude                            hiding (id, (.))
 
+import qualified Control.Exception.Safe             as SE
 import           Control.Lens
 import           Control.Monad                      (forM)
 import           Control.Monad.Trans
@@ -64,8 +65,8 @@ loadData
   -> PTask m () b  -- ^ The resulting task
 loadData vf =
       arr (\_ -> SingletonES $ return ([] :: [Int], error "loadData: THIS IS VOID"))
-  >>> accessVirtualFile (DoRead Refl) [] vf
-  >>> unsafeLiftToPTask (\(SingletonES act) -> snd <$> act)
+  >>> accessVirtualFile (DoRead id) [] vf
+  >>> unsafeLiftToPTask (fmap snd . getSingletonFromES)
 
 -- | Loads a stream of repeated occurences of a VirtualFile, from a stream of
 -- indices. The process is lazy: the data will actually be read when the
@@ -75,18 +76,20 @@ loadDataStream :: forall idx m a b r.
                => LocVariable
                -> VirtualFile a b -- ^ Used as a 'DataSource'
                -> PTask m (Stream (Of idx) m r) (Stream (Of (idx, b)) m r)
-loadDataStream lv vf = arr StreamES >>> loadDataES lv vf >>> arr streamFromES
+loadDataStream lv vf =
+      arr (StreamES . S.map (,error "loadDataStream: THIS IS VOID"))
+  >>> accessVirtualFile' (DoRead id) lv vf
+  >>> arr streamFromES
 
-loadDataES :: forall seq idx m a b.
-              (Show idx, LocationMonad m, KatipContext m, Typeable a, Typeable b
-              ,EffectSeq seq)
-           => LocVariable
-           -> VirtualFile a b -- ^ Used as a 'DataSource'
-           -> PTask m (seq m idx) (seq m (idx, b))
-loadDataES repIndex vf =
-      arr (mapES $ \i -> ([i], error "loadDataStream: THIS IS VOID"))
-  >>> accessVirtualFile (DoRead Refl) [repIndex] vf
-  >>> arr (mapES $ \(i, r) -> (head i, r))
+-- | Like 'loadDataStream', but won't stop on a failure on a single file
+tryLoadDataStream :: (Exception e, Show idx, LocationMonad m, KatipContext m, Typeable a, Typeable b)
+                  => LocVariable
+                  -> VirtualFile a b -- ^ Used as a 'DataSource'
+                  -> PTask m (Stream (Of idx) m r) (Stream (Of (idx, Either e b)) m r)
+tryLoadDataStream lv vf =
+       arr (StreamES . S.map (,error "loadDataStream: THIS IS VOID"))
+  >>> accessVirtualFile' (DoRead SE.try) lv vf
+  >>> arr streamFromES
 
 -- | Uses only the write part of a 'VirtualFile'. It is therefore considered as
 -- a pure 'DataSink'.
@@ -94,9 +97,10 @@ writeData
   :: (LocationMonad m, KatipContext m, Typeable a, Typeable b)
   => VirtualFile a b  -- ^ Used as a 'DataSink'
   -> PTask m a ()
-writeData vf = arr (\a -> SingletonES $ return ([] :: [Int], a))
-           >>> accessVirtualFile (DoWrite ()) [] vf
-           >>> unsafeLiftToPTask runES
+writeData vf =
+      arr (SingletonES . return . ([] :: [Int],))
+  >>> accessVirtualFile (DoWrite id) [] vf
+  >>> unsafeLiftToPTask runES
 
 -- | The simplest way to consume a stream of data inside a pipeline. Just write
 -- it to repeated occurences of a VirtualFile. See
@@ -106,23 +110,17 @@ writeDataStream :: (Show idx, LocationMonad m, KatipContext m, Typeable a, Typea
                 => LocVariable
                 -> VirtualFile a b -- ^ Used as a 'DataSink'
                 -> PTask m (Stream (Of (idx, a)) m r) r
-writeDataStream lv vf = arr StreamES >>> writeDataES lv vf
-
-writeDataES :: (Show idx, LocationMonad m, KatipContext m, Typeable a, Typeable b
-               ,EffectSeq seq)
-            => LocVariable
-            -> VirtualFile a b -- ^ Used as a 'DataSink'
-            -> PTask m (seq m (idx, a)) (ESResult seq)
-writeDataES repIndex vf =
-      arr (mapES $ \(i,a) -> ([i],a))
-  >>> accessVirtualFile (DoWrite ()) [repIndex] vf
+writeDataStream lv vf =
+      arr StreamES
+  >>> accessVirtualFile' (DoWrite id) lv vf
   >>> unsafeLiftToPTask runES
 
--- | When only writing, gives a value that should be returned for b
-data AccessToPerform b b'
-  = DoWrite b'
-  | DoRead (b :~: b')
-  | DoWriteAndRead (b :~: b')
+-- | Gives a wrapper that should be used when the actual read or write is
+-- performed.
+data AccessToPerform m b b'
+  = DoWrite (m () -> m b')
+  | DoRead (m b -> m b')
+  | DoWriteAndRead (m b -> m b')
 
 -- | A unique value, computed from a action in @m@
 newtype SingletonES m a = SingletonES { getSingletonFromES :: m a }
@@ -171,6 +169,19 @@ instance EffectSeqFromList ListES where
 instance EffectSeqFromList (StreamES r) where
   esFromList = StreamES . S.each
 
+-- | Like 'accessVirtualFile', but uses only one repetition variable
+accessVirtualFile' :: forall seq idx m a b b'.
+                      (Show idx, LocationMonad m, KatipContext m, Typeable a, Typeable b
+                      ,EffectSeq seq)
+                   => AccessToPerform m b b'
+                   -> LocVariable
+                   -> VirtualFile a b -- ^ Used as a 'DataSource'
+                   -> PTask m (seq m (idx, a)) (seq m (idx, b'))
+accessVirtualFile' access repIndex vf =
+      arr (mapES $ \(i, a) -> ([i], a))
+  >>> accessVirtualFile access [repIndex] vf
+  >>> arr (mapES $ \(i, r) -> (head i, r))
+
 -- | When building the pipeline, stores into the location tree the way to read
 -- or write the required resource. When running the pipeline, access the
 -- instances of this ressource corresponding to the values of some repetition
@@ -179,7 +190,7 @@ accessVirtualFile
   :: forall m a b b' seq idx.
      (LocationMonad m, KatipContext m, Typeable a, Typeable b, Show idx
      ,EffectSeq seq)
-  => AccessToPerform b b'
+  => AccessToPerform m b b'
   -> [LocVariable]  -- ^ The list of repetition indices. Can be empty if the
                     -- file isn't meant to be repeated
   -> VirtualFile a b  -- ^ The VirtualFile to access
@@ -197,9 +208,9 @@ accessVirtualFile accessToDo repIndices vfile =
     runOnce :: (LocVariableMap -> DataAccessor m a b) -> ([idx], a) -> m ([idx], b')
     runOnce accessFn (ixVals, input) = do
       (ixVals,) <$> case accessToDo of
-        DoWrite r           -> daPerformWrite da input >> return r
-        DoRead Refl         -> daPerformRead da
-        DoWriteAndRead Refl -> daPerformWrite da input >> daPerformRead da
+        DoWrite wrap        -> wrap $ daPerformWrite da input
+        DoRead wrap         -> wrap $ daPerformRead da
+        DoWriteAndRead wrap -> wrap $ daPerformWrite da input >> daPerformRead da
       where
         da = accessFn lvMap
         lvMap = HM.fromList $ zip repIndices $ map show ixVals
