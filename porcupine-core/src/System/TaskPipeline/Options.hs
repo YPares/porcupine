@@ -18,12 +18,10 @@ module System.TaskPipeline.Options
 import           Data.Aeson
 import           Data.DocRecord
 import           Data.DocRecord.OptParse
-import           Data.Locations.LocationMonad
 import           Data.Locations.SerializationMethod
 import           Data.Locations.VirtualFile
 import           Data.Typeable
 import           GHC.TypeLits                          (KnownSymbol)
-import           Katip
 import           System.TaskPipeline.PTask
 import           System.TaskPipeline.VirtualFileAccess
 
@@ -33,7 +31,7 @@ import           Prelude                               hiding (id, (.))
 -- | Add a set of options (as a DocRec) to the 'LocationTree', in order to
 -- expose them to the user, and returns the final values of these options
 getOptions
-  :: (LocationMonad m, KatipContext m, Typeable rs, RecordUsableWithCLI rs)
+  :: (LogThrow m, Typeable rs, RecordUsableWithCLI rs)
   => [LocationTreePathItem]  -- ^ The path for the options in the LocationTree
   -> DocRec rs               -- ^ The DocRec containing the fields with their
                              -- docs and default values
@@ -45,8 +43,7 @@ getOptions path defOpts = loadData $
 
 -- | Just like 'getOptions', but for a single field.
 getOption
-  :: ( LocationMonad m, KatipContext m
-     , KnownSymbol s, Typeable t, ToJSON t, FieldFromCLI ('[s] :|: t))
+  :: (LogThrow m, KnownSymbol s, Typeable t, ToJSON t, FieldFromCLI ('[s] :|: t))
   => [LocationTreePathItem]  -- ^ The path for the option field in the LocationTree
   -> DocField ('[s] :|: t)   -- ^ The field (created with 'docField')
   -> PTask m () t            -- ^ A PTask that returns the new option,

@@ -28,11 +28,11 @@ import qualified Data.HashMap.Strict          as HM
 import           Data.Locations.Loc           as Loc
 import           Data.Locations.LocationMonad as Loc
 import           Data.Locations.LocVariable
+import           Data.Locations.LogAndErrors
 import           Data.Monoid                  (First (..))
 import qualified Data.Text                    as T
 import           Data.Typeable
 import           Data.Void
-import           Katip
 
 
 -- | How to read an @a@ from some identified type @i@, which is meant to be a
@@ -53,7 +53,7 @@ singletonFromIntermediaryFn f = HM.singleton argTypeRep (FromIntermediaryFn f)
 data ReadFromLoc a =
   ReadFromLoc { _readFromLocRepetitionKeys :: [LocVariable]
               , _readFromLocPerform        ::
-                  (forall m. (LocationMonad m, KatipContext m)
+                  (forall m. (LocationMonad m, LogThrow m)
                   => Loc -> m a)
               }
   deriving (Functor)
@@ -122,7 +122,7 @@ singletonToIntermediaryFn f = HM.singleton (typeOf $ f undefined) (ToIntermediar
 data WriteToLoc a = WriteToLoc
   { _writeToLocRepetitionKeys :: [LocVariable]
   , _writeToLocPerform ::
-      (forall m. (LocationMonad m, KatipContext m)
+      (forall m. (LocationMonad m, LogThrow m)
       =>  a -> Loc -> m ())
   }
 
