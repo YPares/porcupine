@@ -24,7 +24,6 @@ dependencies:
   - deepseq
   - directory
   - docrecords
-  - exceptions
   - filepath
   - formatting
   - foldl

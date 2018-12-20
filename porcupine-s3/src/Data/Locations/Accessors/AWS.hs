@@ -19,8 +19,8 @@ module Data.Locations.Accessors.AWS
   , runReadLazyByte_
   ) where
 
+import           Control.Exception.Safe
 import           Control.Lens
-import           Control.Monad.Catch
 import           Control.Monad.IO.Class
 import           Control.Monad.ReaderSoup
 import           Control.Monad.ReaderSoup.AWS

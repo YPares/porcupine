@@ -20,7 +20,6 @@
 module Data.Locations.SerializationMethod where
 
 import           Control.Lens
-import           Control.Monad.Catch
 import           Data.Aeson                   as A
 import           Data.DocRecord
 import           Data.DocRecord.OptParse      (RecordUsableWithCLI)

@@ -15,10 +15,10 @@
 
 module Data.Locations.LocationMonad where
 
+import           Control.Exception.Safe
 import           Control.Lens
-import           Control.Monad.Catch
 import           Control.Monad.IO.Class
-import           Control.Monad.Trans.Resource
+import           Control.Monad.Trans.Resource hiding (MonadThrow (..))
 import qualified Data.ByteString.Lazy         as LBS
 import qualified Data.ByteString.Streaming    as BSS
 import           Data.Locations.Loc

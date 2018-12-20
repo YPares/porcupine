@@ -5,16 +5,16 @@
 -- errors
 
 module Data.Locations.LogAndErrors
-  ( module Control.Monad.Catch
+  ( module Control.Exception.Safe
   , KatipContext
   , LogThrow, LogCatch, LogMask
   , TaskRunError(..)
   , throwWithPrefix
   ) where
 
-import           Control.Monad.Catch
-import qualified Data.Text           as T
-import           Katip               hiding (logMsg)
+import           Control.Exception.Safe
+import qualified Data.Text              as T
+import           Katip                  hiding (logMsg)
 
 
 -- | An error when running a pipeline of tasks
