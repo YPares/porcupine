@@ -425,7 +425,7 @@ instance LogItem DataAccessContext where
   payloadKeys V0 _ = SomeKeys []
 
 makeDataAccessor
-  :: (LocationMonad m, KatipContext m)
+  :: (LocationMonad m, LogMask m)
   => String  -- ^ VirtualFile path (for doc)
   -> [LocWithVars]  -- ^ Every mapped layer (for doc)
   -> Maybe b -- ^ Default value (used as base layer)
@@ -442,13 +442,17 @@ makeDataAccessor vpath layers mbDefVal readScheme writeLocs readLocs repetKeyMap
         forM_ writeLocs $ \(WriteToLoc rkeys f, loc) -> do
           loc' <- fillLoc repetKeyMap loc
           katipAddContext (DAC (show loc) rkeys repetKeyMap (show loc')) $ do
-            f input loc'
+            withException (f input loc') $ \ioError ->
+              logFM ErrorS $ logStr $ "When writing " ++ show loc' ++
+                              ": " ++ displayException (ioError :: IOException)
             logFM NoticeS $ logStr $ "Wrote '" ++ show loc' ++ "'"
     daPerformRead = do
         dataFromLayers <- forM readLocs (\(ReadFromLoc rkeys f, loc) -> do
           loc' <- fillLoc repetKeyMap loc
           katipAddContext (DAC (show loc) rkeys repetKeyMap (show loc')) $ do
-            r <- f loc'
+            r <- withException (f loc') $ \ioError ->
+              logFM ErrorS $ logStr $ "When reading " ++ show loc' ++
+                             ": " ++ displayException (ioError :: IOException)
             logFM DebugS $ logStr $ "Read '" ++ show loc' ++ "'"
             return r)
         let embeddedValAndLayers = maybe id (:) mbDefVal dataFromLayers

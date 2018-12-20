@@ -218,12 +218,10 @@ instance (FromJSON a) => DeserializesWith (JSONSerial a) a where
     { _serialReadersFromIntermediary = singletonFromIntermediaryFn parseJSONEither
     , _serialReadersFromInputFile    = HM.singleton "json" $ simpleReadFromLoc readFn
     } where
-    readFn loc = Loc.readLazyByte loc >>= withReadError >>= decodeWithLoc loc
-    withReadError (Right x)  = return x
-    withReadError (Left err) = throwM $ FileReadError err
+    readFn loc = Loc.readLazyByte loc >>= decodeWithLoc loc
     decodeWithLoc loc x = case A.eitherDecode x of
       Right y  -> return y
-      Left msg -> throwM $ DecodingError loc $ T.pack msg
+      Left msg -> throwString $ show loc ++ ": " ++ msg
 
 
 -- | The crudest SerializationMethod there is. Can read from text files or raw
@@ -249,13 +247,8 @@ instance DeserializesWith PlainTextSerial T.Text where
   getSerialReaders (PlainTextSerial exts) = mempty
     { _serialReadersFromIntermediary =
         singletonFromIntermediaryFn Right <> singletonFromIntermediaryFn parseJSONEither
-    , _serialReadersFromInputFile = HM.fromList $ map (,simpleReadFromLoc readFromLoc) exts
+    , _serialReadersFromInputFile = HM.fromList $ map (,simpleReadFromLoc readText) exts
     } where
-    readFromLoc loc = do
-      res <- readText loc
-      case res of
-        Left err -> throwM err
-        Right r  -> return r
 
 -- | A serialization method used for options which can have a default value,
 -- that can be exposed through the configuration.

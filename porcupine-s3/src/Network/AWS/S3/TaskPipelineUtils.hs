@@ -138,7 +138,7 @@ streamObjInto :: (MonadAWS m)
                  => BucketName
                  -> ObjectKey
                  -> (BSS.ByteString m () -> m b)
-                 -> m (Either Error b)
+                 -> m (Either SomeException b)
 streamObjInto srcBuck srcObj f = retry (_svcRetry s3) . try $ do
   let g = getObject srcBuck srcObj
   rs <- send g

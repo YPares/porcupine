@@ -19,7 +19,6 @@ import           Control.Category
 import           Control.Lens                            hiding ((:>), (.=))
 import           Control.Monad
 import           Data.Locations
-import           Data.Typeable
 import           Katip
 import           Prelude                                 hiding (id, (.))
 import           Streaming                               (Of (..), Stream)
