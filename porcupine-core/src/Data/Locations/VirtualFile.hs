@@ -13,8 +13,9 @@ module Data.Locations.VirtualFile
   , BidirVirtualFile, DataSource, DataSink
   , VirtualFileIntent(..), VirtualFileDescription(..)
   , DocRecOfOptions, RecOfOptions(..)
+  , VFileImportance(..)
   , vfileBidirProof, vfileSerials
-  , vfileAsBidir, vfileAsBidirE
+  , vfileAsBidir, vfileAsBidirE, vfileImportance
   , vfileEmbeddedValue, vfileIntermediaryValue, vfileAesonValue
   , vfilePath, showVFilePath, vfileLayeredReadScheme
   , dataSource, dataSink, bidirVirtualFile, ensureBidirFile
@@ -27,6 +28,7 @@ module Data.Locations.VirtualFile
 
 import           Control.Lens
 import           Data.Aeson                         (Value)
+import           Data.Default
 import           Data.DocRecord
 import           Data.DocRecord.OptParse            (RecordUsableWithCLI)
 import           Data.Functor.Compose
@@ -45,6 +47,7 @@ import qualified Data.Text                          as T
 import           Data.Type.Equality
 import           Data.Typeable
 import           Data.Void
+import           Katip
 
 
 -- * The general 'VirtualFile' type
@@ -58,12 +61,24 @@ data LayeredReadScheme b where
   LayeredReadWithNull :: Monoid b => LayeredReadScheme b
     -- Like 'LayeredRead', and handles mapping to no layer (mempty)
 
+-- | Tells how the accesses to this 'VirtualFile' should be logged
+data VFileImportance = VFileImportance
+  { _vfiOnReadSuccess  :: Severity
+  , _vfiOnWriteSuccess :: Severity
+  , _vfiOnError        :: Severity }
+
+makeLenses ''VFileImportance
+
+instance Default VFileImportance where
+  def = VFileImportance DebugS NoticeS ErrorS
+
 -- | A virtual file in the location tree to which we can write @a@ and from
 -- which we can read @b@.
 data VirtualFile a b = VirtualFile
   { _vfilePath              :: [LocationTreePathItem]
   , _vfileLayeredReadScheme :: LayeredReadScheme b
   , _vfileMappedByDefault   :: Bool
+  , _vfileImportance        :: VFileImportance
   , _vfileDocumentation     :: Maybe T.Text
   , _vfileBidirProof        :: Maybe (a :~: b)
                     -- Temporary, necessary until we can do away with docrec
@@ -95,14 +110,14 @@ instance HasDefaultMappingRule (VirtualFile a b) where
 -- For now, given the requirement of PTask, VirtualFile has to be a Monoid
 -- because a Resource Tree also has to.
 instance Semigroup (VirtualFile a b) where
-  VirtualFile p u m d b s <> VirtualFile _ _ _ _ _ s' =
-    VirtualFile p u m d b (s<>s')
+  VirtualFile p u m i d b s <> VirtualFile _ _ _ _ _ _ s' =
+    VirtualFile p u m i d b (s<>s')
 instance Monoid (VirtualFile a b) where
-  mempty = VirtualFile [] SingleLayerRead True Nothing Nothing mempty
+  mempty = VirtualFile [] SingleLayerRead True def Nothing Nothing mempty
 
 instance Profunctor VirtualFile where
-  dimap f g (VirtualFile p _ m d _ s) =
-    VirtualFile p SingleLayerRead m d Nothing $ dimap f g s
+  dimap f g (VirtualFile p _ m i d _ s) =
+    VirtualFile p SingleLayerRead m i d Nothing $ dimap f g s
 
 
 -- * Obtaining a description of how the 'VirtualFile' should be used
@@ -196,7 +211,7 @@ type DataSink a = VirtualFile a ()
 -- the data. You should prefer 'dataSink' and 'dataSource' for clarity when the
 -- file is meant to be readonly or writeonly.
 virtualFile :: [LocationTreePathItem] -> Maybe (a :~: b) -> SerialsFor a b -> VirtualFile a b
-virtualFile path refl sers = VirtualFile path SingleLayerRead True Nothing refl sers
+virtualFile path refl sers = VirtualFile path SingleLayerRead True def Nothing refl sers
 
 -- | Creates a virtual file from its virtual path and ways to deserialize the
 -- data.
