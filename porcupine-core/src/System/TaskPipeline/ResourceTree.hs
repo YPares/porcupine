@@ -419,14 +419,13 @@ instance ToJSON DataAccessContext
 instance ToObject DataAccessContext
 instance LogItem DataAccessContext where
   payloadKeys V3 _ = AllKeys
-  payloadKeys V2 _ = SomeKeys ["locationAccessed"]
-  payloadKeys V1 _ = SomeKeys ["locationAccessed"]
-  --  payloadKeys v _ | v >= V1 = SomeKeys ["locationAccessed"]
+  payloadKeys v _ | v >= V1 = SomeKeys ["locationAccessed"]
   payloadKeys V0 _ = SomeKeys []
 
 makeDataAccessor
   :: (LocationMonad m, LogMask m)
   => String  -- ^ VirtualFile path (for doc)
+  -> VFileImportance  -- ^ How to log the accesses
   -> [LocWithVars]  -- ^ Every mapped layer (for doc)
   -> Maybe b -- ^ Default value (used as base layer)
   -> LayeredReadScheme b  -- ^ How to handle the different layers
@@ -434,27 +433,28 @@ makeDataAccessor
   -> [(ReadFromLoc b, LocWithVars)] -- ^ Layers to read from
   -> LocVariableMap  -- ^ The map of the values of the repetition indices
   -> DataAccessor m a b
-makeDataAccessor vpath layers mbDefVal readScheme writeLocs readLocs repetKeyMap =
+makeDataAccessor vpath (VFileImportance sevRead sevWrite sevError)
+                 layers mbDefVal readScheme writeLocs readLocs repetKeyMap =
   DataAccessor{..}
   where
     daLocsAccessed = traverse (fillLoc' repetKeyMap) layers
     daPerformWrite input = do
         forM_ writeLocs $ \(WriteToLoc rkeys f, loc) -> do
           loc' <- fillLoc repetKeyMap loc
-          katipAddContext (DAC (show loc) rkeys repetKeyMap (show loc')) $ do
-            withException (f input loc') $ \ioError ->
-              logFM ErrorS $ logStr $ "When writing " ++ show loc' ++
-                              ": " ++ displayException (ioError :: IOException)
-            logFM NoticeS $ logStr $ "Wrote '" ++ show loc' ++ "'"
+          katipAddNamespace "dataAccessor" $ katipAddNamespace "writer" $
+            katipAddContext (DAC (show loc) rkeys repetKeyMap (show loc')) $ do
+              withException (f input loc') $ \ioError ->
+                logFM sevError $ logStr $ displayException (ioError :: IOException)
+              logFM sevWrite $ logStr $ "Wrote '" ++ show loc' ++ "'"
     daPerformRead = do
         dataFromLayers <- forM readLocs (\(ReadFromLoc rkeys f, loc) -> do
           loc' <- fillLoc repetKeyMap loc
-          katipAddContext (DAC (show loc) rkeys repetKeyMap (show loc')) $ do
-            r <- withException (f loc') $ \ioError ->
-              logFM ErrorS $ logStr $ "When reading " ++ show loc' ++
-                             ": " ++ displayException (ioError :: IOException)
-            logFM DebugS $ logStr $ "Read '" ++ show loc' ++ "'"
-            return r)
+          katipAddNamespace "dataAccessor" $ katipAddNamespace "reader" $
+            katipAddContext (DAC (show loc) rkeys repetKeyMap (show loc')) $ do
+              r <- withException (f loc') $ \ioError ->
+                logFM sevError $ logStr $ displayException (ioError :: IOException)
+              logFM sevRead $ logStr $ "Read '" ++ show loc' ++ "'"
+              return r)
         let embeddedValAndLayers = maybe id (:) mbDefVal dataFromLayers
         case (readScheme, embeddedValAndLayers) of
           (_, [x]) -> return x
@@ -498,7 +498,7 @@ resolveDataAccess (PhysicalFileNode layers vf) = do
   readLocs <- findFunctions readers
   return $
     DataAccessNode layers $
-      makeDataAccessor vpath layers
+      makeDataAccessor vpath (vf^.vfileImportance) layers
                        mbEmbeddedVal readScheme
                        writeLocs readLocs
   where
