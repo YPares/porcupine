@@ -1,0 +1,27 @@
+name: reader-soup
+version: 0.0.1.0
+synopsis: Vinyl-based reader-like monad composition
+description: See README at <https://github.com/tweag/porcupine#README.md>
+maintainer: Yves Parès <yves.pares@tweag.io>
+github: tweag/porcupine
+category: Numerical, JSON
+copyright: 2018 EURL Tweag, NovaDiscovery
+
+ghc-options: -Wall
+
+dependencies:
+  - base
+  - lens
+  - exceptions
+  - transformers
+  - transformers-base
+  - mtl
+  - mmorph
+  - monad-control
+  - unliftio-core
+  - vinyl
+  - resourcet
+  - katip
+
+library:
+  source-dirs: src

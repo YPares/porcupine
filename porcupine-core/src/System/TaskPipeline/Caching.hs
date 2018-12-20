@@ -1,4 +1,5 @@
-{-# LANGUAGE Arrows #-}
+{-# LANGUAGE Arrows        #-}
+{-# LANGUAGE TupleSections #-}
 
 module System.TaskPipeline.Caching
   ( cacheWithVFile
@@ -10,6 +11,7 @@ module System.TaskPipeline.Caching
   , Default(..)
   ) where
 
+import qualified Control.Exception.Safe                as SE
 import           Control.Funflow
 import           Control.Lens                          (over, traversed)
 import           Control.Monad.Catch
@@ -29,8 +31,8 @@ import           Prelude                               hiding (id, (.))
 -- _outside_ of the store. In this case we use the filepath bound to the
 -- VirtualFile to compute the hash. That means that if the VirtualFile is bound
 -- to something else, the step will be re-executed.
-cacheWithVFile :: (MonadThrow m, KatipContext m, Typeable c, Typeable c')
-               => Properties (a', [Loc_ T.Text]) b  -- String isn't ContentHashable
+cacheWithVFile :: (MonadThrow m, MonadCatch m, KatipContext m, Typeable c, Typeable c')
+               => Properties (a', [URLLikeLoc T.Text]) b  -- String isn't ContentHashable
                -> (a -> a')
                -> VirtualFile c c'
                -> (a -> m (b,c))
@@ -39,8 +41,7 @@ cacheWithVFile props inputHashablePart vf action = proc input -> do
   (locs,accessor) <-
     withVFileAccessFunction [ATWrite, ATRead] vf getLocsAndAccessor -< ()
   output <- unsafeLiftToPTask' props' cached -< (input,locs,accessor)
-  fromVFile <- unsafeLiftToPTask daPerformRead -< accessor
-  returnA -< (output, fromVFile)
+  unsafeLiftToPTask afterCached -< (output,accessor)
   where
     getLocsAndAccessor getAccessor _ = do
       let accessor = getAccessor mempty
@@ -51,9 +52,17 @@ cacheWithVFile props inputHashablePart vf action = proc input -> do
       return (map (over traversed T.pack) locs, accessor)
 
     cached (input,_,accessor) = do
-      (outputForStore, outputForVFile) <- action input
-      daPerformWrite accessor outputForVFile
-      return outputForStore
+      res <- SE.try $ action input
+      case res of
+        Right (outputForStore, outputForVFile) -> do
+          daPerformWrite accessor outputForVFile
+          return $ Right outputForStore
+        Left err -> return $ Left (err::SomeException)
+
+    afterCached (output,accessor) = do
+      case output of
+        Right o  -> (o,) <$> daPerformRead accessor
+        Left err -> throwWithPrefix $ displayException err
 
     props' = props { cache = cache'
                    , mdpolicy = updMdw <$> mdpolicy props }
@@ -62,5 +71,10 @@ cacheWithVFile props inputHashablePart vf action = proc input -> do
       NoCache -> NoCache
       Cache key sv rv ->
         let key' salt = key salt . getH
-        in Cache key' sv rv
-    updMdw mdWriter = mdWriter . getH
+            sv' (Left e) = error $
+              "cacheWithVFile: An exception occured during the cached function: " ++ displayException e
+            sv' (Right x) = sv x
+            rv' = Right . rv
+        in Cache key' sv' rv'
+    updMdw mdWriter i (Right o) = mdWriter (getH i) o
+    updMdw _        _ (Left  _) = []

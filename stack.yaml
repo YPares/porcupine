@@ -37,7 +37,9 @@ resolver: lts-12.14
 #  - wai
 packages:
 - docrecords
+- reader-soup
 - porcupine-core
+- porcupine-s3
 
 # Dependency packages to be pulled from upstream that are not in the resolver
 # using the same syntax as the packages field.
@@ -46,6 +48,7 @@ extra-deps:
 - katip-0.6.3.0
 - url-2.1.3
 - streaming-conduit-0.1.2.2
+- vinyl-0.10.0.1
 - git: https://github.com/brendanhay/amazonka
   commit: b9ebf7f99dde4196117f44e1bf9bedf3fa468358
   subdirs:
