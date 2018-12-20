@@ -276,7 +276,7 @@ vfileIntermediaryValue
   => Traversal' (Either String (VirtualFile a a)) c
 vfileIntermediaryValue _ (Left s) = pure (Left s)
 vfileIntermediaryValue f (Right vf) = case convertFns of
-  Just (ToIntermediaryFn toI, FromIntermediaryFn fromI) ->
+  Just (ToAtomicFn toI, FromAtomicFn fromI) ->
     let processVal v = case cast (toI v) of
           Nothing -> error $ "vfileIntermediaryValue: Impossible to cast the value to type "
             ++ show resTypeRep ++ ", however a conversion function was declared in the writers"

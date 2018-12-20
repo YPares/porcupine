@@ -32,20 +32,34 @@ import           Data.Monoid                  (First (..))
 import qualified Data.Text                    as T
 import           Data.Typeable
 import           Data.Void
+import           Streaming
 
 
 -- | How to read an @a@ from some identified type @i@, which is meant to be a
 -- general-purpose intermediate representation, like 'A.Value'.
-data FromIntermediaryFn a =
-  forall i. (Typeable i) => FromIntermediaryFn (i -> Either String a)
-deriving instance Functor FromIntermediaryFn
+data FromAtomicFn a =
+  forall i. (Typeable i) => FromAtomicFn (i -> Either String a)
+deriving instance Functor FromAtomicFn
 
-instance Show (FromIntermediaryFn a) where
-  show _ = "<FromIntermediaryFn>"
+instance Show (FromAtomicFn a) where
+  show _ = "<FromAtomicFn>"
 
-singletonFromIntermediaryFn
-  :: forall i a. (Typeable i) => (i -> Either String a) -> HM.HashMap TypeRep (FromIntermediaryFn a)
-singletonFromIntermediaryFn f = HM.singleton argTypeRep (FromIntermediaryFn f)
+singletonFromAtomicFn
+  :: forall i a. (Typeable i)
+  => (i -> Either String a) -> HM.HashMap TypeRep (FromAtomicFn a)
+singletonFromAtomicFn f = HM.singleton argTypeRep (FromAtomicFn f)
+  where argTypeRep = typeOf (undefined :: i)
+
+-- | How to read an @a@ from some @Stream (Of i) m r@
+data FromStreamFn a =
+  forall i m r. (Typeable i, MonadMask m, KatipContext m)
+  => FromStreamFn (Stream (Of i) m r -> m (Of a r))
+
+singletonFromStreamFn
+  :: forall i m r a. (Typeable i, MonadMask m, KatipContext m)
+  => (Stream (Of i) m r -> m (Of a r))
+  -> HM.HashMap TypeRep (FromStreamFn a)
+singletonFromStreamFn f = HM.singleton argTypeRep (FromStreamFn f)
   where argTypeRep = typeOf (undefined :: i)
 
 -- | How to read an @a@ from some file, in any 'LocationMonad'.
@@ -82,7 +96,7 @@ type FileExt = T.Text
 -- **covariant** part of 'SerialsFor'. It describes the different ways a serial
 -- can be used to obtain data.
 data SerialReaders a = SerialReaders
-  { _serialReadersFromIntermediary :: HM.HashMap TypeRep (FromIntermediaryFn a)
+  { _serialReadersFromIntermediary :: HM.HashMap TypeRep (FromAtomicFn a)
        -- ^ How to read data from an intermediate type (like 'A.Value' or
        -- 'T.Text') that should be directly read from the pipeline's
        -- configuration
@@ -108,14 +122,14 @@ instance Monoid (SerialReaders a) where
 
 -- | How to turn an @a@ into some identified type @i@, which is meant to a
 -- general purpose intermediate representation, like 'A.Value' or even 'T.Text'.
-data ToIntermediaryFn a =
-  forall i. (Typeable i) => ToIntermediaryFn (a -> i)
+data ToAtomicFn a =
+  forall i. (Typeable i) => ToAtomicFn (a -> i)
 
-instance Show (ToIntermediaryFn a) where
-  show _ = "<ToIntermediaryFn>"
+instance Show (ToAtomicFn a) where
+  show _ = "<ToAtomicFn>"
 
-singletonToIntermediaryFn :: (Typeable i) => (a -> i) -> HM.HashMap TypeRep (ToIntermediaryFn a)
-singletonToIntermediaryFn f = HM.singleton (typeOf $ f undefined) (ToIntermediaryFn f)
+singletonToAtomicFn :: (Typeable i) => (a -> i) -> HM.HashMap TypeRep (ToAtomicFn a)
+singletonToAtomicFn f = HM.singleton (typeOf $ f undefined) (ToAtomicFn f)
 
 -- | How to write an @a@ to some file, in any 'LocationMonad'.
 data WriteToLoc a = WriteToLoc
@@ -147,7 +161,7 @@ instance Show (WriteToConfigFn a) where
 -- | The writing part of a serial. 'SerialWriters' describes the different ways
 -- a serial can be used to serialize (write) data.
 data SerialWriters a = SerialWriters
-  { _serialWritersToIntermediary :: HM.HashMap TypeRep (ToIntermediaryFn a)
+  { _serialWritersToIntermediary :: HM.HashMap TypeRep (ToAtomicFn a)
       -- ^ How to write the data to an intermediate type (like 'A.Value') that
       -- should be integrated to the stdout of the pipeline.
   , _serialWriterToConfig        :: First (WriteToConfigFn a)
@@ -166,7 +180,7 @@ instance Monoid (SerialWriters a) where
 
 instance Contravariant SerialWriters where
   contramap f sw = SerialWriters
-    { _serialWritersToIntermediary = fmap (\(ToIntermediaryFn f') -> ToIntermediaryFn $ f' . f)
+    { _serialWritersToIntermediary = fmap (\(ToAtomicFn f') -> ToAtomicFn $ f' . f)
                                      (_serialWritersToIntermediary sw)
     , _serialWriterToConfig = fmap (\(WriteToConfigFn f') -> WriteToConfigFn $ f' . f)
                               (_serialWriterToConfig sw)
@@ -202,7 +216,7 @@ instance SerializationMethod (JSONSerial a) where
 
 instance (ToJSON a) => SerializesWith (JSONSerial a) a where
   getSerialWriters _ = mempty
-    { _serialWritersToIntermediary = singletonToIntermediaryFn A.toJSON
+    { _serialWritersToIntermediary = singletonToAtomicFn A.toJSON
     , _serialWritersToOutputFile   = HM.singleton "json" $ simpleWriteToLoc write
     } where
     write x loc = Loc.writeLazyByte loc $ A.encode x
@@ -215,7 +229,7 @@ parseJSONEither x = case A.fromJSON x of
 
 instance (FromJSON a) => DeserializesWith (JSONSerial a) a where
   getSerialReaders _ = mempty
-    { _serialReadersFromIntermediary = singletonFromIntermediaryFn parseJSONEither
+    { _serialReadersFromIntermediary = singletonFromAtomicFn parseJSONEither
     , _serialReadersFromInputFile    = HM.singleton "json" $ simpleReadFromLoc readFn
     } where
     readFn loc = Loc.readLazyByte loc >>= decodeWithLoc loc
@@ -236,7 +250,7 @@ instance SerializationMethod PlainTextSerial where
 instance SerializesWith PlainTextSerial T.Text where
   getSerialWriters (PlainTextSerial exts) = mempty
     { _serialWritersToIntermediary =
-        singletonToIntermediaryFn id <> singletonToIntermediaryFn toJSON
+        singletonToAtomicFn id <> singletonToAtomicFn toJSON
         -- A text can be written to a raw string or a String field in a JSON
         -- output
     , _serialWritersToOutputFile = HM.fromList $ map (,writeFn) exts
@@ -246,7 +260,7 @@ instance SerializesWith PlainTextSerial T.Text where
 instance DeserializesWith PlainTextSerial T.Text where
   getSerialReaders (PlainTextSerial exts) = mempty
     { _serialReadersFromIntermediary =
-        singletonFromIntermediaryFn Right <> singletonFromIntermediaryFn parseJSONEither
+        singletonFromAtomicFn Right <> singletonFromAtomicFn parseJSONEither
     , _serialReadersFromInputFile = HM.fromList $ map (,simpleReadFromLoc readText) exts
     } where
 

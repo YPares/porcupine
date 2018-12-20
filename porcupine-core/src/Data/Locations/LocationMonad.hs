@@ -99,14 +99,6 @@ writeBSS_Local path body = do
   liftIO $ createDirectoryIfMissing True (Path.takeDirectory raw)
   BSS.writeFile raw body
 
-
-writeLazyByte
-  :: LocationMonad m
-  => Loc
-  -> LBS.ByteString
-  -> m ()
-writeLazyByte loc = writeBSS loc . BSS.fromLazy
-
 eitherToExn :: (MonadThrow m, Exception e) => Either e a -> m a
 eitherToExn (Left e)  = throwM e
 eitherToExn (Right x) = pure x
@@ -123,6 +115,17 @@ readBSS_Local
   -> (BSS.ByteString m () -> f a)
   -> f a
 readBSS_Local f k = k $ BSS.readFile $ f ^. locFilePathAsRawFilePath
+
+
+writeLazyByte
+  :: LocationMonad m
+  => Loc
+  -> LBS.ByteString
+  -> m ()
+writeLazyByte loc = writeBSS loc . BSS.fromLazy
+
+-- The following functions are DEPRECATED, because converting to a lazy
+-- ByteString with BSS.toLazy_ isn't actually lazy
 
 readLazyByte :: LocationMonad m
                 => Loc
