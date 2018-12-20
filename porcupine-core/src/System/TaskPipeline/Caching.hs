@@ -6,6 +6,7 @@ module System.TaskPipeline.Caching
 
   -- * Re-exports
 
+  , module Data.Locations.LogAndErrors
   , Properties(..)
   , defaultCacherWithIdent
   , Default(..)
@@ -31,7 +32,7 @@ import           Prelude                               hiding (id, (.))
 -- _outside_ of the store. In this case we use the filepath bound to the
 -- VirtualFile to compute the hash. That means that if the VirtualFile is bound
 -- to something else, the step will be re-executed.
-cacheWithVFile :: (MonadThrow m, MonadCatch m, KatipContext m, Typeable c, Typeable c')
+cacheWithVFile :: (LogCatch m, Typeable c, Typeable c')
                => Properties (a', [URLLikeLoc T.Text]) b  -- String isn't ContentHashable
                -> (a -> a')
                -> VirtualFile c c'
@@ -39,7 +40,7 @@ cacheWithVFile :: (MonadThrow m, MonadCatch m, KatipContext m, Typeable c, Typea
                -> PTask m a (b,c')
 cacheWithVFile props inputHashablePart vf action = proc input -> do
   (locs,accessor) <-
-    withVFileAccessFunction [ATWrite, ATRead] vf getLocsAndAccessor -< ()
+    withVFileInternalAccessFunction [ATWrite,ATRead] vf getLocsAndAccessor -< ()
   output <- unsafeLiftToPTask' props' cached -< (input,locs,accessor)
   unsafeLiftToPTask afterCached -< (output,accessor)
   where
