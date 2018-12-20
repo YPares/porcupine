@@ -73,9 +73,9 @@ class ( MonadMask m, MonadIO m
 
   writeBSS :: LocOf l -> BSS.ByteString m r -> m r
 
-  readBSS :: LocOf l -> (BSS.ByteString m () -> m b) -> m (Either LM.Error b)
+  readBSS :: LocOf l -> (BSS.ByteString m () -> m b) -> m b
 
-  copy :: LocOf l -> LocOf l -> m (Either LM.Error ())
+  copy :: LocOf l -> LocOf l -> m ()
   copy locFrom locTo = readBSS locFrom (writeBSS locTo)
 
   withLocalBuffer :: (FilePath -> m a) -> LocOf l -> m a
@@ -141,13 +141,12 @@ instance (MonadResource m, MonadMask m) => LocationAccessor m "resource" where
   locExists (L l) = LM.checkLocal "locExists" LM.locExists_Local l
   writeBSS (L l) = LM.checkLocal "writeBSS" LM.writeBSS_Local l
   readBSS (L l) f =
-    LM.checkLocal "readBSS" (\l' -> LM.readBSS_Local l' f {->>= LM.eitherToExn-}) l
+    LM.checkLocal "readBSS" (\l' -> LM.readBSS_Local l' f) l
   withLocalBuffer f (L l) =
     LM.checkLocal "withLocalBuffer" (\l' -> f $ l'^.locFilePathAsRawFilePath) l
   copy (L l1) (L l2) =
     LM.checkLocal "copy" (\file1 ->
       LM.checkLocal "copy (2nd argument)" (LM.copy_Local file1) l2) l1
-    -- >>= LM.eitherToExn
 
 instance FromJSON (LocOf "resource") where
   parseJSON v = do

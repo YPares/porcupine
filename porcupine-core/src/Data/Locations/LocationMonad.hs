@@ -24,37 +24,10 @@ import qualified Data.ByteString.Streaming    as BSS
 import           Data.Locations.Loc
 import qualified Data.Text                    as Text
 import qualified Data.Text.Encoding           as TE
-import           GHC.Generics                 (Generic)
 import           System.Directory             (createDirectoryIfMissing,
                                                createFileLink, doesPathExist)
 import qualified System.FilePath              as Path
 import qualified System.IO.Temp               as Tmp
-
-
-data RawError
-  = OtherError String
-  | IOError IOError
-  deriving (Generic, Show)
-
-data Error = Error Loc RawError
-  deriving (Generic)
-
-instance Show Error where
-  show (Error loc raw) =
-    "Error when trying to access file " ++ show loc ++ ": got " ++ show raw
-
-instance Exception Error
-
-data RetrievingError
-  = FileReadError Error
-  | DecodingError Loc Text.Text
-
-instance Exception RetrievingError
-
-instance Show RetrievingError where
-  show (FileReadError loc) = "Impossible to read file " <> show loc
-  show (DecodingError loc msg) =
-    "Error while decoding file " <> show loc <> ": " <> Text.unpack msg
 
 
 -- | Runs computations accessing 'Loc's
@@ -69,7 +42,7 @@ class (MonadMask m, MonadIO m) => LocationMonad m where
   -- For resources management reasons, the function is in CPS so that the
   -- underlying function can safely close the handle once the bytestring is
   -- consumed
-  readBSS :: Loc -> (BSS.ByteString m () -> m b) -> m (Either Error b)
+  readBSS :: Loc -> (BSS.ByteString m () -> m a) -> m a
 
   -- |
   -- Duplicate a location.
@@ -79,10 +52,10 @@ class (MonadMask m, MonadIO m) => LocationMonad m where
   copy ::
        Loc -- ^ From
     -> Loc -- ^ To
-    -> m (Either Error ())
+    -> m ()
   copy = defaultCopy
 
-defaultCopy :: LocationMonad m => Loc -> Loc -> m (Either Error ())
+defaultCopy :: LocationMonad m => Loc -> Loc -> m ()
 defaultCopy locFrom locTo = readBSS locFrom (writeBSS locTo)
 
 
@@ -97,7 +70,7 @@ withLocalBuffer f loc =
       writeAndUpload tmpDir = do
         let tmpFile = tmpDir Path.</> "out"
         res <- f tmpFile
-        readBSS_ (localFile tmpFile) (writeBSS loc)
+        readBSS (localFile tmpFile) (writeBSS loc)
         return res
 
 -- Will be removed once we have pure models with initializers (as we won't need
@@ -138,49 +111,26 @@ eitherToExn :: (MonadThrow m, Exception e) => Either e a -> m a
 eitherToExn (Left e)  = throwM e
 eitherToExn (Right x) = pure x
 
-mapLeft :: (a -> b) -> Either a c -> Either b c
-mapLeft f (Left x)  = Left $ f x
-mapLeft _ (Right y) = Right y
-
-copy_Local :: MonadIO m => LocalFilePath -> LocalFilePath -> m (Either Error ())
+copy_Local :: MonadIO m => LocalFilePath -> LocalFilePath -> m ()
 copy_Local fp1 fp2 =
-  liftIO $ Right <$> createFileLink
+  liftIO $ createFileLink
     (fp1^.locFilePathAsRawFilePath)
     (fp2^.locFilePathAsRawFilePath)
 
 readBSS_Local
-  :: forall f m a. (MonadCatch f, MonadResource m)
+  :: forall f m a. (MonadResource m)
   => LocalFilePath
   -> (BSS.ByteString m () -> f a)
-  -> f (Either Error a)
-readBSS_Local f k = mapLeft (Error (LocalFile f) . IOError) <$>
-  try (k $ BSS.readFile $ f ^. locFilePathAsRawFilePath)
-
--- | Exception version of 'readBSS'
-readBSS_ :: LocationMonad m
-         => Loc
-         -> (BSS.ByteString m () -> m b)
-         -> m b
-readBSS_ loc k = eitherToExn =<< readBSS loc k
+  -> f a
+readBSS_Local f k = k $ BSS.readFile $ f ^. locFilePathAsRawFilePath
 
 readLazyByte :: LocationMonad m
                 => Loc
-                -> m (Either Error LBS.ByteString)
+                -> m LBS.ByteString
 readLazyByte loc = readBSS loc BSS.toLazy_
-
-readLazyByte_ :: LocationMonad m
-                 => Loc
-                 -> m LBS.ByteString
-readLazyByte_ loc = eitherToExn =<< readLazyByte loc
 
 readText :: LocationMonad m
             => Loc
-            -> m (Either Error Text.Text)
-readText loc = do
-  maybeBSContent <- readLazyByte loc
-  pure $ (TE.decodeUtf8 . LBS.toStrict) <$> maybeBSContent
-
-readText_ :: LocationMonad m
-             => Loc
-             -> m Text.Text
-readText_ loc = eitherToExn =<< readText loc
+            -> m Text.Text
+readText loc =
+  TE.decodeUtf8 . LBS.toStrict <$> readLazyByte loc
