@@ -13,7 +13,7 @@
 -- to create and run a 'PTask'.
 
 module System.TaskPipeline.PTask.Internal
-  ( PTask
+  ( PTask(..)
   , PTaskState
   , RunnablePTask
   , FunflowRunConfig(..)

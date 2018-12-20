@@ -19,7 +19,7 @@
 module System.TaskPipeline.PTask
   ( module Control.Category
   , module Control.Arrow
-  , MonadThrow(..)
+  , module Data.Locations.LogAndErrors
   , PTask
   , Severity(..)
   , CanRunPTask
@@ -47,13 +47,13 @@ import           Control.Funflow                    (Properties)
 import           Control.Lens
 import           Control.Monad.IO.Class
 import           Data.Locations
+import           Data.Locations.LogAndErrors
 import           Data.String
 import           Katip
 import           System.Clock
 import           System.TaskPipeline.PTask.Internal
 import           System.TaskPipeline.ResourceTree   (DataAccessNode,
                                                      VirtualFileNode)
-
 
 -- | a tasks that discards its inputs and returns ()
 voidTask :: PTask m a ()
@@ -75,7 +75,7 @@ tryPTask = AF.try
 
 -- | Fails the whole pipeline if an exception occured, or just continues as
 -- normal
-throwPTask :: (Exception e, KatipContext m, MonadThrow m) => PTask m (Either e b) b
+throwPTask :: (Exception e, LogThrow m) => PTask m (Either e b) b
 throwPTask = unsafeLiftToPTask $ \i ->
   case i of
     Left e  -> throwWithPrefix $ displayException e

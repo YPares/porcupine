@@ -1,13 +1,14 @@
 {-# LANGUAGE Arrows                     #-}
+{-# LANGUAGE ConstrainedClassMethods    #-}
 {-# LANGUAGE ExistentialQuantification  #-}
 {-# LANGUAGE FlexibleContexts           #-}
-{-# LANGUAGE GADTs                      #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE OverloadedStrings          #-}
 {-# LANGUAGE PartialTypeSignatures      #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
 {-# LANGUAGE TupleSections              #-}
 {-# LANGUAGE TypeApplications           #-}
+{-# LANGUAGE TypeFamilies               #-}
 {-# LANGUAGE TypeOperators              #-}
 {-# OPTIONS_GHC -Wall #-}
 
@@ -15,31 +16,42 @@
 -- several files organized in layers for each location in the 'LocationTree'
 module System.TaskPipeline.VirtualFileAccess
   ( -- * Reexports
-    Typeable
+    module Data.Locations.LogAndErrors
+  , Typeable
 
     -- * High-level API
   , loadData
   , loadDataStream
+  , tryLoadDataStream
   , writeData
   , writeDataStream
 
     -- * Lower-level API
+  , EffectSeq(..), EffectSeqFromList(..)
+  , SingletonES(..), ListES(..), StreamES(..)
   , AccessToPerform(..)
-  , (:~:)(..)
-  , accessVirtualFile
-  , withVFileAccessFunction
-  , withFolderDataAccessNodes
+  , DataAccessor(..)
+  , VFNodeAccessType(..)
+  , accessVirtualFile'
+  , getVFileDataAccessor
   , getLocsMappedTo
+
+    -- * Internal API
+  , accessVirtualFile
+  , withVFileInternalAccessFunction
+  , withFolderDataAccessNodes
   ) where
 
 import           Prelude                            hiding (id, (.))
 
+import qualified Control.Exception.Safe             as SE
 import           Control.Lens
 import           Control.Monad                      (forM)
+import           Control.Monad.Trans
 import qualified Data.Foldable                      as F
 import qualified Data.HashMap.Strict                as HM
 import           Data.Locations
-import           Data.Maybe                         (maybe)
+import           Data.Locations.LogAndErrors
 import           Data.Monoid
 import           Data.Representable
 import qualified Data.Text                          as T
@@ -55,92 +67,171 @@ import           System.TaskPipeline.ResourceTree
 -- pure 'DataSource'. For practical reasons the task input is () rather than
 -- Void.
 loadData
-  :: (LocationMonad m, KatipContext m, Typeable a, Typeable b)
+  :: (LogThrow m, Typeable a, Typeable b)
   => VirtualFile a b -- ^ Use as a 'DataSource'
   -> PTask m () b  -- ^ The resulting task
 loadData vf =
-      arr (\_ -> S.yield ([] :: [Int], error "loadData: THIS IS VOID"))
-  >>> accessVirtualFile (DoRead Refl) [] vf
-  >>> unsafeLiftToPTask (\s ->
-      maybe (error $ "loadData: No value in the output stream") snd <$> S.head_ s)
+      arr (\_ -> SingletonES $ return ([] :: [Int], error "loadData: THIS IS VOID"))
+  >>> accessVirtualFile (DoRead id) [] vf
+  >>> unsafeLiftToPTask (fmap snd . getSingletonFromES)
 
 -- | Loads a stream of repeated occurences of a VirtualFile, from a stream of
 -- indices. The process is lazy: the data will actually be read when the
 -- resulting stream is consumed.
-loadDataStream :: (Show idx, LocationMonad m, KatipContext m, Typeable a, Typeable b)
+loadDataStream :: forall idx m a b r.
+                  (Show idx, LogThrow m, Typeable a, Typeable b)
                => LocVariable
                -> VirtualFile a b -- ^ Used as a 'DataSource'
                -> PTask m (Stream (Of idx) m r) (Stream (Of (idx, b)) m r)
-loadDataStream repIndex vf =
-      arr (S.map $ \i -> ([i], error "loadDataStream: THIS IS VOID"))
-  >>> accessVirtualFile (DoRead Refl) [repIndex] vf
-  >>> arr (S.map $ \(i, r) -> (head i, r))
+loadDataStream lv vf =
+      arr (StreamES . S.map (,error "loadDataStream: THIS IS VOID"))
+  >>> accessVirtualFile' (DoRead id) lv vf
+  >>> arr streamFromES
+
+-- | Like 'loadDataStream', but won't stop on a failure on a single file
+tryLoadDataStream :: (Exception e, Show idx, LogCatch m, Typeable a, Typeable b)
+                  => LocVariable
+                  -> VirtualFile a b -- ^ Used as a 'DataSource'
+                  -> PTask m (Stream (Of idx) m r) (Stream (Of (idx, Either e b)) m r)
+tryLoadDataStream lv vf =
+       arr (StreamES . S.map (,error "loadDataStream: THIS IS VOID"))
+  >>> accessVirtualFile' (DoRead SE.try) lv vf
+  >>> arr streamFromES
 
 -- | Uses only the write part of a 'VirtualFile'. It is therefore considered as
 -- a pure 'DataSink'.
 writeData
-  :: (LocationMonad m, KatipContext m, Typeable a, Typeable b)
+  :: (LogThrow m, Typeable a, Typeable b)
   => VirtualFile a b  -- ^ Used as a 'DataSink'
   -> PTask m a ()
-writeData vf = arr (\a -> S.yield ([] :: [Int], a))
-           >>> accessVirtualFile (DoWrite ()) [] vf
-           >>> unsafeLiftToPTask S.effects
+writeData vf =
+      arr (SingletonES . return . ([] :: [Int],))
+  >>> accessVirtualFile (DoWrite id) [] vf
+  >>> unsafeLiftToPTask runES
 
 -- | The simplest way to consume a stream of data inside a pipeline. Just write
 -- it to repeated occurences of a VirtualFile. See
 -- System.TaskPipeline.Repetition.Fold for more complex ways to consume a
 -- Stream.
-writeDataStream :: (Show idx, LocationMonad m, KatipContext m, Typeable a, Typeable b)
+writeDataStream :: (Show idx, LogThrow m, Typeable a, Typeable b)
                 => LocVariable
                 -> VirtualFile a b -- ^ Used as a 'DataSink'
                 -> PTask m (Stream (Of (idx, a)) m r) r
-writeDataStream repIndex vf =
-      arr (S.map $ \(i,a) -> ([i],a))
-  >>> accessVirtualFile (DoWrite ()) [repIndex] vf
-  >>> unsafeLiftToPTask S.effects
+writeDataStream lv vf =
+      arr StreamES
+  >>> accessVirtualFile' (DoWrite id) lv vf
+  >>> unsafeLiftToPTask runES
 
--- | When only writing, gives a value that should be returned for b
-data AccessToPerform b b'
-  = DoWrite b'
-  | DoRead (b :~: b')
-  | DoWriteAndRead (b :~: b')
+-- | Gets a DataAccessor for the VirtualFile, ie. doesn't read or write it
+-- immediately but gets a function that will make it possible
+getVFileDataAccessor
+  :: (LogThrow m, Typeable a, Typeable b)
+  => [VFNodeAccessType] -- ^ The accesses that will be performed on the DataAccessor
+  -> VirtualFile a b
+  -> PTask m () (DataAccessor m a b)
+getVFileDataAccessor accesses vfile = withVFileInternalAccessFunction accesses vfile
+  (\mkAccessor _ -> return $ mkAccessor mempty)
+
+
+-- | Gives a wrapper that should be used when the actual read or write is
+-- performed.
+data AccessToPerform m b b'
+  = DoWrite (m () -> m b')
+  | DoRead (m b -> m b')
+  | DoWriteAndRead (m b -> m b')
+
+-- | A unique value, computed from a action in @m@
+newtype SingletonES m a = SingletonES { getSingletonFromES :: m a }
+
+-- | Just a wrapper around [m a]
+newtype ListES m a = ListES { getListFromES :: [m a] }
+
+-- | Just a wrapper around Stream, with arguments reordered
+newtype StreamES r m a = StreamES { getStreamFromES :: Stream (Of a) m r }
+
+-- | Some class around Stream (Of a) m () and [m a].
+class EffectSeq seq where
+  type ESResult seq :: *
+  mapES :: (Monad m) => (a -> b) -> seq m a -> seq m b
+  mapESM :: (Monad m) => (a -> m b) -> seq m a -> seq m b
+  streamFromES :: (Monad m) => seq m a -> Stream (Of a) m (ESResult seq)
+  runES :: (Monad m) => seq m a -> m (ESResult seq)
+
+instance EffectSeq SingletonES where
+  type ESResult SingletonES = ()
+  mapES f = SingletonES . fmap f . getSingletonFromES
+  mapESM f = SingletonES . (>>= f) . getSingletonFromES
+  streamFromES (SingletonES act) = lift act >>= S.yield
+  runES (SingletonES act) = act >> return ()
+
+instance EffectSeq ListES where
+  type ESResult ListES = ()
+  mapES f = ListES . map (f <$>) . getListFromES
+  mapESM f = ListES . map (>>= f) . getListFromES
+  streamFromES = mapM_ (\act -> lift act >>= S.yield) . getListFromES
+  runES = sequence_ . getListFromES
+
+instance EffectSeq (StreamES r) where
+  type ESResult (StreamES r) = r
+  mapES f = StreamES . S.map f . getStreamFromES
+  mapESM f = StreamES . S.mapM f . getStreamFromES
+  streamFromES = getStreamFromES
+  runES = S.effects . getStreamFromES
+
+class (EffectSeq seq) => EffectSeqFromList seq where
+  esFromList :: (Monad m, ESResult seq ~ ()) => [a] -> seq m a
+
+instance EffectSeqFromList ListES where
+  esFromList = ListES . map return
+
+instance EffectSeqFromList (StreamES r) where
+  esFromList = StreamES . S.each
+
+-- | Like 'accessVirtualFile', but uses only one repetition variable
+accessVirtualFile' :: forall seq idx m a b b'.
+                      (Show idx, LogThrow m, Typeable a, Typeable b
+                      ,EffectSeq seq)
+                   => AccessToPerform m b b'
+                   -> LocVariable
+                   -> VirtualFile a b -- ^ Used as a 'DataSource'
+                   -> PTask m (seq m (idx, a)) (seq m (idx, b'))
+accessVirtualFile' access repIndex vf =
+      arr (mapES $ \(i, a) -> ([i], a))
+  >>> accessVirtualFile access [repIndex] vf
+  >>> arr (mapES $ \(i, r) -> (head i, r))
+
+toAccessTypes :: AccessToPerform m b b' -> [VFNodeAccessType]
+toAccessTypes ac = case ac of
+  DoWriteAndRead{} -> [ATWrite,ATRead]
+  DoWrite{}        -> [ATWrite]
+  DoRead{}         -> [ATRead]
 
 -- | When building the pipeline, stores into the location tree the way to read
 -- or write the required resource. When running the pipeline, access the
 -- instances of this ressource corresponding to the values of some repetition
 -- indices.
---
--- NOTE: 'accessVirtualFile' maybe has become too generic: it does stream
--- write/read by default and handle every type of access. This genericity can
--- come at a cost. Benchmarks should tell whether loadData, writeData, etc.
--- should be rewritten in a more specialized fashion.
 accessVirtualFile
-  :: forall m a b b' idx r.
-     (LocationMonad m, KatipContext m, Typeable a, Typeable b, Show idx)
-  => AccessToPerform b b'
+  :: forall m a b b' seq idx.
+     (LogThrow m, Typeable a, Typeable b, Show idx
+     ,EffectSeq seq)
+  => AccessToPerform m b b'
   -> [LocVariable]  -- ^ The list of repetition indices. Can be empty if the
                     -- file isn't meant to be repeated
   -> VirtualFile a b  -- ^ The VirtualFile to access
-  -> PTask m (Stream (Of ([idx], a)) m r)
-             (Stream (Of ([idx], b')) m r)  -- ^ The resulting task reads a
-                                           -- stream of indices and input values
-                                           -- and returns a stream of the same
-                                           -- indices associated to their
-                                           -- outputs.
+  -> PTask m (seq m ([idx], a)) (seq m ([idx], b'))  -- ^ The resulting task reads a stream of indices and
+                        -- input values and returns a stream of the same indices
+                        -- associated to their outputs.
 accessVirtualFile accessToDo repIndices vfile =
-  withVFileAccessFunction accesses' vfile' $ \accessFn inputStream ->
-    return $ S.mapM (runOnce accessFn) inputStream
+  withVFileInternalAccessFunction (toAccessTypes accessToDo) vfile' $
+    \accessFn inputStream ->
+      return $ mapESM (runOnce accessFn) inputStream
   where
-    accesses' = case accessToDo of
-      DoWriteAndRead{} -> [ATWrite,ATRead]
-      DoWrite{}        -> [ATWrite]
-      DoRead{}         -> [ATRead]
     runOnce :: (LocVariableMap -> DataAccessor m a b) -> ([idx], a) -> m ([idx], b')
     runOnce accessFn (ixVals, input) = do
       (ixVals,) <$> case accessToDo of
-        DoWrite r           -> daPerformWrite da input >> return r
-        DoRead Refl         -> daPerformRead da
-        DoWriteAndRead Refl -> daPerformWrite da input >> daPerformRead da
+        DoWrite wrap        -> wrap $ daPerformWrite da input
+        DoRead wrap         -> wrap $ daPerformRead da
+        DoWriteAndRead wrap -> wrap $ daPerformWrite da input >> daPerformRead da
       where
         da = accessFn lvMap
         lvMap = HM.fromList $ zip repIndices $ map show ixVals
@@ -150,9 +241,9 @@ accessVirtualFile accessToDo repIndices vfile =
 
 -- | Executes as a task a function that needs to access the content of the
 -- DataAccessNode of a VirtualFile.
-withVFileAccessFunction
+withVFileInternalAccessFunction
   :: forall m i o a b.
-     (MonadThrow m, KatipContext m, Typeable a, Typeable b)
+     (LogThrow m, Typeable a, Typeable b)
   => [VFNodeAccessType]  -- ^ The accesses that will be performed on it
   -> VirtualFile a b  -- ^ The VirtualFile to access
   -> ((LocVariableMap -> DataAccessor m a b) -> i -> m o)
@@ -160,7 +251,7 @@ withVFileAccessFunction
          -- VirtualFile. The LocVariableMap can just be empty if the VirtualFile
          -- isn't meant to be repeated
   -> PTask m i o
-withVFileAccessFunction accessesToDo vfile f =
+withVFileInternalAccessFunction accessesToDo vfile f =
   withFolderDataAccessNodes path (Identity fname) $
     \(Identity n) input -> case n of
       DataAccessNode _ (action :: LocVariableMap -> DataAccessor m a' b') ->
@@ -173,12 +264,12 @@ withVFileAccessFunction accessesToDo vfile f =
     path = init $ vfile ^. vfilePath
     fname = file (last $ vfile ^. vfilePath) $ VirtualFileNode accessesToDo vfile
     err s = throwWithPrefix $
-      "withVFileAccessFunction (" ++ showVFilePath vfile ++ "): " ++ s
+      "withVFileInternalAccessFunction (" ++ showVFilePath vfile ++ "): " ++ s
 
 -- | Wraps in a task a function that needs to access some items present in a
 -- subfolder of the 'LocationTree' and mark these accesses as done.
 withFolderDataAccessNodes
-  :: (MonadThrow m, KatipContext m, Traversable t)
+  :: (LogThrow m, Traversable t)
   => [LocationTreePathItem]              -- ^ Path to folder in 'LocationTree'
   -> t (LTPIAndSubtree VirtualFileNode)  -- ^ Items of interest in the subfolder
   -> (t (DataAccessNode m) -> i -> m o)  -- ^ What to run with these items
@@ -205,7 +296,7 @@ withFolderDataAccessNodes path filesToAccess accessFn =
 -- expose this path as a requirement (hence the result list may be empty, as no
 -- mapping might exist). SHOULD NOT BE USED UNLESS loadData/writeData cannot do
 -- what you want.
-getLocsMappedTo :: (KatipContext m, MonadThrow m)
+getLocsMappedTo :: (LogThrow m)
                 => [LocationTreePathItem] -> PTask m () [Loc]
 getLocsMappedTo path = runnableWithoutReqs $ withRunnableState $
                          \state _ -> getLocs $ state^.ptrsDataAccessTree
