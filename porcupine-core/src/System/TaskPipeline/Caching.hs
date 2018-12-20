@@ -15,7 +15,6 @@ module System.TaskPipeline.Caching
 import qualified Control.Exception.Safe                as SE
 import           Control.Funflow
 import           Control.Lens                          (over, traversed)
-import           Control.Monad.Catch
 import           Data.Default                          (Default (..))
 import           Data.Locations.Loc
 import           Data.Locations.LogAndErrors

@@ -17,7 +17,6 @@
 module System.TaskPipeline.VirtualFileAccess
   ( -- * Reexports
     module Data.Locations.LogAndErrors
-  , Typeable
 
     -- * High-level API
   , loadData
@@ -44,7 +43,6 @@ module System.TaskPipeline.VirtualFileAccess
 
 import           Prelude                            hiding (id, (.))
 
-import qualified Control.Exception.Safe             as SE
 import           Control.Lens
 import           Control.Monad                      (forM)
 import           Control.Monad.Trans
@@ -95,7 +93,7 @@ tryLoadDataStream :: (Exception e, Show idx, LogCatch m, Typeable a, Typeable b)
                   -> PTask m (Stream (Of idx) m r) (Stream (Of (idx, Either e b)) m r)
 tryLoadDataStream lv vf =
        arr (StreamES . S.map (,error "loadDataStream: THIS IS VOID"))
-  >>> accessVirtualFile' (DoRead SE.try) lv vf
+  >>> accessVirtualFile' (DoRead try) lv vf
   >>> arr streamFromES
 
 -- | Uses only the write part of a 'VirtualFile'. It is therefore considered as

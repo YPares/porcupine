@@ -12,7 +12,7 @@ module System.TaskPipeline.Logger
   , runLogger
   ) where
 
-import           Control.Monad.Catch      (MonadMask, bracket)
+import           Control.Exception.Safe
 import           Control.Monad.IO.Class   (MonadIO, liftIO)
 import           Data.Aeson
 import           Data.Aeson.Encode.Pretty (encodePrettyToTextBuilder)

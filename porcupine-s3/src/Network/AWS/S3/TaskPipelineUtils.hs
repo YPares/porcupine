@@ -21,9 +21,9 @@ module Network.AWS.S3.TaskPipelineUtils
   )
 where
 
+import           Control.Exception.Safe
 import           Control.Lens                 hiding ((:>))
 import           Control.Monad                (when)
-import           Control.Monad.Catch          (catch, try)
 import           Control.Monad.Trans.Resource
 import           Control.Retry                (RetryPolicyM (..), limitRetries,
                                                retrying, rsIterNumber)

@@ -12,7 +12,7 @@ ghc-options: -Wall
 dependencies:
   - base
   - mtl
-  - exceptions
+  - safe-exceptions
   - amazonka
   - amazonka-core
   - amazonka-s3

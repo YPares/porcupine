@@ -54,9 +54,9 @@
 
 module System.TaskPipeline.ResourceTree where
 
+import           Control.Exception.Safe
 import           Control.Lens                            hiding ((<.>))
 import           Control.Monad
-import           Control.Monad.Catch
 import           Data.Aeson
 import           Data.DocRecord
 import           Data.DocRecord.OptParse
