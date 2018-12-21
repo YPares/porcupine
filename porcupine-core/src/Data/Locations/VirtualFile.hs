@@ -18,7 +18,8 @@ module Data.Locations.VirtualFile
   , vfileBidirProof, vfileSerials
   , vfileAsBidir, vfileAsBidirE, vfileImportance
   , vfileEmbeddedValue, vfileIntermediaryValue, vfileAesonValue
-  , vfilePath, showVFilePath, vfileLayeredReadScheme
+  , vfileOriginalPath, showVFileOriginalPath
+  , vfileLayeredReadScheme
   , vfileVoided
   , vfiOnReadSuccess, vfiOnWriteSuccess, vfiOnError
   , dataSource, dataSink, bidirVirtualFile, ensureBidirFile
@@ -78,7 +79,7 @@ instance Default VFileImportance where
 -- | A virtual file in the location tree to which we can write @a@ and from
 -- which we can read @b@.
 data VirtualFile a b = VirtualFile
-  { _vfilePath              :: [LocationTreePathItem]
+  { _vfileOriginalPath      :: [LocationTreePathItem]
   , _vfileLayeredReadScheme :: LayeredReadScheme b
   , _vfileMappedByDefault   :: Bool
   , _vfileImportance        :: VFileImportance
@@ -173,8 +174,8 @@ getVirtualFileDescription vf =
     writableInOutput = typeOfAesonVal `HM.member` toI
 
 -- | Just for logs and error messages
-showVFilePath :: VirtualFile a b -> String
-showVFilePath = T.unpack . toTextRepr .  LTP . _vfilePath
+showVFileOriginalPath :: VirtualFile a b -> String
+showVFileOriginalPath = T.unpack . toTextRepr .  LTP . _vfileOriginalPath
 
 -- | Indicates that the file uses layered mapping
 usesLayeredMapping :: (Semigroup b) => VirtualFile a b -> VirtualFile a b
@@ -335,10 +336,11 @@ vfileRecOfOptions f vf = case mbopts of
             Just r' -> convertBack r'
       in vf & vfileEmbeddedValue .~ newVal
 
--- | Gives access to a version of the VirtualFile without type params
+-- | Gives access to a version of the VirtualFile without type params. The
+-- original path isn't settable.
 vfileVoided :: Lens' (VirtualFile a b) (VirtualFile Void ())
 vfileVoided f (VirtualFile p l m i d b s) =
   rebuild <$> f (VirtualFile p SingleLayerRead m i d Nothing mempty)
   where
-    rebuild (VirtualFile p' _ m' i' d' _ _) =
-      VirtualFile p' l m' i' d' b s
+    rebuild (VirtualFile _ _ m' i' d' _ _) =
+      VirtualFile p l m' i' d' b s
