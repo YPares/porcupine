@@ -259,10 +259,10 @@ withVFileInternalAccessFunction accessesToDo vfile f =
           _ -> err "input or output types don't match"
       _ -> err "no access action is present in the tree"
   where
-    path = init $ vfile ^. vfilePath
-    fname = file (last $ vfile ^. vfilePath) $ VirtualFileNode accessesToDo vfile
+    path = init $ vfile ^. vfileOriginalPath
+    fname = file (last $ vfile ^. vfileOriginalPath) $ VirtualFileNode accessesToDo vfile
     err s = throwWithPrefix $
-      "withVFileInternalAccessFunction (" ++ showVFilePath vfile ++ "): " ++ s
+      "withVFileInternalAccessFunction (" ++ showVFileOriginalPath vfile ++ "): " ++ s
 
 -- | Wraps in a task a function that needs to access some items present in a
 -- subfolder of the 'LocationTree' and mark these accesses as done.
