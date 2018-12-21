@@ -418,9 +418,10 @@ data DataAccessContext = DAC
 instance ToJSON DataAccessContext
 instance ToObject DataAccessContext
 instance LogItem DataAccessContext where
-  payloadKeys V3 _ = AllKeys
-  payloadKeys v _ | v >= V1 = SomeKeys ["locationAccessed"]
-  payloadKeys V0 _ = SomeKeys []
+  payloadKeys v _
+    | v == V3   = AllKeys
+    | v >= V1   = SomeKeys ["locationAccessed"]
+    | otherwise = SomeKeys []
 
 makeDataAccessor
   :: (LocationMonad m, LogMask m)
