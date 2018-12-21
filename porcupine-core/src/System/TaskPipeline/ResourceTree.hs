@@ -112,6 +112,13 @@ data VirtualFileNode = MbVirtualFileNode [VFNodeAccessType] (Maybe SomeVirtualFi
 pattern VirtualFileNode {vfnodeAccesses, vfnodeFile} =
   MbVirtualFileNode vfnodeAccesses (Just (SomeVirtualFile vfnodeFile))
 
+-- | vfnodeFile is a @Traversal'@ into the VirtualFile contained in a
+-- VirtualFileNode, but hiding it's real read/write types.
+vfnodeFileVoided :: Traversal' VirtualFileNode (VirtualFile Void ())
+vfnodeFileVoided f (VirtualFileNode at vf) =
+  VirtualFileNode at <$> vfileVoided f vf
+vfnodeFileVoided _ vfn = pure vfn
+
 -- | The nodes of the ResourceTree, after mapping each 'VirtualFiles' to
 -- physical locations
 data PhysicalFileNode = MbPhysicalFileNode [LocWithVars] (Maybe SomeVirtualFile)
