@@ -298,7 +298,7 @@ handleOptions progName configFile mbCfg defCfg cliOverriding mbCmd saveOverrides
   let defaultCfg = toJSON defCfg
       (cfgWarnings, cfg) = case mbCfg of
         Just c -> mergeWithDefault [] defaultCfg c
-        Nothing -> ([PostParsingLog NoticeS $ logStr $
+        Nothing -> ([PostParsingLog DebugS $ logStr $
                       configFile' ++ " is not found. Treated as empty."]
                    ,defaultCfg)
       (overrideWarnings, mbScribeParamsAndCfgOverriden) =
