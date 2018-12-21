@@ -8,6 +8,7 @@
 module Data.Locations.VirtualFile
   ( LocationTreePathItem
   , module Data.Locations.SerializationMethod
+  , Void
   , Profunctor(..)
   , VirtualFile(..), LayeredReadScheme(..)
   , BidirVirtualFile, DataSource, DataSink
@@ -18,6 +19,7 @@ module Data.Locations.VirtualFile
   , vfileAsBidir, vfileAsBidirE, vfileImportance
   , vfileEmbeddedValue, vfileIntermediaryValue, vfileAesonValue
   , vfilePath, showVFilePath, vfileLayeredReadScheme
+  , vfileVoided
   , vfiOnReadSuccess, vfiOnWriteSuccess, vfiOnError
   , dataSource, dataSink, bidirVirtualFile, ensureBidirFile
   , makeSink, makeSource
@@ -332,3 +334,11 @@ vfileRecOfOptions f vf = case mbopts of
             Nothing -> error "vfileRecOfOptions: record fields aren't compatible"
             Just r' -> convertBack r'
       in vf & vfileEmbeddedValue .~ newVal
+
+-- | Gives access to a version of the VirtualFile without type params
+vfileVoided :: Lens' (VirtualFile a b) (VirtualFile Void ())
+vfileVoided f (VirtualFile p l m i d b s) =
+  rebuild <$> f (VirtualFile p SingleLayerRead m i d Nothing mempty)
+  where
+    rebuild (VirtualFile p' _ m' i' d' _ _) =
+      VirtualFile p' l m' i' d' b s
