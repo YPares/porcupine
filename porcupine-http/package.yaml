@@ -1,0 +1,33 @@
+name: porcupine-http
+version: 0.0.1.0
+synopsis: A tool to express portable, composable and reusable datascience task pipelines
+description: See README at <https://github.com/tweag/porcupine#README.md>
+maintainer: Yves Parès <yves.pares@tweag.io>
+github: tweag/porcupine
+category: Numerical, JSON
+copyright: 2018 EURL Tweag, NovaDiscovery
+
+ghc-options: -Wall
+
+dependencies:
+  - base
+  - mtl
+  - safe-exceptions
+  - http-conduit
+  - lens
+  # - monad-control
+  - resourcet
+  - bytestring
+  - streaming
+  - streaming-bytestring
+  - directory
+  - reader-soup
+  - porcupine-core
+  # - retry
+  - text
+  - filepath
+  - conduit
+  - conduit-extra
+
+library:
+  source-dirs: src

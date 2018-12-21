@@ -48,8 +48,8 @@ instance (MonadAWS m, MonadMask m, MonadResource m) => LocationAccessor m "aws" 
     deriving (ToJSON)
   locExists _ = return True -- TODO: Implement it
   writeBSS (S l) = writeBSS_S3 l
-  readBSS (S l) f = readBSS_S3 l f -- >>= LM.eitherToExn
-  copy (S l1) (S l2) = copy_S3 l1 l2 -- >>= LM.eitherToExn
+  readBSS (S l) f = readBSS_S3 l f
+  copy (S l1) (S l2) = copy_S3 l1 l2
 
 instance (MonadAWS m, MonadMask m, MonadResource m) => MayProvideLocationAccessors m "aws"
 

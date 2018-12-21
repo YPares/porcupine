@@ -62,8 +62,7 @@ import           System.TaskPipeline.Logger
 -- | Creates some Loc type, indexed over a symbol (see ReaderSoup for how that
 -- symbol should be used), and equipped with functions to access it in some
 -- Monad
-class ( MonadMask m, MonadIO m
-      , FromJSON (LocOf l), ToJSON (LocOf l) )
+class ( FromJSON (LocOf l), ToJSON (LocOf l) )
    => LocationAccessor m (l::Symbol) where
 
   data LocOf l :: *
@@ -79,7 +78,7 @@ class ( MonadMask m, MonadIO m
 
   withLocalBuffer :: (FilePath -> m a) -> LocOf l -> m a
   -- If we have a local resource accessor, we use it:
-  default withLocalBuffer :: (MonadResource m)
+  default withLocalBuffer :: (MonadResource m, MonadMask m)
                           => (FilePath -> m a) -> LocOf l -> m a
   withLocalBuffer f loc =
     Tmp.withSystemTempDirectory "pipeline-tools-tmp" writeAndUpload
@@ -134,7 +133,7 @@ splitAccessorsFromRec = over _1 AvailableAccessors . rtraverse getCompose
 -- * Making "resource" a LocationAccessor
 
 -- | Accessing local resources
-instance (MonadResource m, MonadMask m) => LocationAccessor m "resource" where
+instance (MonadResource m) => LocationAccessor m "resource" where
   newtype LocOf "resource" = L Loc
     deriving (ToJSON)
   locExists (L l) = LM.checkLocal "locExists" LM.locExists_Local l
@@ -154,7 +153,7 @@ instance FromJSON (LocOf "resource") where
       LocalFile{} -> return $ L loc
       _           -> fail "Isn't a local file"
 
-instance (MonadResource m, MonadMask m) => MayProvideLocationAccessors m "resource"
+instance (MonadResource m) => MayProvideLocationAccessors m "resource"
 
 
 --- The rest of the file is used as a compatiblity layer with the LocationMonad
