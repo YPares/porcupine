@@ -13,7 +13,7 @@
 -- to create and run a 'PTask'.
 
 module System.TaskPipeline.PTask.Internal
-  ( PTask
+  ( PTask(..)
   , PTaskState
   , RunnablePTask
   , FunflowRunConfig(..)
@@ -46,14 +46,17 @@ import           Control.Funflow
 import qualified Control.Funflow.ContentStore                as CS
 import           Control.Funflow.External.Coordinator
 import           Control.Funflow.External.Coordinator.SQLite
+import qualified Control.Funflow.RemoteCache                 as Remote
 import           Control.Lens
-import           Control.Monad.IO.Class
 import           Control.Monad.Trans
 import           Control.Monad.Trans.Control
 import           Control.Monad.Trans.Reader
 import           Control.Monad.Trans.State
 import           Control.Monad.Trans.Writer
 import           Data.Default
+import           Data.Locations                              (Loc,
+                                                              LocationMonad)
+import           Data.Locations.FunflowRemoteCache
 import           Data.Locations.LocationTree
 import           Data.Locations.LogAndErrors
 import           Katip.Core                                  (Namespace)
@@ -69,18 +72,20 @@ type DataAccessTree m = LocationTree (DataAccessNode m)
 -- some flows. Until we find a better solution than to run flows in flows, this
 -- is how we do it. These are the arguments to
 -- Control.Funflow.Exec.Simple.runFlowEx
-data FunflowRunConfig = forall c. (Coordinator c) => FunflowRunConfig
+data FunflowRunConfig m = forall c rc. (Coordinator c, Remote.Cacher m rc) => FunflowRunConfig
   { _ffrcCoordinator       :: !c
   , _ffrcCoordinatorConfig :: !(Config c)
   , _ffrcContentStore      :: !CS.ContentStore
-  , _ffrcFlowIdentity      :: !Int }
+  , _ffrcFlowIdentity      :: !Int
+  , _ffrcRemoteCache       :: !rc
+  }
 
 -- | This is the state that will be shared by the whole PTask pipeline once it
 -- starts running.
 data PTaskState m = PTaskState
   { _ptrsKatipContext     :: !LogContexts
   , _ptrsKatipNamespace   :: !Namespace
-  , _ptrsFunflowRunConfig :: !FunflowRunConfig
+  , _ptrsFunflowRunConfig :: !(FunflowRunConfig m)
   , _ptrsDataAccessTree   :: !(DataAccessTree m) }
 
 makeLenses ''PTaskState
@@ -97,7 +102,7 @@ type RunnablePTask m =
 
 -- | The constraints that must be satisfied by the base monad m so that a @PTask
 -- m@ can be run
-type CanRunPTask m = (MonadBaseControl IO m, MonadMask m, KatipContext m)
+type CanRunPTask m = (MonadBaseControl IO m, LocationMonad m, KatipContext m)
 
 -- | Runs a 'RunnablePTask' given its state
 execRunnablePTask
@@ -109,7 +114,7 @@ execRunnablePTask
   input =
   flip evalStateT [] $
     runFlowEx _ffrcCoordinator _ffrcCoordinatorConfig
-              _ffrcContentStore id _ffrcFlowIdentity
+              _ffrcContentStore (LiftCacher _ffrcRemoteCache) id _ffrcFlowIdentity
               (runReader act st)
               input
 
@@ -252,22 +257,23 @@ makePTask :: (KatipContext m)
 makePTask = makePTask' def
 
 data FunflowPaths = FunflowPaths
-  { storePath :: FilePath, coordPath :: FilePath }
+  { storePath :: FilePath, coordPath :: FilePath, remoteCacheLoc :: Maybe Loc }
 
 withFunflowRunConfig
-  :: (MonadIO m, MonadMask m)
+  :: (LocationMonad m, KatipContext m)
   => FunflowPaths
-  -> (FunflowRunConfig -> m r)
+  -> (FunflowRunConfig m -> m r)
   -> m r
 withFunflowRunConfig ffPaths f = do
   storePath' <- parseAbsDir $ storePath ffPaths
   coordPath' <- parseAbsDir $ coordPath ffPaths
+  let cacher = locationCacher $ remoteCacheLoc ffPaths
   CS.withStore storePath' (\store -> do
-    f $ FunflowRunConfig SQLite coordPath' store 23090341)
+    f $ FunflowRunConfig SQLite coordPath' store 23090341 cacher)
 
 -- | Given a 'KatipContext' and a 'DataAccessTree', gets the initial state to
 -- give to 'execRunnablePTask'
-withPTaskState :: (MonadIO m, MonadMask m, KatipContext m)
+withPTaskState :: (LocationMonad m, KatipContext m)
                => FunflowPaths
                -> DataAccessTree m
                -> (PTaskState m -> m r) -> m r

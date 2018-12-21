@@ -43,9 +43,9 @@ data LoggerScribeParams = LoggerScribeParams
   }
   deriving (Eq, Show)
 
--- | Default LoggerScribeParams shows log message from Info level, with maximum verbosity.
+-- | Default LoggerScribeParams shows log message from Debug level, with maximum verbosity.
 defaultLoggerScribeParams :: LoggerScribeParams
-defaultLoggerScribeParams = LoggerScribeParams InfoS V3 PrettyLog
+defaultLoggerScribeParams = LoggerScribeParams DebugS V3 PrettyLog
 
 -- | Starts a logger.
 runLogger

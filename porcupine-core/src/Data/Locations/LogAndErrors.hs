@@ -1,3 +1,4 @@
+{-# LANGUAGE ConstraintKinds   #-}
 {-# LANGUAGE OverloadedStrings #-}
 
 -- | This module contains some helper functions for logging info and throwing
@@ -6,6 +7,7 @@
 module Data.Locations.LogAndErrors
   ( module Control.Monad.Catch
   , KatipContext
+  , LogThrow, LogCatch, LogMask
   , TaskRunError(..)
   , throwWithPrefix
   ) where
@@ -29,8 +31,17 @@ getTaskErrorPrefix = do
     [] -> return ""
     _  -> return $ T.unpack $ T.intercalate "." ns <> ": "
 
+-- | Just an alias for monads that can throw errors and log them
+type LogThrow m = (KatipContext m, MonadThrow m)
+
+-- | Just an alias for monads that can throw,catch errors and log them
+type LogCatch m = (KatipContext m, MonadCatch m)
+
+-- | Just an alias for monads that can throw,catch,mask errors and log them
+type LogMask m = (KatipContext m, MonadMask m)
+
 -- | Logs an error and throws a 'TaskRunError'
-throwWithPrefix :: (KatipContext m, MonadThrow m) => String -> m a
+throwWithPrefix :: (LogThrow m) => String -> m a
 throwWithPrefix msg = do
   logFM ErrorS $ logStr msg
   prefix <- getTaskErrorPrefix

@@ -117,7 +117,7 @@ mappingOverStream_ k v t =
 -- changing each time the value associated to a repetition key (so the physical
 -- file will be different each time). Returns the result of the input stream.
 repeatedlyWriteData
-  :: (LocationMonad m, CanRunPTask m, Typeable a, Typeable b, Show i)
+  :: (CanRunPTask m, Typeable a, Typeable b, Show i)
   => LocVariable
   -> VirtualFile a b -- ^ Use as a 'DataSink'
   -> ISTask m i a r
@@ -128,7 +128,7 @@ repeatedlyWriteData rkey vf =
 -- changing each time the value associated to a repetition key (so the physical
 -- file will be different each time).
 repeatedlyLoadData
-  :: (LocationMonad m, CanRunPTask m, Typeable a, Typeable b, Show i)
+  :: (CanRunPTask m, Typeable a, Typeable b, Show i)
   => LocVariable
   -> VirtualFile a b -- ^ Used as a 'DataSource'
   -> OSTask m i (Stream (Of i) m r) b
@@ -140,7 +140,7 @@ repeatedlyLoadData rkey vf =
 -- | Like 'repeatedlyLoadData', except the stream of indices to read is obtained
 -- from a list whose elements can be Shown.
 repeatedlyLoadData'
-  :: (LocationMonad m, CanRunPTask m, Typeable a, Typeable b, Show i)
+  :: (CanRunPTask m, Typeable a, Typeable b, Show i)
   => LocVariable
   -> VirtualFile a b -- ^ Used as a 'DataSource'
   -> OSTask m i [i] b

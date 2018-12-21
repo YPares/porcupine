@@ -1,43 +1,61 @@
 {-# LANGUAGE FlexibleContexts      #-}
+{-# LANGUAGE FlexibleInstances     #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE OverloadedStrings     #-}
 {-# LANGUAGE RecordWildCards       #-}
 {-# LANGUAGE ScopedTypeVariables   #-}
+{-# LANGUAGE TypeOperators         #-}
 {-# LANGUAGE ViewPatterns          #-}
+{-# OPTIONS_GHC "-fno-warn-orphans" #-}
 
 module Network.AWS.S3.TaskPipelineUtils
-  (
-    runAll
+  ( runAll
   , getEnv
   , uploadObj
   , uploadFolder
+  , streamS3Folder
   , streamObjInto
   , streamObjIntoExt
   , downloadFolder
+  , copyObj
   )
 where
 
-import           Control.Lens
-import           Control.Monad               (when)
-import           Control.Monad.Catch         (catch, try)
-import           Control.Monad.Trans.AWS
-import           Control.Retry               (RetryPolicyM (..), limitRetries,
-                                              retrying, rsIterNumber)
-import qualified Data.ByteString.Streaming   as BSS
-import           Data.Conduit.Binary         (sinkLbs)
+import           Control.Lens                 hiding ((:>))
+import           Control.Monad                (when)
+import           Control.Monad.Catch          (catch, try)
+import           Control.Monad.Trans.Resource
+import           Control.Retry                (RetryPolicyM (..), limitRetries,
+                                               retrying, rsIterNumber)
+import qualified Data.ByteString.Streaming    as BSS
+import           Data.Conduit.Binary          (sinkLbs)
 import           Data.String
-import           Network.AWS                 hiding (send)
-import           Network.AWS.Auth            (AuthError)
+import           Data.Text                    (Text)
+import qualified Data.Text                    as T
+import           Network.AWS
+import           Network.AWS                  (MonadAWS, liftAWS, send)
+import           Network.AWS.Auth             (AuthError)
+import           Network.AWS.Env              (Env, HasEnv, environment)
 import           Network.AWS.S3
-import           Streaming.TaskPipelineUtils as S
-import           System.Directory            (createDirectoryIfMissing)
-import           System.FilePath             (takeDirectory, (</>))
+import           Network.AWS.S3               (BucketName, ObjectKey (..), oKey)
+import qualified Network.AWS.S3.ListObjects   as LO
+import qualified Streaming.Prelude            as S
+import           Streaming.TaskPipelineUtils  as S
+import           System.Directory             (createDirectoryIfMissing)
+import           System.FilePath              (normalise, takeDirectory, (</>))
+
 
 runAll :: AWS b -> IO b
 runAll f = do
   env <- getEnv True
   runResourceT $ runAWS env f
 
+-- These instances may overlap in theory, but in practice there is probably no
+-- good reason to have two AWS.Envs in the same program, so only one side
+-- should have one
+instance {-# OVERLAPPABLE #-} HasEnv a => HasEnv (a `With` b) where environment = elt.environment
+instance HasEnv (a `With` Env)
+  where environment = ann.environment
 
 getEnv :: Bool -- ^ Verbose
        -> IO Env
@@ -56,17 +74,26 @@ getEnv verbose = do
                   "or any other amazon service will probably fail"
       newEnv (FromKeys "foo" "bar")
 
-uploadObj :: (MonadAWS m, AWSConstraint r m)
+uploadObj :: (MonadAWS m)
              => BucketName
              -> ObjectKey
-             -> BSS.ByteString m ()
-             -> m PutObjectResponse
+             -> BSS.ByteString m a
+             -> m (PutObjectResponse, a)
 uploadObj buck object source = do
-  requestBody <- toBody <$> BSS.toStrict_ source
-  send $ putObject buck object requestBody
+  (bs :> r) <- BSS.toStrict source
+  por <- send $ putObject buck object $ toBody bs
+  return (por, r)
+
+copyObj ::
+     (MonadAWS m)
+  => BucketName
+  -> Text
+  -> ObjectKey
+  -> m CopyObjectResponse
+copyObj buck objFrom objTo = send $ copyObject buck objFrom objTo
 
 -- | Upload a whole folder to an s3 bucket
-uploadFolder :: (MonadAWS m, AWSConstraint r m)
+uploadFolder :: (MonadAWS m, MonadResource m)
                 => FilePath -- ^ Local folder to copy
                 -> BucketName -- ^ Bucket to copy to
                 -> FilePath -- ^ Remote path to copy the content of the folder in
@@ -76,13 +103,24 @@ uploadFolder srcFolder destBucket destPath =
   & S.mapM_ (\f -> do
                 let
                   objectName = destPath </> f
-                crs <- uploadObj destBucket (fromString objectName) $ BSS.readFile f
+                (crs,_) <- uploadObj destBucket (fromString objectName) $ BSS.readFile f
                 liftIO $ putStrLn $
                   if view porsResponseStatus crs == 200
                   then objectName ++ " uploaded."
                   else objectName ++ " upload failed.")
 
-downloadFolder :: (MonadAWS m, AWSConstraint r m)
+streamS3Folder ::
+     MonadAWS m => BucketName -> Maybe FilePath -> Stream (Of FilePath) m ()
+streamS3Folder bucketName prefix = do
+  let listCommand = LO.listObjects bucketName
+                      & LO.loPrefix .~ ((fromString . normalise) <$> prefix)
+  rs <- lift $ liftAWS $ send listCommand
+  view LO.lorsContents rs
+    & S.each
+    & S.map (view oKey)
+    & S.map (\(ObjectKey k) -> T.unpack k)
+
+downloadFolder :: (MonadAWS m, MonadResource m)
                   => BucketName
                   -> Maybe FilePath -- ^ The folder to download
                   -> FilePath -- ^ The path in which to save the download
@@ -96,7 +134,7 @@ downloadFolder srcBuck srcPath dest =
                 liftIO $ createDirectoryIfMissing True $ takeDirectory outFile
                 streamObjIntoExt srcBuck (fromString f) $ BSS.writeFile outFile)
 
-streamObjInto :: (MonadAWS m, AWSConstraint r m)
+streamObjInto :: (MonadAWS m)
                  => BucketName
                  -> ObjectKey
                  -> (BSS.ByteString m () -> m b)
@@ -138,7 +176,7 @@ retry awsRetry action =
   retrying retryPolicy shouldRetry (const action)
 
 
-streamObjIntoExt :: (MonadAWS m, AWSConstraint r m)
+streamObjIntoExt :: (MonadAWS m)
                      => BucketName
                      -> ObjectKey
                      -> (BSS.ByteString m () -> m b)

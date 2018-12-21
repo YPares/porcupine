@@ -18,6 +18,7 @@ module System.TaskPipeline.CLI
   , withCliParser
   , pipelineCliParser
 
+  , pipelineConfigMethodProgName
   , pipelineConfigMethodDefRoot
   , tryGetConfigFileOnCLI
   ) where
@@ -54,19 +55,31 @@ data PipelineCommand r where
 -- result of the Pipeline, which must be a Monoid in case the CLI runs because
 -- the user might ask for simply saving the config file.
 --
--- NoConfig: No CLI, no Yaml file are used, in which case the root directory
--- should be specified
+-- NoConfig: No CLI, no Yaml file are used, in which case we require a program
+-- name and the root directory.
 --
--- FullConfig: We require the config file path, default 'LocationTree' root mapping, and a
--- way to override ModelOpts arguments from CLI and config file.
+-- FullConfig: We require a name (for the help page in the CLI), the config file
+-- path, default 'LocationTree' root mapping, and a way to override ModelOpts
+-- arguments from CLI and config file.
+--
+-- Program names can be empty.
 data PipelineConfigMethod r where
-  NoConfig :: Loc -> PipelineConfigMethod r
-  FullConfig :: (Monoid r) => LocalFilePath -> Loc -> PipelineConfigMethod r
+  NoConfig :: String -> Loc -> PipelineConfigMethod r
+  FullConfig :: (Monoid r)
+             => String
+             -> LocalFilePath
+             -> Loc
+             -> PipelineConfigMethod r
 
--- | Set the default Loc that should be bound to the top of the 'LocationTree'
-pipelineConfigMethodDefRoot :: Traversal' (PipelineConfigMethod r) Loc
-pipelineConfigMethodDefRoot f (FullConfig s r) = FullConfig s <$> f r
-pipelineConfigMethodDefRoot f (NoConfig r    ) = NoConfig <$> f r
+-- | Get/set the program name in the 'PipelineConfigMethod'
+pipelineConfigMethodProgName :: Lens' (PipelineConfigMethod r) String
+pipelineConfigMethodProgName f (FullConfig n s r) = (\n' -> FullConfig n' s r) <$> f n
+pipelineConfigMethodProgName f (NoConfig n r    ) = (\n' -> NoConfig n' r) <$> f n
+
+-- | Get/set the default Loc that should be bound to the top of the 'LocationTree'
+pipelineConfigMethodDefRoot :: Lens' (PipelineConfigMethod r) Loc
+pipelineConfigMethodDefRoot f (FullConfig n s r) = FullConfig n s <$> f r
+pipelineConfigMethodDefRoot f (NoConfig n r    ) = NoConfig n <$> f r
 
 -- | Runs the new ModelCLI unless a Yaml or Json config file is given on the
 -- command line
@@ -331,8 +344,7 @@ mergeWithDefault path (Object o1) (Object o2) =
 mergeWithDefault _ _ v = pure v
 
 -- | Tries to read a yaml filepath on CLI, then a JSON path, then command line
--- args as expected by the @callParser@ argument. If a filepath is found, this
--- can be an S3 location or a local filepath.
+-- args as expected by the @callParser@ argument.
 tryGetConfigFileOnCLI
   :: (Maybe LocalFilePath -> IO b)  -- If a filepath has been read as first argument
   -> IO b
