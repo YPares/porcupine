@@ -21,7 +21,7 @@ module Data.Locations.VirtualFile
   , vfileOriginalPath, showVFileOriginalPath
   , vfileLayeredReadScheme
   , vfileVoided
-  , vfiOnReadSuccess, vfiOnWriteSuccess, vfiOnError
+  , vfiReadSuccess, vfiWriteSuccess, vfiError
   , dataSource, dataSink, bidirVirtualFile, ensureBidirFile
   , makeSink, makeSource
   , documentedFile
@@ -67,9 +67,9 @@ data LayeredReadScheme b where
 
 -- | Tells how the accesses to this 'VirtualFile' should be logged
 data VFileImportance = VFileImportance
-  { _vfiOnReadSuccess  :: Severity
-  , _vfiOnWriteSuccess :: Severity
-  , _vfiOnError        :: Severity }
+  { _vfiReadSuccess  :: Severity
+  , _vfiWriteSuccess :: Severity
+  , _vfiError        :: Severity }
 
 makeLenses ''VFileImportance
 
