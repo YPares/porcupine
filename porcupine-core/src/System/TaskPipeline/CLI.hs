@@ -172,7 +172,7 @@ pureCliParser progName mcfg configFile defCfg cfgCLIParsing cmds defCmd =
   subparser
   ( command "write-config-template"
     (info
-      (pure (Nothing, defaultLoggerScribeParams, [PostParsingWrite configFile defCfg]))
+      (pure (Nothing, maxVerbosityLoggerScribeParams, [PostParsingWrite configFile defCfg]))
       (progDesc $ "Write a default configuration file in " <> configFile')))
   <|>
   handleOptions progName configFile mcfg defCfg cliOverriding <$>
