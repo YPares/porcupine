@@ -18,6 +18,7 @@ module Data.Locations.VirtualFile
   , vfileAsBidir, vfileAsBidirE, vfileImportance
   , vfileEmbeddedValue, vfileIntermediaryValue, vfileAesonValue
   , vfilePath, showVFilePath, vfileLayeredReadScheme
+  , vfiOnReadSuccess, vfiOnWriteSuccess, vfiOnError
   , dataSource, dataSink, bidirVirtualFile, ensureBidirFile
   , makeSink, makeSource
   , documentedFile
@@ -97,9 +98,9 @@ instance HasDefaultMappingRule (VirtualFile a b) where
         -- the serials has the same repetition keys
         Just rkeys -> DeriveLocPrefixFromTree $
           let toVar rkey = LocBitVarRef rkey
-              ls = LocString $ (LocBitChunk "-")
-                   : intersperse (LocBitChunk "-") (map toVar rkeys)
-          in LocFilePath ls $ T.unpack defExt
+              locStr = LocString $ (LocBitChunk "-")
+                       : intersperse (LocBitChunk "-") (map toVar rkeys)
+          in LocFilePath locStr $ T.unpack defExt
     else Nothing
     where
       defExt =
