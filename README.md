@@ -2,15 +2,14 @@
 
 [![CircleCI](https://circleci.com/gh/tweag/porcupine/tree/master.svg?style=svg)](https://circleci.com/gh/tweag/porcupine/tree/master)
 
-Porcupine stands for _Portable, Reusable & Customizable Pipeline_. It
-is a tool aimed at data scientists and numerical analysts, so that
-they can express general data manipulation and analysis tasks,
+Porcupine stands for _Portable, Reusable & Customizable Pipeline_. It is a tool
+aimed at data scientists and numerical analysts, so that they can express
+general data manipulation and analysis tasks,
 
 1. in a way that is agnostic from the source of the input data and
 from the destination of the end results,
-2. such that a pipeline can be re-executed in a different environment
-and on different data without recompiling, by just a shift in its
-configuration,
+2. such that a pipeline can be re-executed in a different environment and on
+different data without recompiling, by just a shift in its configuration,
 3. while maintaining composability (any task can always be reused as
 a subtask of a greater task pipeline).
 
@@ -23,29 +22,20 @@ A `SerialsFor a b` encompasses functions to write data of type `a` and read data
 of type `b`. Porcupine provides a few serials if your datatype already
 implements standard serialization interfaces, such as `aeson`'s `To/FromJSON` or
 `binary`, and makes it easy to reuse custom serialization functions you might
-already have.
+already have. A `SerialsFor A B` is a collection of `A -> i` and `i -> B`
+functions, where `i` can be any intermediary type, most often `ByteString`,
+`Data.Aeson.Value` or `Text`.
 
-TODO: What's the type of the encoding and decoding functions? `ByteString -> b`
-and `a -> ByteString`? Probably related to my confusion better explained in the
-following TODO.
-
-TODO: Explain what a `serial` is?
-
-`SerialsFor` is a [profunctor][profunctor]. That means that once you know how to (de)serialize
-an `A` (ie. if you have a `SerialsFor A A`), then you can just use `dimap` to
-get a `SerialsFor B B` if you know how to convert `A` to & from `B`. Handling
-only one-way serialization or deserialization is perfectly possible, that just mean you
-will have `SerialsFor Void B` or `SerialsFor A ()` and use only `lmap` or `rmap`. Any `SerialsFor a b` is also
-a monoid, meaning that you can for instance gather default serials, or serials
-from an external source and add to them your custom serialization methods,
-before using it in a task pipeline.
-
-TODO: If `SerialsFor A B` is a monoid, what's the meaning of `<>` and `empty`?
-This is the first time it surfaces that a `SerialsFor` does not wrap a function
-to encode and a function to decode, it seems to wrap multiple functions to encode
-and multiple functions to decode. It needs to be better conveyed. Also I have
-no intuition on how the encoding/deconding functions are meant to be picked for
-a particular use.
+`SerialsFor` is a [profunctor][profunctor]. That means that once you know how to
+(de)serialize an `A` (ie. if you have a `SerialsFor A A`), then you can just use
+`dimap` to get a `SerialsFor B B` if you know how to convert `A` to & from
+`B`. Handling only one-way serialization or deserialization is perfectly
+possible, that just mean you will have `SerialsFor Void B` or `SerialsFor A ()`
+and use only `lmap` or `rmap`. Any `SerialsFor a b` is also a semigroup, where
+`(<>)` merges together the collections of serialization functions they contain,
+meaning that you can for instance gather default serials, or serials from an
+external source and add to them your custom serialization methods, before using
+it in a task pipeline.
 
 [profunctor]: https://www.stackage.org/haddock/lts-12.21/lens-4.16.1/Control-Lens-Combinators.html#t:Profunctor
 
@@ -60,80 +50,73 @@ pipeline so that it can deal with more data sources.
 
 ## Resource tree
 
-Every task in Porcupine exposes a resource tree. This a morally a hierarchy of
-`VirtualFiles`, which the end user of the task pipeline (the one who runs the executable)
-can bind to physical
-locations. However this tree isn't created manually by the developper of the
-pipeline, it's completely hidden from them. This tree is made of atomic bits
-(constructed by the primitive tasks) which are composed when tasks are composed
-together to create the whole pipeline.
+Every task in Porcupine exposes a resource tree. Resources are represented in
+porcupine by `VirtualFile`s, and a resource tree is a hierarchy (like a
+filesystem) of `VirtualFiles`. A `VirtualFile a b` just groups together a
+logical path and a `SerialsFor a b`, so it just something with an identifier
+(like `"/Inputs/Config"` or `"/Ouputs/Results"`) in which we can write a `A`
+and/or from which we can read a `B`. We say the path is "logical" because it
+doesn't necessary have to correspond to some physical path on the hard drive: in
+the end, the user of the task pipeline (the one who runs the executable) will
+bind each logical path to a physical location. Besides, a `VirtualFile` doesn't
+even have to correspond in the end to an actual file, as for instance you can
+map an entry in a database to a `VirtualFile`. However, paths are a convenient
+and customary way to organise resources, and we can conveniently use them as a
+default layout for when your logical paths do correspond to actual paths on your
+hard drive.
 
-TODO: I don't get what a `VirtualFile` is. The paragraph makes it sound as a
-resource parameter of the pipeline. The paragraph below adds that it is a thin
-layer over `SerialFor`, which doesn't help either. In either case, it is not
-clear what is virtual-like and what is file-like in a `VirtualFile`.
-
-TODO: Some concepts haven't been introduced yet in the above paragraph.
-I don't know what a "primitive task" or an "atomic bit" is. I'm wondering
-if this section would work better after the one about tasks.
-
-TODO: If the tree is hidden from the programmer, is it an implementation detail?
-The paragraph is not making clear why should she care of a hierarchy of `VirtualFiles`.
-
-TODO: Explain what is the relation between VirtualFiles which constitutes the
-hierarchy? The last part of the paragraph seems to hint that a subtask
-relation is involved, but this relates tasks, not VirtualFiles.
-
-Once the user has their serials, they just need to create a `VirtualFile` (a
-thin layer over `SerialsFor`, which is also a profunctor). For instance, this is
-how you create a readonly resource that can only be mapped to a JSON file in the
-end:
+So once the user has their serials, they just need to create a
+`VirtualFile`. For instance, this is how you create a readonly resource that can
+only be mapped to a JSON file in the end:
 
 ```haskell
-myInput :: VirtualFile Void MyType
-	-- MyType must be an instance of FromJSON here
+myInput :: VirtualFile Void MyConfig
+	-- MyConfig must be an instance of FromJSON here
 myInput = dataSource
-            ["Inputs", "MyInput"] -- A virtual path
+            ["Inputs", "Config"] -- The logical path '/Inputs/Config'
 	        (somePureDeserial JSONSerial)
+
+somePureDeserial :: (DeserializesWith s a) => s -> SerialsFor Void a
+dataSource :: [LocationTreePathItem] -> SerialsFor a b -> DataSource b
 ```
-
-TODO: Show type signatures of `dataSource` and `somePureDeserial`?
-
-And then, using `myInput` in a task pipeline is just a matter of calling the
-primitive task `accessVirtualFile myInput`, and the whole pipeline will expose
-a new `/Inputs/MyInput` virtual file. `accessVirtualFile` just turns a
-`VirtualFile a b` into a `PTask a b`.
-
-TODO: Not knowing what a `PTask` is, and what the meaning is of having a
-pipeline expose a virtual file, this paragraph should probably be removed
-or placed later.
 
 ## Tasks
 
-A `PTask` is an arrow. Atomic `PTasks` can access resources, as we saw, or
-perform computations, as any pure function can be lifted. Each `PTask` will
-expose its requirements (in the form of a resource tree) and a function that will
-actually execute the task when the pipeline runs. `PTasks` compose much like
-functions do, and they merge their requirements as they compose.
+A `PTask` is an arrow, that is to say a computation with an input and an
+output. Here we just call these computation "tasks". PTasks run in a base monad
+`m` that can depend on the application but that should always implement
+`KatipContext` (for logging), `MonadCatch`, `MonadResource` and `MonadUnliftIO`.
 
-TODO: Explain that an arrow is a computation with an input and an output.
+This is how we create a task that reads the `myInput` VirtualFile we defined
+previously:
 
-TODO: What means that a PTask is atomic? I'm guessing that it means it is
-not built from composing other PTasks. It is possibly best to choose one of
-primitive and atomic to refer to these tasks consistently (primitive could
-be better if this has nothing to do with atomicity in transactions).
+```haskell
+readMyConfig :: (KatipContext m, MonadThrow m)
+	         => PTask m () MyConfig
+  -- The input of the task is just (), as we are just reading something
+readMyConfig = loadData myInput
+```
 
-TODO: Provide a an overview of the major groups of primitive operations that
-are avaialble.
+This task reads the actual physical location bound to `/Input/Config` and
+returns its content as a value of type `MyConfig`.
+
+So `PTasks` can access resources or perform computations, as any pure function
+`(a -> b)` can be lifted to a `PTask m a b`. Each `PTask` will expose the
+VirtualFiles it accesses (we call them the _requirements_ of the task, as it
+requires these files to be present and bound to physical locations so it can
+run) in the form of a resource tree. `PTasks` compose much like functions do,
+and they merge their requirements as they compose, so in the end if you whole
+application runs in a `PTask`, then it will expose and make bindable the
+totality of the resources accessed by your application.
 
 Once you have e.g. a `mainTask :: PTask () ()` that corresponds to your whole
 pipeline, your application just needs to call:
 
 ```haskell
 main :: IO ()
-main = runPipelineTask "myApp" cfg mainTask ()
+main = runPipelineTask cfg mainTask ()
   where
-    cfg = FullConfig "pipeline-config.yaml" "./default-root-dir"
+    cfg = FullConfig "MyApp" "pipeline-config.yaml" "./default-root-dir"
 ```
 
 ## Running a Porcupine application
