@@ -56,8 +56,7 @@ import           GHC.TypeLits
 import           Katip
 import qualified System.FilePath                   as Path
 import qualified System.IO.Temp                    as Tmp
-import           System.TaskPipeline.Logger        (defaultLoggerScribeParams,
-                                                    runLogger)
+import           System.TaskPipeline.Logger
 
 
 -- | Creates some Loc type, indexed over a symbol (see ReaderSoup for how that
@@ -168,7 +167,7 @@ type BasePorcupineContexts =
 -- | Use it as the base of the record you give to 'runPipelineTask'. Use '(:&)'
 -- to stack other contexts and LocationAccessors on top of it
 baseContexts topNamespace =
-     #katip    <-- ContextRunner (runLogger topNamespace defaultLoggerScribeParams)
+     #katip    <-- ContextRunner (runLogger topNamespace maxVerbosityLoggerScribeParams)
   :& #resource <-- useResource
   :& RNil
 

@@ -7,7 +7,7 @@ module System.TaskPipeline.Logger
   , LoggerFormat(..)
   , Severity(..)
   , Verbosity(..)
-  , defaultLoggerScribeParams
+  , maxVerbosityLoggerScribeParams
   , log
   , runLogger
   ) where
@@ -43,9 +43,9 @@ data LoggerScribeParams = LoggerScribeParams
   }
   deriving (Eq, Show)
 
--- | Default LoggerScribeParams shows log message from Debug level, with maximum verbosity.
-defaultLoggerScribeParams :: LoggerScribeParams
-defaultLoggerScribeParams = LoggerScribeParams DebugS V3 PrettyLog
+-- | Show log message from Debug level, with maximum verbosity.
+maxVerbosityLoggerScribeParams :: LoggerScribeParams
+maxVerbosityLoggerScribeParams = LoggerScribeParams DebugS V3 PrettyLog
 
 -- | Starts a logger.
 runLogger
