@@ -34,7 +34,7 @@ jinko_haskell_library(
         [
             "@hackage//:base",
             "@hackage//:lens",
-            "@hackage//:exceptions",
+            "@hackage//:safe-exceptions",
             "@hackage//:transformers",
             "@hackage//:transformers-base",
             "@hackage//:mtl",
@@ -66,7 +66,6 @@ jinko_haskell_library(
             "@hackage//:data-default",
             "@hackage//:deepseq",
             "@hackage//:directory",
-            "@hackage//:exceptions",
             "@hackage//:filepath",
             "@hackage//:funflow",
             "@hackage//:formatting",
@@ -110,7 +109,7 @@ jinko_haskell_library(
         [
             "@hackage//:base",
             "@hackage//:mtl",
-            "@hackage//:exceptions",
+            "@hackage//:safe-exceptions",
             "@hackage//:amazonka",
             "@hackage//:amazonka-core",
             "@hackage//:amazonka-s3",

@@ -26,6 +26,7 @@ module System.TaskPipeline.PTask
   , Properties
   , tryPTask, throwPTask, clockPTask
   , unsafeLiftToPTask, unsafeLiftToPTask', unsafeRunIOTask
+  , ptaskUsedFiles
   , ptaskRequirements
   , ptaskRunnable
   , ptaskDataAccessTree
@@ -52,8 +53,8 @@ import           Data.String
 import           Katip
 import           System.Clock
 import           System.TaskPipeline.PTask.Internal
-import           System.TaskPipeline.ResourceTree   (DataAccessNode,
-                                                     VirtualFileNode)
+import           System.TaskPipeline.ResourceTree
+
 
 -- | a tasks that discards its inputs and returns ()
 voidTask :: PTask m a ()
@@ -119,6 +120,12 @@ logTask = unsafeLiftToPTask $ \(sev, s) -> logFM sev $ logStr s
 -- | To access and transform the requirements of the PTask before it runs
 ptaskRequirements :: Lens' (PTask m a b) (LocationTree VirtualFileNode)
 ptaskRequirements = splittedPTask . _1
+
+-- | To access and transform all the 'VirtualFiles' used by this 'PTask'. The
+-- parameters of the VirtualFiles will remain hidden, but all the metadata is
+-- accessible. NOTE: The original path of the files isn't settable.
+ptaskUsedFiles :: Traversal' (PTask m a b) (VirtualFile Void ())
+ptaskUsedFiles = ptaskRequirements . traversed . vfnodeFileVoided
 
 ptaskRunnable :: Lens (PTask m a b) (PTask m a' b')
                       (RunnablePTask m a b) (RunnablePTask m a' b')

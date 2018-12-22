@@ -19,8 +19,8 @@ module Data.Locations.Accessors.AWS
   , runReadLazyByte_
   ) where
 
+import           Control.Exception.Safe
 import           Control.Lens
-import           Control.Monad.Catch
 import           Control.Monad.IO.Class
 import           Control.Monad.ReaderSoup
 import           Control.Monad.ReaderSoup.AWS
@@ -75,26 +75,29 @@ readBSS_S3
   :: (MonadAWS m)
   => Loc
   -> (BSS.ByteString m () -> m b)
-  -> m (Either Error b)
-readBSS_S3 obj@S3Obj{ bucketName, objectName } k =
-  mapLeft (Error obj . OtherError . displayException) <$> S3.streamObjInto
-        (fromString bucketName)
-        (fromString $ objectName ^. locFilePathAsRawFilePath)
-        k
+  -> m b
+readBSS_S3 S3Obj{ bucketName, objectName } k = do
+  r <- S3.streamObjInto
+         (fromString bucketName)
+         (fromString $ objectName ^. locFilePathAsRawFilePath)
+         k
+  case r of
+    Left e  -> throw e
+    Right r -> return r
 readBSS_S3 _ _ = undefined
 
 copy_S3
   :: (MonadResource m, MonadAWS m)
   => Loc
   -> Loc
-  -> m (Either Error ())
+  -> m ()
 copy_S3 locFrom@(S3Obj bucket1 obj1) locTo@(S3Obj bucket2 obj2)
   | bucket1 == bucket2 = do
-    _ <- S3.copyObj
-          (fromString bucket1)
-          (fromString $ obj1^.locFilePathAsRawFilePath)
-          (fromString $ obj2^.locFilePathAsRawFilePath)
-    pure (Right ())
+      _ <- S3.copyObj
+             (fromString bucket1)
+             (fromString $ obj1^.locFilePathAsRawFilePath)
+             (fromString $ obj2^.locFilePathAsRawFilePath)
+      return ()
   | otherwise = readBSS_S3 locFrom (writeBSS_S3 locTo)
 copy_S3 _ _ = undefined
 
@@ -126,9 +129,9 @@ runWriteLazyByte
 runWriteLazyByte l bs = selectRun l True $ writeLazyByte l bs
 
 -- | Just a shortcut
-runReadLazyByte :: Loc -> IO (Either Error LBS.ByteString)
+runReadLazyByte :: Loc -> IO LBS.ByteString
 runReadLazyByte l = selectRun l True $ readLazyByte l
 
 -- | Just a shortcut
 runReadLazyByte_ :: Loc -> IO LBS.ByteString
-runReadLazyByte_ l = selectRun l True $ readLazyByte_ l
+runReadLazyByte_ l = selectRun l True $ readLazyByte l

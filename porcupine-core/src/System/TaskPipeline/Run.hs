@@ -23,7 +23,6 @@ module System.TaskPipeline.Run
   ) where
 
 import           Control.Lens
-import           Control.Monad.Catch
 import           Control.Monad.IO.Class
 import           Control.Monad.ReaderSoup
 import           Control.Monad.ReaderSoup.Katip     ()

@@ -55,9 +55,9 @@ module Control.Monad.ReaderSoup
   , fromLabel
   ) where
 
+import           Control.Exception.Safe
 import           Control.Lens                (over)
 import           Control.Monad.Base          (MonadBase)
-import           Control.Monad.Catch
 import           Control.Monad.IO.Unlift
 import           Control.Monad.Morph         (hoist)
 import           Control.Monad.Reader.Class

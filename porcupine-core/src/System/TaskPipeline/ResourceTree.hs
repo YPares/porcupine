@@ -54,9 +54,9 @@
 
 module System.TaskPipeline.ResourceTree where
 
+import           Control.Exception.Safe
 import           Control.Lens                            hiding ((<.>))
 import           Control.Monad
-import           Control.Monad.Catch
 import           Data.Aeson
 import           Data.DocRecord
 import           Data.DocRecord.OptParse
@@ -111,6 +111,13 @@ data VirtualFileNode = MbVirtualFileNode [VFNodeAccessType] (Maybe SomeVirtualFi
 -- | A non-empty 'VirtualFileNode'
 pattern VirtualFileNode {vfnodeAccesses, vfnodeFile} =
   MbVirtualFileNode vfnodeAccesses (Just (SomeVirtualFile vfnodeFile))
+
+-- | vfnodeFile is a @Traversal'@ into the VirtualFile contained in a
+-- VirtualFileNode, but hiding it's real read/write types.
+vfnodeFileVoided :: Traversal' VirtualFileNode (VirtualFile Void ())
+vfnodeFileVoided f (VirtualFileNode at vf) =
+  VirtualFileNode at <$> vfileVoided f vf
+vfnodeFileVoided _ vfn = pure vfn
 
 -- | The nodes of the ResourceTree, after mapping each 'VirtualFiles' to
 -- physical locations
@@ -418,15 +425,15 @@ data DataAccessContext = DAC
 instance ToJSON DataAccessContext
 instance ToObject DataAccessContext
 instance LogItem DataAccessContext where
-  payloadKeys V3 _ = AllKeys
-  payloadKeys V2 _ = SomeKeys ["locationAccessed"]
-  payloadKeys V1 _ = SomeKeys ["locationAccessed"]
-  --  payloadKeys v _ | v >= V1 = SomeKeys ["locationAccessed"]
-  payloadKeys V0 _ = SomeKeys []
+  payloadKeys v _
+    | v == V3   = AllKeys
+    | v >= V1   = SomeKeys ["locationAccessed"]
+    | otherwise = SomeKeys []
 
 makeDataAccessor
-  :: (LocationMonad m, KatipContext m)
+  :: (LocationMonad m, LogMask m)
   => String  -- ^ VirtualFile path (for doc)
+  -> VFileImportance  -- ^ How to log the accesses
   -> [LocWithVars]  -- ^ Every mapped layer (for doc)
   -> Maybe b -- ^ Default value (used as base layer)
   -> LayeredReadScheme b  -- ^ How to handle the different layers
@@ -434,23 +441,28 @@ makeDataAccessor
   -> [(ReadFromLoc b, LocWithVars)] -- ^ Layers to read from
   -> LocVariableMap  -- ^ The map of the values of the repetition indices
   -> DataAccessor m a b
-makeDataAccessor vpath layers mbDefVal readScheme writeLocs readLocs repetKeyMap =
+makeDataAccessor vpath (VFileImportance sevRead sevWrite sevError)
+                 layers mbDefVal readScheme writeLocs readLocs repetKeyMap =
   DataAccessor{..}
   where
     daLocsAccessed = traverse (fillLoc' repetKeyMap) layers
     daPerformWrite input = do
         forM_ writeLocs $ \(WriteToLoc rkeys f, loc) -> do
           loc' <- fillLoc repetKeyMap loc
-          katipAddContext (DAC (show loc) rkeys repetKeyMap (show loc')) $ do
-            f input loc'
-            logFM NoticeS $ logStr $ "Wrote '" ++ show loc' ++ "'"
+          katipAddNamespace "dataAccessor" $ katipAddNamespace "writer" $
+            katipAddContext (DAC (show loc) rkeys repetKeyMap (show loc')) $ do
+              withException (f input loc') $ \ioError ->
+                logFM sevError $ logStr $ displayException (ioError :: IOException)
+              logFM sevWrite $ logStr $ "Wrote '" ++ show loc' ++ "'"
     daPerformRead = do
         dataFromLayers <- forM readLocs (\(ReadFromLoc rkeys f, loc) -> do
           loc' <- fillLoc repetKeyMap loc
-          katipAddContext (DAC (show loc) rkeys repetKeyMap (show loc')) $ do
-            r <- f loc'
-            logFM DebugS $ logStr $ "Read '" ++ show loc' ++ "'"
-            return r)
+          katipAddNamespace "dataAccessor" $ katipAddNamespace "reader" $
+            katipAddContext (DAC (show loc) rkeys repetKeyMap (show loc')) $ do
+              r <- withException (f loc') $ \ioError ->
+                logFM sevError $ logStr $ displayException (ioError :: IOException)
+              logFM sevRead $ logStr $ "Read '" ++ show loc' ++ "'"
+              return r)
         let embeddedValAndLayers = maybe id (:) mbDefVal dataFromLayers
         case (readScheme, embeddedValAndLayers) of
           (_, [x]) -> return x
@@ -494,14 +506,14 @@ resolveDataAccess (PhysicalFileNode layers vf) = do
   readLocs <- findFunctions readers
   return $
     DataAccessNode layers $
-      makeDataAccessor vpath layers
+      makeDataAccessor vpath (vf^.vfileImportance) layers
                        mbEmbeddedVal readScheme
                        writeLocs readLocs
   where
     readScheme = vf ^. vfileLayeredReadScheme
     mbEmbeddedVal = vf ^? vfileEmbeddedValue
 
-    vpath = T.unpack $ toTextRepr $ LTP $ vf ^. vfilePath
+    vpath = T.unpack $ toTextRepr $ LTP $ vf ^. vfileOriginalPath
 
     readers = vf ^. vfileSerials . serialReaders . serialReadersFromInputFile
     writers = vf ^. vfileSerials . serialWriters . serialWritersToOutputFile

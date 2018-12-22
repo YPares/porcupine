@@ -13,7 +13,7 @@ module Control.Monad.ReaderSoup.AWS
   , useAWS
   ) where
 
-import           Control.Monad.Catch
+import           Control.Exception.Safe
 import           Control.Monad.Reader
 import           Control.Monad.ReaderSoup
 import           Control.Monad.ReaderSoup.Resource ()

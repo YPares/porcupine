@@ -15,7 +15,6 @@ module System.TaskPipeline.Caching
 import qualified Control.Exception.Safe                as SE
 import           Control.Funflow
 import           Control.Lens                          (over, traversed)
-import           Control.Monad.Catch
 import           Data.Default                          (Default (..))
 import           Data.Locations.Loc
 import           Data.Locations.LogAndErrors
@@ -48,7 +47,7 @@ cacheWithVFile props inputHashablePart vf action = proc input -> do
       let accessor = getAccessor mempty
       locs <- case daLocsAccessed accessor of
         Left e  -> throwWithPrefix $
-          "cacheWithVFile (" ++ showVFilePath vf ++ "): " ++ e
+          "cacheWithVFile (" ++ showVFileOriginalPath vf ++ "): " ++ e
         Right r -> return r
       return (map (over traversed T.pack) locs, accessor)
 

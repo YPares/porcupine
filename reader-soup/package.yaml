@@ -12,7 +12,7 @@ ghc-options: -Wall
 dependencies:
   - base
   - lens
-  - exceptions
+  - safe-exceptions
   - transformers
   - transformers-base
   - mtl
