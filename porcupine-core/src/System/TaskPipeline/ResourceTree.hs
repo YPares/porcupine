@@ -8,6 +8,7 @@
 {-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TupleSections       #-}
+{-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE ViewPatterns        #-}
 {-# OPTIONS_GHC -fno-warn-missing-pattern-synonym-signatures #-}
 {-# OPTIONS_GHC -fno-warn-name-shadowing #-}
@@ -55,9 +56,11 @@
 module System.TaskPipeline.ResourceTree where
 
 import           Control.Exception.Safe
-import           Control.Lens                            hiding ((<.>))
+import           Control.Lens                            hiding ((<.>), (:>))
 import           Control.Monad
 import           Data.Aeson
+import           Data.ByteString                         (ByteString)
+import qualified Data.ByteString.Streaming               as BSS
 import           Data.DocRecord
 import           Data.DocRecord.OptParse
 import qualified Data.HashMap.Strict                     as HM
@@ -71,6 +74,7 @@ import           Data.Typeable
 import           GHC.Generics                            (Generic)
 import           Katip
 import           Options.Applicative
+import           Streaming
 import           System.TaskPipeline.ConfigurationReader
 
 
@@ -431,14 +435,14 @@ instance LogItem DataAccessContext where
     | otherwise = SomeKeys []
 
 makeDataAccessor
-  :: (LocationMonad m, LogMask m)
+  :: forall m a b. (LocationMonad m, LogMask m)
   => String  -- ^ VirtualFile path (for doc)
   -> VFileImportance  -- ^ How to log the accesses
   -> [LocWithVars]  -- ^ Every mapped layer (for doc)
   -> Maybe b -- ^ Default value (used as base layer)
   -> LayeredReadScheme b  -- ^ How to handle the different layers
   -> [(WriteToLoc a, LocWithVars)]  -- ^ Layers to write to
-  -> [(ReadFromLoc b, LocWithVars)] -- ^ Layers to read from
+  -> [(FromStreamFn b, LocWithVars)] -- ^ Layers to read from
   -> LocVariableMap  -- ^ The map of the values of the repetition indices
   -> DataAccessor m a b
 makeDataAccessor vpath (VFileImportance sevRead sevWrite sevError)
@@ -455,14 +459,18 @@ makeDataAccessor vpath (VFileImportance sevRead sevWrite sevError)
                 logFM sevError $ logStr $ displayException (ioError :: IOException)
               logFM sevWrite $ logStr $ "Wrote '" ++ show loc' ++ "'"
     daPerformRead = do
-        dataFromLayers <- forM readLocs (\(ReadFromLoc rkeys f, loc) -> do
-          loc' <- fillLoc repetKeyMap loc
-          katipAddNamespace "dataAccessor" $ katipAddNamespace "reader" $
-            katipAddContext (DAC (show loc) rkeys repetKeyMap (show loc')) $ do
-              r <- withException (f loc') $ \ioError ->
-                logFM sevError $ logStr $ displayException (ioError :: IOException)
-              logFM sevRead $ logStr $ "Read '" ++ show loc' ++ "'"
-              return r)
+        dataFromLayers <- forM readLocs (\(FromStreamFn {-rkeys-} (f :: Stream (Of i) m () -> m (Of b ())), loc) ->
+          case eqT :: Maybe (i :~: ByteString) of
+            Nothing -> error "makeDataAccessor: Some stream reader isn't expecting a stream of ByteStrings"
+            Just Refl -> do
+              loc' <- fillLoc repetKeyMap loc
+              katipAddNamespace "dataAccessor" $ katipAddNamespace "reader" $
+                katipAddContext (DAC (show loc) {-rkeys-}mempty repetKeyMap (show loc')) $ do
+                  let runRead = readBSS loc' (f . BSS.toChunks)
+                  (r :> ()) <- withException runRead $ \ioError ->
+                    logFM sevError $ logStr $ displayException (ioError :: IOException)
+                  logFM sevRead $ logStr $ "Read '" ++ show loc' ++ "'"
+                  return r)
         let embeddedValAndLayers = maybe id (:) mbDefVal dataFromLayers
         case (readScheme, embeddedValAndLayers) of
           (_, [x]) -> return x
@@ -501,7 +509,7 @@ resolveDataAccess (PhysicalFileNode layers vf) = do
                 vpath ++ " cannot be mapped to null. It doesn't contain any default value."
     _ -> return ()
   -- Then, that we aren't writing to an unsupported filetype:
-  writeLocs <- findFunctions writers
+  writeLocs <- findFunctions' writers
   -- And finally, that we aren't reading from an unsupported filetype:
   readLocs <- findFunctions readers
   return $
@@ -515,11 +523,13 @@ resolveDataAccess (PhysicalFileNode layers vf) = do
 
     vpath = T.unpack $ toTextRepr $ LTP $ vf ^. vfileOriginalPath
 
-    readers = vf ^. vfileSerials . serialReaders . serialReadersFromInputFile
+    readers = vf ^. vfileSerials . serialReaders . serialReadersFromStream
     writers = vf ^. vfileSerials . serialWriters . serialWritersToOutputFile
 
-    findFunctions :: HM.HashMap FileExt v -> m' [(v, LocWithVars)]
-    findFunctions hm | HM.null hm = return []
+    -- TODO: remove it when writers are handled like readers, without
+    -- LocationMonad:
+    findFunctions' :: HM.HashMap FileExt v -> m' [(v, LocWithVars)]
+    findFunctions' hm | HM.null hm = return []
                      | otherwise  = mapM findFunction layers
       where
         findFunction loc = case HM.lookup (T.pack $ loc ^. locExt) hm of
@@ -530,5 +540,20 @@ resolveDataAccess (PhysicalFileNode layers vf) = do
             " which doesn't support extension '" ++ (loc^.locExt) ++
             "'. Accepted file extensions here are: " ++
             mconcat (intersperse "," (map T.unpack $ HM.keys hm)) ++ "."
+  
+    findFunctions :: HM.HashMap (TypeRep,Maybe FileExt) v -> m' [(v, LocWithVars)]
+    findFunctions hm | HM.null hm = return []
+                     | otherwise  = mapM findFunction layers
+      where
+        bsTypeRep = typeOf (undefined :: ByteString)
+        findFunction loc = case HM.lookup (bsTypeRep, Just $ T.pack $ loc ^. locExt) hm of
+          Just f -> return (f, loc)
+          -- TODO: add VirtualFile path to error
+          Nothing -> throwM $ TaskConstructionError $
+            show loc ++ " is bound to " ++ vpath ++
+            " which doesn't support extension '" ++ (loc^.locExt) ++
+            "'. Accepted file extensions here are: " ++
+            mconcat (intersperse "," [T.unpack ext | (_,Just ext) <- HM.keys hm]) ++ "."
+
 resolveDataAccess (MbPhysicalFileNode locs _) =
   return $ MbDataAccessNode locs $ First Nothing

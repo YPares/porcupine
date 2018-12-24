@@ -52,7 +52,8 @@ import           Data.Type.Equality
 import           Data.Typeable
 import           Data.Void
 import           Katip
-
+import Data.Maybe
+  
 
 -- * The general 'VirtualFile' type
 
@@ -95,7 +96,7 @@ makeLenses ''VirtualFile
 instance HasDefaultMappingRule (VirtualFile a b) where
   getDefaultLocShortcut vf = if vf ^. vfileMappedByDefault
     then Just $
-      case vf ^? vfileSerials . serialsRepetitionKeys . filtered (not . null) of
+      case vf ^? vfileSerials . serialRepetitionKeys . filtered (not . null) of
         Nothing -> DeriveWholeLocFromTree defExt
         -- LIMITATION: For now we suppose that every reading/writing function in
         -- the serials has the same repetition keys
@@ -156,8 +157,9 @@ getVirtualFileDescription vf =
   where
     (SerialsFor
       (SerialWriters toI toC toE)
-      (SerialReaders fromI fromC fromV fromE)
-      prefExt) = _vfileSerials vf
+      (SerialReaders fromI fromE fromC fromV)
+      prefExt
+      _) = _vfileSerials vf
     intent
       | First (Just _) <- fromC, First (Just _) <- fromV, First (Just _) <- toC = Just VFForCLIOptions
       | HM.null fromE && HM.null toE = Nothing
@@ -165,12 +167,13 @@ getVirtualFileDescription vf =
       | HM.null toE = Just VFForReading
       | (Just _) <- _vfileBidirProof vf = Just VFForCaching
       | otherwise = Just VFForRW
-    otherExts = HS.fromList $ HM.keys toE <> HM.keys fromE
+    otherExts = HS.fromList $
+      HM.keys toE <> catMaybes (map snd (HM.keys fromE))
     exts = case prefExt of
              First (Just e) -> e:(HS.toList $ HS.delete e otherExts)
              _              -> HS.toList otherExts
     typeOfAesonVal = typeOf (undefined :: Value)
-    readableFromConfig = typeOfAesonVal `HM.member` fromI
+    readableFromConfig = (typeOfAesonVal,Nothing) `HM.member` fromI
     writableInOutput = typeOfAesonVal `HM.member` toI
 
 -- | Just for logs and error messages
@@ -291,8 +294,8 @@ vfileIntermediaryValue f (Right vf) = case convertFns of
     resTypeRep = typeOf (undefined :: c)
     serials = _vfileSerials vf
     convertFns = (,)
-      <$> HM.lookup resTypeRep (_serialWritersToIntermediary (_serialWriters serials))
-      <*> HM.lookup resTypeRep (_serialReadersFromIntermediary (_serialReaders serials))
+      <$> HM.lookup resTypeRep (_serialWritersToAtomic (_serialWriters serials))
+      <*> HM.lookup (resTypeRep,Nothing) (_serialReadersFromAtomic (_serialReaders serials))
 
 -- | If the file has a defaut value and a way to convert it to/from aeson Value,
 -- we traverse to it. Note that @b@ DOESN'T need to have To/FromJSON

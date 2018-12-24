@@ -235,7 +235,7 @@ accessVirtualFile accessToDo repIndices vfile =
         lvMap = HM.fromList $ zip repIndices $ map show ixVals
     vfile' = case repIndices of
       [] -> vfile
-      _  -> vfile & over (vfileSerials.serialsRepetitionKeys) (repIndices++)
+      _  -> vfile & over (vfileSerials.serialRepetitionKeys) (repIndices++)
 
 -- | Executes as a task a function that needs to access the content of the
 -- DataAccessNode of a VirtualFile.
