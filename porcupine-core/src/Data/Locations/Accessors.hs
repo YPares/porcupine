@@ -36,6 +36,7 @@ module Data.Locations.Accessors
 
 import           Control.Lens                      (over, (^.), _1)
 -- import           Control.Funflow.ContentHashable
+import           Control.Monad.IO.Unlift
 import           Control.Monad.ReaderSoup
 import           Control.Monad.ReaderSoup.Resource
 import           Control.Monad.Trans

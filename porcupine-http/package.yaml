@@ -11,23 +11,29 @@ ghc-options: -Wall
 
 dependencies:
   - base
-  - mtl
+  - transformers
   - safe-exceptions
   - http-conduit
-  - lens
-  # - monad-control
   - resourcet
   - bytestring
   - streaming
   - streaming-bytestring
-  - directory
+  - conduit
+  - streaming-conduit
   - reader-soup
   - porcupine-core
-  # - retry
-  - text
-  - filepath
-  - conduit
-  - conduit-extra
 
 library:
   source-dirs: src
+
+executables:
+  exampleHTTP:
+    source-dirs: examples
+    main: ExampleHTTP.hs
+    dependencies:
+      - porcupine-core
+      - porcupine-http
+      - docrecords
+      - aeson
+      - unordered-containers
+      - text

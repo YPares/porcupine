@@ -16,8 +16,6 @@ module Data.Locations.Accessors.HTTP where
 
 import           Control.Exception.Safe
 import           Control.Monad.ReaderSoup
-import           Control.Monad.Trans
-import           Control.Monad.Trans.Reader
 import           Control.Monad.Trans.Resource
 import qualified Data.ByteString.Streaming    as BSS
 import           Data.Function                ((&))
@@ -26,7 +24,6 @@ import           Data.Locations.Loc
 import           Network.HTTP.Simple
 import           Streaming
 import qualified Streaming.Conduit            as SC
-import qualified Streaming.Prelude            as S
 
 
 -- | The context is just empty for now, but we might want to add for instance a
@@ -42,6 +39,7 @@ instance SoupContext HTTPContext (ReaderT HTTPContext) where
 useHTTP :: ContextRunner (ReaderT HTTPContext) m
 useHTTP = ContextRunner $ flip runReaderT HTTPContext
 
+makeReq :: MonadThrow m => LocOf "http" -> m Request
 makeReq (H loc@RemoteFile{rfProtocol=p})
   | p == "http" || p == "https" = parseRequest $ show loc
 makeReq (H loc) = error $ show loc ++ " isn't an http(s) URL"
