@@ -1,12 +1,12 @@
-{-# LANGUAGE DataKinds           #-}
-{-# LANGUAGE DeriveGeneric       #-}
-{-# LANGUAGE FlexibleContexts    #-}
-{-# LANGUAGE OverloadedLabels    #-}
-{-# LANGUAGE OverloadedStrings   #-}
-{-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE TypeApplications    #-}
-{-# LANGUAGE DeriveAnyClass      #-}
+{-# LANGUAGE DataKinds             #-}
+{-# LANGUAGE DeriveAnyClass        #-}
+{-# LANGUAGE DeriveGeneric         #-}
 {-# LANGUAGE DuplicateRecordFields #-}
+{-# LANGUAGE FlexibleContexts      #-}
+{-# LANGUAGE OverloadedLabels      #-}
+{-# LANGUAGE OverloadedStrings     #-}
+{-# LANGUAGE ScopedTypeVariables   #-}
+{-# LANGUAGE TypeApplications      #-}
 
 -- The same example than example1 in 'porcupine-core', but with http access
 -- enabled by 'runPipelineTask'. Don't forget to map locations to http urls in
@@ -17,13 +17,13 @@
 
 import           Data.Aeson
 import           Data.DocRecord
-import qualified Data.HashMap.Strict          as HM
-import qualified Data.Text                    as T
+import qualified Data.HashMap.Strict           as HM
+import qualified Data.Text                     as T
 import           GHC.Generics
 import           Porcupine.Run
 import           Porcupine.Serials
 import           Porcupine.Tasks
-import Prelude hiding (id, (.))
+import           Prelude                       hiding (id, (.))
 
 import           Data.Locations.Accessors.HTTP
 
@@ -31,7 +31,7 @@ import           Data.Locations.Accessors.HTTP
 data Move = Move { name :: T.Text }
   deriving (Generic, FromJSON)
 
-data Pokemon = Pokemon { name :: T.Text
+data Pokemon = Pokemon { name  :: T.Text
                        , moves :: [Move] }
   deriving (Generic, FromJSON)
 
