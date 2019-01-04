@@ -134,27 +134,36 @@ data ToAtomicFn a =
 instance Show (ToAtomicFn a) where
   show _ = "<ToAtomicFn>"
 
-singletonToAtomicFn :: (Typeable i) => (a -> i) -> HM.HashMap TypeRep (ToAtomicFn a)
-singletonToAtomicFn f = HM.singleton (typeOf $ f undefined) (ToAtomicFn f)
+singletonToAtomicFn :: (Typeable i)
+                    => Maybe FileExt
+                    -> (a -> i)
+                    -> HM.HashMap (TypeRep,Maybe FileExt) (ToAtomicFn a)
+singletonToAtomicFn ext f = HM.singleton (typeOf $ f undefined,ext) (ToAtomicFn f)
 
--- | How to write an @a@ to some file, in any 'LocationMonad'.
-data WriteToLoc a = WriteToLoc
-  { _writeToLocRepetitionKeys :: [LocVariable]
-  , _writeToLocPerform ::
-      (forall m. (LocationMonad m, LogThrow m)
-      =>  a -> Loc -> m ())
-  }
+-- | How to turn an @a@ into some @Stream (Of i) m ()@
+data ToStreamFn a =
+  forall i. (Typeable i)
+  => ToStreamFn (forall m. (LogMask m)
+                 => a -> Stream (Of i) m ())
 
-instance Show (WriteToLoc a) where
-  show (WriteToLoc rks _) = "<WriteToLoc, rep keys: " ++ show rks ++ ">"
+instance Show (ToStreamFn a) where
+  show _ = "<ToStreamFn>"
 
-makeLenses ''WriteToLoc
+singletonToStreamFn
+  :: forall i a. (Typeable i)
+  => Maybe FileExt
+  -> (forall m. (LogMask m) => a -> Stream (Of i) m ())
+  -> HM.HashMap (TypeRep,Maybe FileExt) (ToStreamFn a)
+singletonToStreamFn ext f = HM.singleton (argTypeRep,ext) (ToStreamFn f)
+  where argTypeRep = typeOf (undefined :: i)
 
--- | Constructs a 'WriteToLoc' that will not expect any repetition.
-simpleWriteToLoc
-  :: (forall m. (LocationMonad m, MonadThrow m) => a -> Loc -> m ())
-  -> WriteToLoc a
-simpleWriteToLoc f = WriteToLoc [] f
+-- -- | How to write an @a@ to some file, in any 'LocationMonad'.
+-- data WriteToLoc a = WriteToLoc
+--   { _writeToLocRepetitionKeys :: [LocVariable]
+--   , _writeToLocPerform ::
+--       (forall m. (LocationMonad m, LogThrow m)
+--       =>  a -> Loc -> m ())
+--   }
 
 -- | The contravariant part of 'ReadFromConfigFn'. Permits to write default values
 -- of the input config
@@ -167,32 +176,31 @@ instance Show (WriteToConfigFn a) where
 -- | The writing part of a serial. 'SerialWriters' describes the different ways
 -- a serial can be used to serialize (write) data.
 data SerialWriters a = SerialWriters
-  { _serialWritersToAtomic :: HM.HashMap TypeRep (ToAtomicFn a)
+  { _serialWritersToAtomic :: HM.HashMap (TypeRep,Maybe FileExt) (ToAtomicFn a)
       -- ^ How to write the data to an intermediate type (like 'A.Value') that
       -- should be integrated to the stdout of the pipeline.
-  , _serialWriterToConfig        :: First (WriteToConfigFn a)
-  , _serialWritersToOutputFile   :: HM.HashMap FileExt (WriteToLoc a)
+  , _serialWritersToStream :: HM.HashMap (TypeRep,Maybe FileExt) (ToStreamFn a)
       -- ^ How to write the data to an external file or storage.
+  , _serialWriterToConfig  :: First (WriteToConfigFn a)
   }
   deriving (Show)
 
 makeLenses ''SerialWriters
 
 instance Semigroup (SerialWriters a) where
-  SerialWriters i c f <> SerialWriters i' c' f' =
-    SerialWriters (HM.unionWith const i i') (c<>c') (HM.unionWith const f f')
+  SerialWriters a s c <> SerialWriters a' s' c' =
+    SerialWriters (HM.unionWith const a a') (HM.unionWith const s s') (c<>c')
 instance Monoid (SerialWriters a) where
   mempty = SerialWriters mempty mempty mempty
 
 instance Contravariant SerialWriters where
   contramap f sw = SerialWriters
     { _serialWritersToAtomic = fmap (\(ToAtomicFn f') -> ToAtomicFn $ f' . f)
-                                     (_serialWritersToAtomic sw)
+                               (_serialWritersToAtomic sw)
+    , _serialWritersToStream = fmap (\(ToStreamFn f') -> ToStreamFn $ f' . f)
+                               (_serialWritersToStream sw)
     , _serialWriterToConfig = fmap (\(WriteToConfigFn f') -> WriteToConfigFn $ f' . f)
                               (_serialWriterToConfig sw)
-    , _serialWritersToOutputFile = fmap (\(WriteToLoc rk f') ->
-                                           WriteToLoc rk $ f' . f)
-                                   (_serialWritersToOutputFile sw)
     }
 
 -- | Links a serialization method to a prefered file extension, if this is
@@ -223,7 +231,8 @@ instance SerializationMethod (JSONSerial a) where
 instance (ToJSON a) => SerializesWith (JSONSerial a) a where
   getSerialWriters _ = mempty
     { _serialWritersToAtomic = singletonToAtomicFn A.toJSON
-    , _serialWritersToOutputFile   = HM.singleton "json" $ simpleWriteToLoc write
+    , _serialWritersToStream = singletonToAtomicFn A.encode x
+    -- , _serialWritersToOutputFile = HM.singleton "json" $ simpleWriteToLoc write
     } where
     write x loc = Loc.writeLazyByte loc $ A.encode x
 
