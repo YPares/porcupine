@@ -156,25 +156,25 @@ getVirtualFileDescription vf =
   VirtualFileDescription intent readableFromConfig writableInOutput exts
   where
     (SerialsFor
-      (SerialWriters toI toC toE)
-      (SerialReaders fromI fromE fromC fromV)
+      (SerialWriters toA toC)
+      (SerialReaders fromA fromS fromC fromV)
       prefExt
       _) = _vfileSerials vf
     intent
       | First (Just _) <- fromC, First (Just _) <- fromV, First (Just _) <- toC = Just VFForCLIOptions
-      | HM.null fromE && HM.null toE = Nothing
-      | HM.null fromE = Just VFForWriting
-      | HM.null toE = Just VFForReading
+      | HM.null fromA && HM.null fromS && HM.null toA = Nothing
+      | HM.null fromA && HM.null fromS = Just VFForWriting
+      | HM.null toA = Just VFForReading
       | (Just _) <- _vfileBidirProof vf = Just VFForCaching
       | otherwise = Just VFForRW
-    otherExts = HS.fromList $
-      HM.keys toE <> catMaybes (map snd (HM.keys fromE))
+    extSet = HS.fromList . catMaybes . map snd . HM.keys
+    otherExts = extSet toA <> extSet fromA <> extSet fromS
     exts = case prefExt of
              First (Just e) -> e:(HS.toList $ HS.delete e otherExts)
              _              -> HS.toList otherExts
     typeOfAesonVal = typeOf (undefined :: Value)
-    readableFromConfig = (typeOfAesonVal,Nothing) `HM.member` fromI
-    writableInOutput = typeOfAesonVal `HM.member` toI
+    readableFromConfig = (typeOfAesonVal,Nothing) `HM.member` fromA
+    writableInOutput = (typeOfAesonVal,Nothing) `HM.member` toA
 
 -- | Just for logs and error messages
 showVFileOriginalPath :: VirtualFile a b -> String
@@ -279,22 +279,22 @@ vfileIntermediaryValue
   => Traversal' (Either String (VirtualFile a a)) c
 vfileIntermediaryValue _ (Left s) = pure (Left s)
 vfileIntermediaryValue f (Right vf) = case convertFns of
-  Just (ToAtomicFn toI, FromAtomicFn fromI) ->
-    let processVal v = case cast (toI v) of
+  Just (ToAtomicFn toA, FromAtomicFn fromA) ->
+    let processVal v = case cast (toA v) of
           Nothing -> error $ "vfileIntermediaryValue: Impossible to cast the value to type "
             ++ show resTypeRep ++ ", however a conversion function was declared in the writers"
           Just i -> back <$> f i
         back i' = case cast i' of
           Nothing -> error $ "vfileIntermediaryValue: Impossible to cast back the value from type "
             ++ show resTypeRep ++ ", however a conversion function was declared in the readers"
-          Just i'' -> fromI i''
+          Just i'' -> fromA i''
     in getCompose $ vfileEmbeddedValue (Compose . processVal) vf
   Nothing -> pure (Right vf)
   where
     resTypeRep = typeOf (undefined :: c)
     serials = _vfileSerials vf
     convertFns = (,)
-      <$> HM.lookup resTypeRep (_serialWritersToAtomic (_serialWriters serials))
+      <$> HM.lookup (resTypeRep,Nothing) (_serialWritersToAtomic (_serialWriters serials))
       <*> HM.lookup (resTypeRep,Nothing) (_serialReadersFromAtomic (_serialReaders serials))
 
 -- | If the file has a defaut value and a way to convert it to/from aeson Value,

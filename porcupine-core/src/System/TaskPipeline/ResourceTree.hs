@@ -59,7 +59,8 @@ import           Control.Exception.Safe
 import           Control.Lens                            hiding ((<.>), (:>))
 import           Control.Monad
 import           Data.Aeson
-import           Data.ByteString                         (ByteString)
+import qualified Data.ByteString                         as Strict
+import qualified Data.ByteString.Lazy                    as Lazy
 import qualified Data.ByteString.Streaming               as BSS
 import           Data.DocRecord
 import           Data.DocRecord.OptParse
@@ -441,7 +442,7 @@ makeDataAccessor
   -> [LocWithVars]  -- ^ Every mapped layer (for doc)
   -> Maybe b -- ^ Default value (used as base layer)
   -> LayeredReadScheme b  -- ^ How to handle the different layers
-  -> [(WriteToLoc a, LocWithVars)]  -- ^ Layers to write to
+  -> [(ToAtomicFn a, LocWithVars)]  -- ^ Layers to write to
   -> [(FromStreamFn b, LocWithVars)] -- ^ Layers to read from
   -> LocVariableMap  -- ^ The map of the values of the repetition indices
   -> DataAccessor m a b
@@ -451,17 +452,21 @@ makeDataAccessor vpath (VFileImportance sevRead sevWrite sevError)
   where
     daLocsAccessed = traverse (fillLoc' repetKeyMap) layers
     daPerformWrite input = do
-        forM_ writeLocs $ \(WriteToLoc rkeys f, loc) -> do
-          loc' <- fillLoc repetKeyMap loc
-          katipAddNamespace "dataAccessor" $ katipAddNamespace "writer" $
-            katipAddContext (DAC (show loc) rkeys repetKeyMap (show loc')) $ do
-              withException (f input loc') $ \ioError ->
-                logFM sevError $ logStr $ displayException (ioError :: IOException)
-              logFM sevWrite $ logStr $ "Wrote '" ++ show loc' ++ "'"
+        forM_ writeLocs $ \(ToAtomicFn {-rkeys-} f, loc) ->
+          case cast (f input) of
+            Nothing -> error "makeDataAccessor: Some atomic serializer isn't converting to a lazy ByteString"
+            Just bs -> do
+              loc' <- fillLoc repetKeyMap loc
+              katipAddNamespace "dataAccessor" $ katipAddNamespace "writer" $
+                katipAddContext (DAC (show loc) {-rkeys-}mempty repetKeyMap (show loc')) $ do
+                  let runWrite = writeBSS loc' (BSS.fromLazy bs)
+                  withException runWrite $ \ioError ->
+                    logFM sevError $ logStr $ displayException (ioError :: IOException)
+                  logFM sevWrite $ logStr $ "Wrote '" ++ show loc' ++ "'"
     daPerformRead = do
         dataFromLayers <- forM readLocs (\(FromStreamFn {-rkeys-} (f :: Stream (Of i) m () -> m (Of b ())), loc) ->
-          case eqT :: Maybe (i :~: ByteString) of
-            Nothing -> error "makeDataAccessor: Some stream reader isn't expecting a stream of ByteStrings"
+          case eqT :: Maybe (i :~: Strict.ByteString) of
+            Nothing -> error "makeDataAccessor: Some stream reader isn't expecting a stream of strict ByteStrings"
             Just Refl -> do
               loc' <- fillLoc repetKeyMap loc
               katipAddNamespace "dataAccessor" $ katipAddNamespace "reader" $
@@ -509,9 +514,9 @@ resolveDataAccess (PhysicalFileNode layers vf) = do
                 vpath ++ " cannot be mapped to null. It doesn't contain any default value."
     _ -> return ()
   -- Then, that we aren't writing to an unsupported filetype:
-  writeLocs <- findFunctions' writers
+  writeLocs <- findFunctions (typeOf (undefined :: Lazy.ByteString)) writers
   -- And finally, that we aren't reading from an unsupported filetype:
-  readLocs <- findFunctions readers
+  readLocs <- findFunctions (typeOf (undefined :: Strict.ByteString)) readers
   return $
     DataAccessNode layers $
       makeDataAccessor vpath (vf^.vfileImportance) layers
@@ -524,29 +529,13 @@ resolveDataAccess (PhysicalFileNode layers vf) = do
     vpath = T.unpack $ toTextRepr $ LTP $ vf ^. vfileOriginalPath
 
     readers = vf ^. vfileSerials . serialReaders . serialReadersFromStream
-    writers = vf ^. vfileSerials . serialWriters . serialWritersToOutputFile
-
-    -- TODO: remove it when writers are handled like readers, without
-    -- LocationMonad:
-    findFunctions' :: HM.HashMap FileExt v -> m' [(v, LocWithVars)]
-    findFunctions' hm | HM.null hm = return []
-                     | otherwise  = mapM findFunction layers
-      where
-        findFunction loc = case HM.lookup (T.pack $ loc ^. locExt) hm of
-          Just f -> return (f, loc)
-          -- TODO: add VirtualFile path to error
-          Nothing -> throwM $ TaskConstructionError $
-            show loc ++ " is bound to " ++ vpath ++
-            " which doesn't support extension '" ++ (loc^.locExt) ++
-            "'. Accepted file extensions here are: " ++
-            mconcat (intersperse "," (map T.unpack $ HM.keys hm)) ++ "."
+    writers = vf ^. vfileSerials . serialWriters . serialWritersToAtomic
   
-    findFunctions :: HM.HashMap (TypeRep,Maybe FileExt) v -> m' [(v, LocWithVars)]
-    findFunctions hm | HM.null hm = return []
-                     | otherwise  = mapM findFunction layers
+    findFunctions :: TypeRep -> HM.HashMap (TypeRep,Maybe FileExt) v -> m' [(v, LocWithVars)]
+    findFunctions typeRep hm | HM.null hm = return []
+                             | otherwise  = mapM findFunction layers
       where
-        bsTypeRep = typeOf (undefined :: ByteString)
-        findFunction loc = case HM.lookup (bsTypeRep, Just $ T.pack $ loc ^. locExt) hm of
+        findFunction loc = case HM.lookup (typeRep, Just $ T.pack $ loc ^. locExt) hm of
           Just f -> return (f, loc)
           -- TODO: add VirtualFile path to error
           Nothing -> throwM $ TaskConstructionError $
