@@ -59,14 +59,25 @@ import qualified System.IO.Temp                    as Tmp
 import           System.TaskPipeline.Logger
 
 
+-- | A location resolved. No variables left to be instanciated.
+type LocOf l = GLocOf l String
+
+-- | A location with variable bits (like a location containing an index), that
+-- must be instanciated before we can access it.
+type LocWithVarsOf l = GLocOf l LocString
+
 -- | Creates some Loc type, indexed over a symbol (see ReaderSoup for how that
 -- symbol should be used), and equipped with functions to access it in some
 -- Monad
 class ( MonadMask m, MonadIO m
-      , FromJSON (LocOf l), ToJSON (LocOf l) )
+      , Functor (GLocOf l)
+      -- Just ensure that `forall a. (IsLocString a) => (FromJSON (GLocOf l a),
+      -- ToJSON (GLocOf l a))`:
+      , FromJSON (LocOf l), ToJSON (LocOf l)
+      , FromJSON (LocWithVarsOf l), ToJSON (LocWithVarsOf l))
    => LocationAccessor m (l::Symbol) where
 
-  data LocOf l :: *
+  data GLocOf l :: * -> *
 
   locExists :: LocOf l -> m Bool
 
@@ -135,8 +146,8 @@ splitAccessorsFromRec = over _1 AvailableAccessors . rtraverse getCompose
 
 -- | Accessing local resources
 instance (MonadResource m, MonadMask m) => LocationAccessor m "resource" where
-  newtype LocOf "resource" = L Loc
-    deriving (ToJSON)
+  newtype GLocOf "resource" a = L (URLLikeLoc a)
+    deriving (Functor, ToJSON)
   locExists (L l) = LM.checkLocal "locExists" LM.locExists_Local l
   writeBSS (L l) = LM.checkLocal "writeBSS" LM.writeBSS_Local l
   readBSS (L l) f =
@@ -147,7 +158,7 @@ instance (MonadResource m, MonadMask m) => LocationAccessor m "resource" where
     LM.checkLocal "copy" (\file1 ->
       LM.checkLocal "copy (2nd argument)" (LM.copy_Local file1) l2) l1
 
-instance FromJSON (LocOf "resource") where
+instance (IsLocString a) => FromJSON (GLocOf "resource" a) where
   parseJSON v = do
     loc <- parseJSON v
     case loc of

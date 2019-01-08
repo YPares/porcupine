@@ -67,6 +67,7 @@ import           Data.DocRecord.OptParse
 import qualified Data.HashMap.Strict                     as HM
 import           Data.List                               (intersperse)
 import           Data.Locations
+-- import           Data.Locations.Accessors
 import           Data.Maybe
 import           Data.Monoid                             (First (..))
 import           Data.Representable
@@ -93,6 +94,7 @@ instance Semigroup SomeVirtualFile where
     Just vf'' -> SomeVirtualFile (vf <> vf'')
     Nothing -> error "Two differently typed VirtualFiles are at the same location"
 
+-- data SomeLoc m = forall l. (LocationAccessor m l) => SomeLoc (LocOf l)
 
 data DataAccessor m a b = DataAccessor
   { daPerformWrite :: a -> m ()
@@ -454,7 +456,7 @@ makeDataAccessor vpath (VFileImportance sevRead sevWrite sevError)
     daPerformWrite input = do
         forM_ writeLocs $ \(ToAtomicFn {-rkeys-} f, loc) ->
           case cast (f input) of
-            Nothing -> error "makeDataAccessor: Some atomic serializer isn't converting to a lazy ByteString"
+            Nothing -> error "Some atomic serializer isn't converting to a lazy ByteString"
             Just bs -> do
               loc' <- fillLoc repetKeyMap loc
               katipAddNamespace "dataAccessor" $ katipAddNamespace "writer" $
@@ -466,7 +468,7 @@ makeDataAccessor vpath (VFileImportance sevRead sevWrite sevError)
     daPerformRead = do
         dataFromLayers <- forM readLocs (\(FromStreamFn {-rkeys-} (f :: Stream (Of i) m () -> m (Of b ())), loc) ->
           case eqT :: Maybe (i :~: Strict.ByteString) of
-            Nothing -> error "makeDataAccessor: Some stream reader isn't expecting a stream of strict ByteStrings"
+            Nothing -> error "Some stream reader isn't expecting a stream of strict ByteStrings"
             Just Refl -> do
               loc' <- fillLoc repetKeyMap loc
               katipAddNamespace "dataAccessor" $ katipAddNamespace "reader" $
@@ -491,7 +493,7 @@ makeDataAccessor vpath (VFileImportance sevRead sevWrite sevError)
     fillLoc' rkMap loc = terminateLocWithVars $ spliceLocVariables rkMap loc
     fillLoc rkMap loc =
       case fillLoc' rkMap loc of
-        Left e  -> throwWithPrefix $ "resolveDataAccess: " ++ e
+        Left e  -> katipAddNamespace "dataAccessor" $ throwWithPrefix e
         Right r -> return r
 
 -- | Transform a file node with physical locations in node with a data access

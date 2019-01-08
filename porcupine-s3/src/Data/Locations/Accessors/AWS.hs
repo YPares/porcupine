@@ -44,8 +44,8 @@ pattern S3Obj{bucketName,objectName} = RemoteFile "s3" bucketName objectName
 
 -- | Accessing resources on S3
 instance (MonadAWS m, MonadMask m, MonadResource m) => LocationAccessor m "aws" where
-  newtype LocOf "aws" = S Loc
-    deriving (ToJSON)
+  newtype GLocOf "aws" a = S (URLLikeLoc a)
+    deriving (Functor, ToJSON)
   locExists _ = return True -- TODO: Implement it
   writeBSS (S l) = writeBSS_S3 l
   readBSS (S l) f = readBSS_S3 l f -- >>= LM.eitherToExn
@@ -53,7 +53,7 @@ instance (MonadAWS m, MonadMask m, MonadResource m) => LocationAccessor m "aws" 
 
 instance (MonadAWS m, MonadMask m, MonadResource m) => MayProvideLocationAccessors m "aws"
 
-instance FromJSON (LocOf "aws") where
+instance (IsLocString a) => FromJSON (GLocOf "aws" a) where
   parseJSON v = do
     loc <- parseJSON v
     case loc of

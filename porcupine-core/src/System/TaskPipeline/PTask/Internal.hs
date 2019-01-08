@@ -260,7 +260,7 @@ data FunflowPaths = FunflowPaths
   { storePath :: FilePath, coordPath :: FilePath, remoteCacheLoc :: Maybe Loc }
 
 withFunflowRunConfig
-  :: (LocationMonad m, KatipContext m)
+  :: (LocationMonad m, LogMask m)
   => FunflowPaths
   -> (FunflowRunConfig m -> m r)
   -> m r
@@ -273,7 +273,7 @@ withFunflowRunConfig ffPaths f = do
 
 -- | Given a 'KatipContext' and a 'DataAccessTree', gets the initial state to
 -- give to 'execRunnablePTask'
-withPTaskState :: (LocationMonad m, KatipContext m)
+withPTaskState :: (LocationMonad m, LogMask m)
                => FunflowPaths
                -> DataAccessTree m
                -> (PTaskState m -> m r) -> m r
