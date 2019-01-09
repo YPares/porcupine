@@ -35,7 +35,8 @@ module Data.Locations.Accessors
   , baseContexts
   , runPorcupineM
   , splitAccessorsFromRec
-  , withParsedLocs, withParsedLocsWithVars
+  , withParsedLocs, withParsedLocsWithVars, resolvePathToSomeLoc
+  , writeLazyByte, readLazyByte, readText
   ) where
 
 import           Control.Lens                      (over, (^.), _1)
@@ -46,6 +47,7 @@ import           Control.Monad.ReaderSoup.Resource
 import           Control.Monad.Trans
 import           Control.Monad.Trans.Resource
 import           Data.Aeson
+import qualified Data.ByteString.Lazy              as LBS
 import qualified Data.ByteString.Streaming         as BSS
 import           Data.Locations.Loc
 import qualified Data.Locations.LocationMonad      as LM
@@ -195,8 +197,35 @@ instance ToJSON (SomeLoc m) where
 instance ToJSON (SomeLocWithVars m) where
   toJSON (SomeGLoc l) = toJSON l
 
---- The rest of the file is used as a compatiblity layer with the LocationMonad
---- class
+
+-- * Some helper functions to directly read write/read bytestring into/from
+-- locations
+
+writeLazyByte
+  :: (LocationAccessor m l)
+  => LocOf l
+  -> LBS.ByteString
+  -> m ()
+writeLazyByte loc = writeBSS loc . BSS.fromLazy
+
+-- The following functions are DEPRECATED, because converting to a lazy
+-- ByteString with BSS.toLazy_ isn't actually lazy
+
+readLazyByte
+  :: (LocationAccessor m l)
+  => LocOf l
+  -> m LBS.ByteString
+readLazyByte loc = readBSS loc BSS.toLazy_
+
+readText
+  :: (LocationAccessor m l)
+  => LocOf l
+  -> m T.Text
+readText loc =
+  LT.toStrict . decodeUtf8 <$> readLazyByte loc
+
+
+-- * Base contexts, providing LocationAccessor to local filesystem resources
 
 type BasePorcupineContexts =
   '[ "katip" ::: ContextFromName "katip"
@@ -208,6 +237,9 @@ baseContexts topNamespace =
      #katip    <-- ContextRunner (runLogger topNamespace maxVerbosityLoggerScribeParams)
   :& #resource <-- useResource
   :& RNil
+
+
+-- * Parsing and resolving locations, tying them to one LocationAccessor
 
 -- | The context in which aeson Values can be resolved to actual Locations
 type LocResolutionM m = ReaderT (AvailableAccessors m) m
@@ -274,6 +306,15 @@ withParsedLocs aesonVals f = do
       case mapM fromJSON aesonVals of
         Success a -> f (a :: [LocOf l])
         Error e   -> loop accs (errCtxs <> sl (T.pack $ symbolVal lbl) e)
+
+-- | For locations which can be expressed as a simple String. The path will be
+-- used as a JSON string. Will fail if no accessor can handle the path.
+resolvePathToSomeLoc
+  :: (LogThrow m)
+  => FilePath
+  -> LocResolutionM m (SomeLoc m)
+resolvePathToSomeLoc p =
+  withParsedLocs [String $ T.pack p] $ \[l] -> return $ SomeGLoc l
 
 -- Temporary, until LocationMonad is removed and LocOf types are directly
 -- integrated into the resource tree:

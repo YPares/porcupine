@@ -50,7 +50,7 @@ type AcceptableArgsAndContexts args ctxs m =
   ,RunsKatipOver args m)
 
 -- | We need to have some information about how katip will be run, because we
--- may need to override that from the command-line
+-- will want to override that from the command-line
 type RunsKatipOver args m =
   (HasField Rec "katip" args args (ContextRunner KatipContextT m) (ContextRunner KatipContextT m)
   ,MonadMask m, MonadIO m)
@@ -65,7 +65,7 @@ runPipelineTask
                              -- config or not
   -> Rec (FieldWithAccessors (ReaderSoup ctxs)) args  -- ^ The location
                                                       -- accessors to use
-  -> PTask (PorcupineM ctxs) i o  -- ^ The whole pipeline task to run
+  -> PTask (ReaderSoup ctxs) i o  -- ^ The whole pipeline task to run
   -> i                 -- ^ The pipeline task input
   -> IO o -- , RscAccessTree (ResourceTreeNode m))
                        -- ^ The pipeline task output and the final LocationTree
@@ -84,7 +84,7 @@ runPipelineTask cliUsage accessors ptask input = do
 -- "resource".
 runPipelineTask_
   :: PipelineConfigMethod o
-  -> PTask SimplePorcupineM () o
+  -> PTask (ReaderSoup BasePorcupineContexts) () o
   -> IO o
 runPipelineTask_ cliUsage ptask =
   runPipelineTask cliUsage (baseContexts $ cliUsage ^. pipelineConfigMethodProgName) ptask ()
@@ -103,37 +103,47 @@ runPipelineCommandOnPTask
   -> i
   -> PipelineCommand o --, RscAccessTree (ResourceTreeNode m))
   -> PhysicalResourceTree m
+  -> FunflowPaths m
   -> m o --, RscAccessTree (PhysicalTreeNode m)
-runPipelineCommandOnPTask ptask input cmd boundTree = do
-  let (origTree, runnable) = ptask ^. splittedPTask
-  -- origTree is the bare tree straight from the pipeline. boundTree is origTree
-  -- after configuration, with embedded data and mappings updated
+runPipelineCommandOnPTask ptask input cmd physTree ffPaths = do
+  let (virtualTree, runnable) = ptask ^. splittedPTask
+  -- virtualTree is the bare tree of VirtualFiles straight from the
+  -- pipeline. physTree is virtualTree after configuration, with embedded data
+  -- and mappings applied
   case cmd of
     RunPipeline -> do
-      dataTree <- traverse resolveDataAccess boundTree
-      ffPaths <- liftIO $ do
-        pwd <- getWorkingDirectory
-        FunflowPaths
-          <$> (fromMaybe (pwd </> "_funflow/store") <$> lookupEnv "FUNFLOW_STORE")
-          <*> (fromMaybe (pwd </> "_funflow/coordinator.db") <$> lookupEnv "FUNFLOW_COORDINATOR")
-          <*> getRemoteCacheLocation
+      dataTree <- traverse resolveDataAccess physTree
       withPTaskState ffPaths dataTree $ \initState -> do
         $(logTM) DebugS $ logStr $ "Using funflow store in '" ++ storePath ffPaths
               ++ "' and coordinator '" ++ coordPath ffPaths ++ "'."
         execRunnablePTask runnable initState input
     ShowLocTree mode -> do
       liftIO $ putStrLn $ case mode of
-        NoMappings   -> prettyLocTree origTree
-        FullMappings -> prettyLocTree boundTree
+        NoMappings   -> prettyLocTree virtualTree
+        FullMappings -> prettyLocTree physTree
       return mempty
 
-getRemoteCacheLocation :: IO (Maybe Loc)
-getRemoteCacheLocation = do
-  fromEnv <- fmap parseURLLikeLoc <$> lookupEnv "FUNFLOW_REMOTE_CACHE"
-  case fromEnv of
-    Just (Right x)  -> pure (Just x)
-    Just (Left err) -> error err
-    Nothing         -> pure Nothing
+getFunflowPaths :: (MonadIO m, LogThrow m) => LocResolutionM m (FunflowPaths m)
+getFunflowPaths = do
+  pwd <- liftIO getWorkingDirectory
+  FunflowPaths
+    <$> (fromMaybe (pwd </> "_funflow/store") <$> lookupEnv' "FUNFLOW_STORE")
+    <*> (fromMaybe (pwd </> "_funflow/coordinator.db") <$> lookupEnv' "FUNFLOW_COORDINATOR")
+    <*> (lookupEnv' "FUNFLOW_REMOTE_CACHE" >>= traverse resolvePathToSomeLoc)
+  where
+    lookupEnv' = liftIO . lookupEnv
+
+-- | Resolve all the JSON values in the mappings and paths from environment (for
+-- funflow) to locations tied to their respective LocationAccessors
+getPhysTreeAndFFPaths
+  :: (MonadIO m, LogThrow m)
+  => ResourceTreeAndMappings
+  -> AvailableAccessors m
+  -> m (PhysicalResourceTree m, FunflowPaths m)
+getPhysTreeAndFFPaths rtam accessors =
+  flip runReaderT accessors $
+    (,) <$> getPhysicalResourceTreeFromMappings rtam
+        <*> getFunflowPaths
 
 -- | Runs the cli if using FullConfig, binds every location in the resource tree
 -- to its final value/path, and passes the continuation the bound resource tree.
@@ -142,14 +152,20 @@ bindResourceTreeAndRun
   => PipelineConfigMethod r -- ^ How to get CLI args from ModelOpts
   -> Rec (FieldWithAccessors (ReaderSoup ctxs)) args
   -> VirtualResourceTree    -- ^ The tree to look for DocRecOfoptions in
-  -> (PipelineCommand r -> PhysicalResourceTree m -> PorcupineM ctxs r)
+  -> (PipelineCommand r
+      -> PhysicalResourceTree (ReaderSoup ctxs)
+      -> FunflowPaths (ReaderSoup ctxs)
+      -> ReaderSoup ctxs r)
              -- ^ What to do with the tree
   -> IO r
-bindResourceTreeAndRun (NoConfig _ root) accessors tree f =
-  runPorcupineM accessors $
-    f RunPipeline $
-      getPhysicalResourceTreeFromMappings $ ResourceTreeAndMappings tree (Left root) mempty
-bindResourceTreeAndRun (FullConfig progName defConfigFile defRoot) accessors tree f =
+bindResourceTreeAndRun (NoConfig _ root) accessorsRec tree f =
+  consumeSoup argsRec $ do
+    (physTree, ffPaths) <- getPhysTreeAndFFPaths rtam accessors
+    f RunPipeline physTree ffPaths
+  where
+    rtam = ResourceTreeAndMappings tree (Left root) mempty
+    (accessors, argsRec) = splitAccessorsFromRec accessorsRec
+bindResourceTreeAndRun (FullConfig progName defConfigFile defRoot) accessorsRec tree f =
   withCliParser progName "Run a task pipeline" getParser run
   where
     getParser mbConfigFile =
@@ -157,11 +173,12 @@ bindResourceTreeAndRun (FullConfig progName defConfigFile defRoot) accessors tre
         (fromMaybe defConfigFile mbConfigFile)
         (ResourceTreeAndMappings tree (Left defRoot) mempty)
     run rtam cmd lsp performConfigWrites =
-      let (parserCtx, argsRec) = splitAccessorsFromRec accessors
+      let (accessors, argsRec) = splitAccessorsFromRec accessorsRec
           -- We change the katip runner, from the options we got from CLI:
           argsRec' = argsRec & set (rlensf #katip)
             (ContextRunner (runLogger progName lsp))
       in
-      consumeSoup argsRec' $ flip runReaderT parserCtx $ do
+      consumeSoup argsRec' $ do
         unPreRun performConfigWrites
-        f cmd $ getPhysicalResourceTreeFromMappings rtam
+        (physTree, ffPaths) <- getPhysTreeAndFFPaths rtam accessors
+        f cmd physTree ffPaths

@@ -54,8 +54,7 @@ import           Control.Monad.Trans.Reader
 import           Control.Monad.Trans.State
 import           Control.Monad.Trans.Writer
 import           Data.Default
-import           Data.Locations                              (Loc,
-                                                              LocationMonad)
+import           Data.Locations.Accessors
 import           Data.Locations.FunflowRemoteCache
 import           Data.Locations.LocationTree
 import           Data.Locations.LogAndErrors
@@ -102,7 +101,7 @@ type RunnablePTask m =
 
 -- | The constraints that must be satisfied by the base monad m so that a @PTask
 -- m@ can be run
-type CanRunPTask m = (MonadBaseControl IO m, LocationMonad m, KatipContext m)
+type CanRunPTask m = (MonadBaseControl IO m, LogMask m)
 
 -- | Runs a 'RunnablePTask' given its state
 execRunnablePTask
@@ -256,12 +255,14 @@ makePTask :: (KatipContext m)
           -> PTask m a b
 makePTask = makePTask' def
 
-data FunflowPaths = FunflowPaths
-  { storePath :: FilePath, coordPath :: FilePath, remoteCacheLoc :: Maybe Loc }
+data FunflowPaths m = FunflowPaths
+  { storePath :: FilePath
+  , coordPath :: FilePath
+  , remoteCacheLoc :: Maybe (SomeLoc m) }
 
 withFunflowRunConfig
-  :: (LocationMonad m, LogMask m)
-  => FunflowPaths
+  :: (LogMask m)
+  => FunflowPaths m
   -> (FunflowRunConfig m -> m r)
   -> m r
 withFunflowRunConfig ffPaths f = do
@@ -273,8 +274,8 @@ withFunflowRunConfig ffPaths f = do
 
 -- | Given a 'KatipContext' and a 'DataAccessTree', gets the initial state to
 -- give to 'execRunnablePTask'
-withPTaskState :: (LocationMonad m, LogMask m)
-               => FunflowPaths
+withPTaskState :: (LogMask m)
+               => FunflowPaths m
                -> DataAccessTree m
                -> (PTaskState m -> m r) -> m r
 withPTaskState ffPaths tree f =

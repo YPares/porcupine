@@ -14,8 +14,8 @@ import qualified Control.Funflow.RemoteCache     as Remote
 import           Control.Lens
 import           Control.Monad.Trans
 import           Data.Bifunctor                  (first)
+import           Data.Locations.Accessors
 import           Data.Locations.Loc
-import           Data.Locations.LocationMonad
 import           Katip
 import           Path                            (toFilePath)
 import           System.FilePath                 (dropTrailingPathSeparator)
@@ -24,32 +24,34 @@ import           System.FilePath                 (dropTrailingPathSeparator)
 hashToFilePath :: ContentHash -> FilePath
 hashToFilePath = dropTrailingPathSeparator . toFilePath . hashToPath
 
-newtype LocationCacher = LocationCacher Loc
+newtype LocationCacher m = LocationCacher (SomeLoc m)
 
 tryS :: (MonadCatch m) => m a -> m (Either String a)
 tryS = fmap (over _Left (displayException :: SomeException -> String)) . try
 
-instance (LocationMonad m, KatipContext m)
-      => Remote.Cacher m LocationCacher where
-  push (LocationCacher loc) = Remote.pushAsArchive aliasPath $ \hash body -> do
-    logFM DebugS $ logStr $
-      "Remote cacher: Writing to file " ++ show (loc </> hashToFilePath hash)
-    writeLazyByte (loc </> hashToFilePath hash) body
+instance (KatipContext m)
+      => Remote.Cacher m (LocationCacher m) where
+  push (LocationCacher (SomeGLoc rootLoc)) = Remote.pushAsArchive aliasPath $ \hash body -> do
+    let loc = rootLoc `addSubdirToLoc` hashToFilePath hash
+    katipAddNamespace "remoteCacher" $ logFM DebugS $ logStr $
+      "Writing to file " ++ show loc
+    writeLazyByte loc body
     pure Remote.PushOK
     where
       aliasPath from_ to_ = first show <$> tryS
         (copy
-          (loc </> hashToFilePath from_)
-          (loc </> hashToFilePath to_))
-  pull (LocationCacher loc) = Remote.pullAsArchive $ \hash -> do
-    logFM DebugS $ logStr $
-      "Remote cacher: Reading from file " ++ show (loc </> hashToFilePath hash)
-    readResult <- tryS $ readLazyByte (loc </> hashToFilePath hash)
+          (rootLoc `addSubdirToLoc` hashToFilePath from_)
+          (rootLoc `addSubdirToLoc` hashToFilePath to_))
+  pull (LocationCacher (SomeGLoc rootLoc)) = Remote.pullAsArchive $ \hash -> do
+    let loc = rootLoc `addSubdirToLoc` hashToFilePath hash
+    katipAddNamespace "remoteCacher" $ logFM DebugS $ logStr $
+      "Reading from file " ++ show loc
+    readResult <- tryS $ readLazyByte loc
     pure $ case readResult of
       Right bs -> Remote.PullOK bs
       Left err -> Remote.PullError err
 
-locationCacher :: Maybe Loc -> Maybe LocationCacher
+locationCacher :: Maybe (SomeLoc m) -> Maybe (LocationCacher m)
 locationCacher = fmap LocationCacher
 
 newtype LiftCacher cacher = LiftCacher cacher
