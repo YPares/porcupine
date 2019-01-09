@@ -189,10 +189,10 @@ baseContexts topNamespace =
   :& RNil
 
 -- | The context in which aeson Values can be resolved to actual Locations
-type LocResolutionM ctxs = ReaderT (AvailableAccessors (ReaderSoup ctxs)) (ReaderSoup ctxs)
+type LocResolutionM m = ReaderT (AvailableAccessors m) m
 
 -- | Temporary type until LocationMonad is removed.
-type PorcupineM ctxs = LocResolutionM ctxs
+type PorcupineM ctxs = LocResolutionM (ReaderSoup ctxs)
 
 -- | The simplest, minimal ReaderSoup to run a local accessor
 type SimplePorcupineM = PorcupineM BasePorcupineContexts
@@ -207,11 +207,12 @@ runPorcupineM argsWithAccsRec act = consumeSoup argsRec $ runReaderT act parserC
 
 -- | Finds in the accessors list a way to parse a list of JSON values that
 -- should correspond to some `LocOf l` type
-withParsedLocsWithVars :: (KatipContext (PorcupineM ctxs))
-               => [Value]
-               -> (forall l. (LocationAccessor (ReaderSoup ctxs) l)
-                   => [LocWithVarsOf l] -> LocResolutionM ctxs r)
-               -> LocResolutionM ctxs r
+withParsedLocsWithVars
+  :: (LogThrow m)
+  => [Value]
+  -> (forall l. (LocationAccessor m l)
+      => [LocWithVarsOf l] -> LocResolutionM m r)
+  -> LocResolutionM m r
 withParsedLocsWithVars aesonVals f = do
   AvailableAccessors allAccessors <- ask
   case allAccessors of
@@ -231,11 +232,11 @@ withParsedLocsWithVars aesonVals f = do
 
 -- | Finds in the accessors list a way to parse a list of JSON values that
 -- should correspond to some `LocOf l` type
-withParsedLocs :: (KatipContext (PorcupineM ctxs))
+withParsedLocs :: (LogThrow m)
                => [Value]
-               -> (forall l. (LocationAccessor (ReaderSoup ctxs) l)
-                   => [LocOf l] -> LocResolutionM ctxs r)
-               -> LocResolutionM ctxs r
+               -> (forall l. (LocationAccessor m l)
+                   => [LocOf l] -> LocResolutionM m r)
+               -> LocResolutionM m r
 withParsedLocs aesonVals f = do
   AvailableAccessors allAccessors <- ask
   case allAccessors of

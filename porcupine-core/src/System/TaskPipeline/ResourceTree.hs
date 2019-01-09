@@ -278,7 +278,7 @@ data LayerOperator = ReplaceLayers | AddLayer
 type ResourceTreeAndMappingsOverrides =
   ( LocVariableMap
     -- The map of variables and their values read from CLI too
-  , [(LocationTreePath, LayerOperator, LocShortcut)]
+  , [(LocationTreePath, LayerOperator, SerializableLocShortcut)]
     -- Locations mapped to new layers
   , LocationTree (VirtualFileNode, Maybe (RecOfOptions SourcedDocField))
     -- The tree containing options parsed by optparse-applicative
