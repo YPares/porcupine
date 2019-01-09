@@ -14,6 +14,7 @@
 {-# LANGUAGE TypeFamilies               #-}
 {-# LANGUAGE TypeOperators              #-}
 {-# LANGUAGE UndecidableInstances       #-}
+{-# LANGUAGE DeriveTraversable          #-}
 {-# OPTIONS_GHC "-fno-warn-incomplete-uni-patterns" #-}
 {-# OPTIONS_GHC "-fno-warn-missing-signatures" #-}
 
@@ -21,17 +22,19 @@ module Data.Locations.Accessors
   ( module Control.Monad.ReaderSoup.Resource
   , FromJSON(..), ToJSON(..)
   , LocationAccessor(..)
+  , LocOf, LocWithVarsOf
   , FieldWithAccessors
   , Rec(..), ElField(..)
   , MayProvideLocationAccessors(..)
   , SomeLocationAccessor(..)
   , AvailableAccessors
+  , LocResolutionM
   , PorcupineM, SimplePorcupineM, BasePorcupineContexts
   , (<--)
   , baseContexts
   , runPorcupineM
   , splitAccessorsFromRec
-  , withParsedLocs
+  , withParsedLocs, withParsedLocsWithVars
   ) where
 
 import           Control.Lens                      (over, (^.), _1)
@@ -62,21 +65,24 @@ import           System.TaskPipeline.Logger
 -- | A location resolved. No variables left to be instanciated.
 type LocOf l = GLocOf l String
 
--- | A location with variable bits (like a location containing an index), that
--- must be instanciated before we can access it.
 type LocWithVarsOf l = GLocOf l LocString
 
 -- | Creates some Loc type, indexed over a symbol (see ReaderSoup for how that
 -- symbol should be used), and equipped with functions to access it in some
 -- Monad
 class ( MonadMask m, MonadIO m
-      , Functor (GLocOf l)
-      -- Just ensure that `forall a. (IsLocString a) => (FromJSON (GLocOf l a),
-      -- ToJSON (GLocOf l a))`:
-      , FromJSON (LocOf l), ToJSON (LocOf l)
-      , FromJSON (LocWithVarsOf l), ToJSON (LocWithVarsOf l))
+      , TypedLocation (GLocOf l) )
    => LocationAccessor m (l::Symbol) where
 
+  -- | Generalized location. The implementation is completely to the discretion
+  -- of the LocationAccessor, but it must be serializable in json, and it must
+  -- be able to contain "variable bits" (that will correspond for instance to
+  -- indices). These "variable bits" must be exposed through the parameter @a@
+  -- in @GLocOf l a@, and @GLocOf l@ must be a Traversable. @a@ will always be
+  -- an instance of 'IsLocString'. The rest of the implementation of
+  -- 'LocationAccessor' doesn't have to work in the most general case @GLocOf l
+  -- a@, as when all variables have been replaced by their final values, @a@ is
+  -- just @String@.
   data GLocOf l :: * -> *
 
   locExists :: LocOf l -> m Bool
@@ -147,7 +153,7 @@ splitAccessorsFromRec = over _1 AvailableAccessors . rtraverse getCompose
 -- | Accessing local resources
 instance (MonadResource m, MonadMask m) => LocationAccessor m "resource" where
   newtype GLocOf "resource" a = L (URLLikeLoc a)
-    deriving (Functor, ToJSON)
+    deriving (Functor, Foldable, Traversable, ToJSON, TypedLocation)
   locExists (L l) = LM.checkLocal "locExists" LM.locExists_Local l
   writeBSS (L l) = LM.checkLocal "writeBSS" LM.writeBSS_Local l
   readBSS (L l) f =
@@ -182,8 +188,11 @@ baseContexts topNamespace =
   :& #resource <-- useResource
   :& RNil
 
+-- | The context in which aeson Values can be resolved to actual Locations
+type LocResolutionM ctxs = ReaderT (AvailableAccessors (ReaderSoup ctxs)) (ReaderSoup ctxs)
+
 -- | Temporary type until LocationMonad is removed.
-type PorcupineM ctxs = ReaderT (AvailableAccessors (ReaderSoup ctxs)) (ReaderSoup ctxs)
+type PorcupineM ctxs = LocResolutionM ctxs
 
 -- | The simplest, minimal ReaderSoup to run a local accessor
 type SimplePorcupineM = PorcupineM BasePorcupineContexts
@@ -198,11 +207,35 @@ runPorcupineM argsWithAccsRec act = consumeSoup argsRec $ runReaderT act parserC
 
 -- | Finds in the accessors list a way to parse a list of JSON values that
 -- should correspond to some `LocOf l` type
+withParsedLocsWithVars :: (KatipContext (PorcupineM ctxs))
+               => [Value]
+               -> (forall l. (LocationAccessor (ReaderSoup ctxs) l)
+                   => [LocWithVarsOf l] -> LocResolutionM ctxs r)
+               -> LocResolutionM ctxs r
+withParsedLocsWithVars aesonVals f = do
+  AvailableAccessors allAccessors <- ask
+  case allAccessors of
+    [] -> throwWithPrefix $ "List of accessors is empty"
+    _  -> return ()
+  loop allAccessors mempty
+  where
+    showJ = LT.unpack . LT.intercalate ", " . map (decodeUtf8 . encode)
+    loop [] errCtxs =
+      katipAddContext (sl "errorsFromAccessors" errCtxs) $
+      throwWithPrefix $ "Location(s) " ++ showJ aesonVals
+      ++ " cannot be used by the location accessors in place."
+    loop (SomeLocationAccessor (lbl :: Label l) : accs) errCtxs =
+      case mapM fromJSON aesonVals of
+        Success a -> f (a :: [LocWithVarsOf l])
+        Error e   -> loop accs (errCtxs <> sl (T.pack $ symbolVal lbl) e)
+
+-- | Finds in the accessors list a way to parse a list of JSON values that
+-- should correspond to some `LocOf l` type
 withParsedLocs :: (KatipContext (PorcupineM ctxs))
                => [Value]
                -> (forall l. (LocationAccessor (ReaderSoup ctxs) l)
-                   => [LocOf l] -> PorcupineM ctxs r)
-               -> PorcupineM ctxs r
+                   => [LocOf l] -> LocResolutionM ctxs r)
+               -> LocResolutionM ctxs r
 withParsedLocs aesonVals f = do
   AvailableAccessors allAccessors <- ask
   case allAccessors of

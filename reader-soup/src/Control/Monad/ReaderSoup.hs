@@ -55,9 +55,12 @@ module Control.Monad.ReaderSoup
   , fromLabel
   ) where
 
+import           Control.Applicative
 import           Control.Exception.Safe
 import           Control.Lens                (over)
+import           Control.Monad
 import           Control.Monad.Base          (MonadBase)
+import           Control.Monad.Fail
 import           Control.Monad.IO.Unlift
 import           Control.Monad.Morph         (hoist)
 import           Control.Monad.Reader.Class
@@ -77,7 +80,7 @@ import           GHC.TypeLits
 newtype ReaderSoup_ (record::((Symbol, *) -> *) -> [(Symbol, *)] -> *) ctxs a = ReaderSoup
   { unReaderSoup ::
       ReaderT (record ElField ctxs) IO a }
-  deriving ( Functor, Applicative, Monad
+  deriving ( Functor, Applicative, Alternative, Monad, MonadFail, MonadPlus
            , MonadIO, MonadUnliftIO, MonadBase IO, MonadBaseControl IO
            , MonadCatch, MonadThrow, MonadMask )
 

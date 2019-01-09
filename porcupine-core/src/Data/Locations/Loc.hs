@@ -128,14 +128,9 @@ instance (IsLocString a) => Show (URLLikeLoc a) where
   show RemoteFile{ rfProtocol, rfServerName, rfLocFilePath } =
     rfProtocol ++ "://" ++ rfServerName ++ "/" ++ show rfLocFilePath
 
--- | Lens to the 'LocFilePath' of the 'Loc'
 locFilePath :: Lens (URLLikeLoc a) (URLLikeLoc b) (LocFilePath a) (LocFilePath b)
 locFilePath f (LocalFile fp)      = LocalFile <$> f fp
 locFilePath f (RemoteFile p b fp) = RemoteFile p b <$> f fp
-
--- | Lens to the extension of the 'Loc'
-locExt :: Lens' (URLLikeLoc a) String
-locExt = locFilePath . pathExtension
 
 -- | A 'URLLikeLoc' that might contain some names holes, called variables, that we
 -- have first to replace by a value before we can get a definite physical
@@ -152,26 +147,22 @@ localFile :: FilePath -> Loc
 localFile s = LocalFile $ s ^. from locFilePathAsRawFilePath
 
 -- | Creates a 'LocWithVars' that will only contain a chunk, no variables
-locWithVarsFromLoc :: Loc -> LocWithVars
+locWithVarsFromLoc :: (Functor f) => f String -> f LocString
 locWithVarsFromLoc = fmap (LocString . (:[]) . LocBitChunk)
-
--- | All the variables leftover in a 'LocWithVars'
-locVariables :: Traversal' LocWithVars LocBit
-locVariables = traversed . locStringVariables
 
 -- | A map that can be used to splice variables in a 'LocWithVars'
 type LocVariableMap = HM.HashMap LocVariable String
 
 -- | Splices in the variables present in the hashmap
-spliceLocVariables :: LocVariableMap -> LocWithVars -> LocWithVars
-spliceLocVariables vars = over locVariables $ \v -> case v of
+spliceLocVariables :: (Functor f) => LocVariableMap -> f LocString -> f LocString
+spliceLocVariables vars = fmap $ over locStringVariables $ \v -> case v of
   LocBitVarRef vname ->
     case HM.lookup vname vars of
       Just val -> LocBitChunk val
       Nothing  -> v
   _ -> error "spliceLocVariables: Should not happen"
 
-terminateLocWithVars :: LocWithVars -> Either String Loc
+terminateLocWithVars :: (Traversable f) => f LocString -> Either String (f String)
 terminateLocWithVars = traverse terminateLocString
   where
     terminateLocString (LocString [LocBitChunk s]) = Right s
@@ -300,6 +291,45 @@ takeDirectory = over (locFilePath . pathWithoutExt) Path.takeDirectory . dropExt
 dropExtension :: URLLikeLoc a -> URLLikeLoc a
 dropExtension f = f & locFilePath . pathExtension .~ ""
 
--- | Sets the extension unless the 'URLLikeLoc' already has one
-addExtToLocIfMissing :: URLLikeLoc a -> String -> URLLikeLoc a
-addExtToLocIfMissing loc newExt = loc & over locExt (`firstNonEmptyExt` newExt)
+-- | The class of all locations that can be mapped to VirtualFiles
+class (Traversable f
+      -- Just ensure that `forall a. (IsLocString a) => (FromJSON (GLocOf l a),
+      -- ToJSON (GLocOf l a))`:
+      ,FromJSON (f String), FromJSON (f LocString)
+      ,ToJSON (f String), ToJSON (f LocString)) => TypedLocation f where
+
+  -- | Access the file type part of a location
+  --
+  -- For locations that encode types as extensions, this would access the
+  -- extension. But for others (like HTTP urls), locType would probably need to
+  -- translate it first to a mime type, or some other implementation-specific
+  -- way to to represent resource types
+  setLocType :: f a -> (String -> String) -> f a
+  
+  -- | Use the location as a directory and append a "subdir" to it. Depending on
+  -- the implementation this "subdir" relationship can only be semantic (the
+  -- result doesn't have to physically be a subdirectory of the input)
+  --
+  -- Note: this isn't a path, the subdir shouldn't contain any slashes
+  addSubdirToLoc :: (IsLocString a) => f a -> String -> f a
+
+  -- | "Integrate" a mapping shortcut (represented as a partial file path, with
+  -- its extension) to the location. For now, non URL-based locations should
+  -- send an error
+  --
+  -- Note: conversely to 'addSubdirToLoc', the filepath MAY contain slashes
+  useLocAsPrefix :: (IsLocString a) => f a -> LocFilePath a -> f a
+  
+instance TypedLocation URLLikeLoc where
+  setLocType l f = l & over (locFilePath . pathExtension) f
+  addSubdirToLoc = (</>)
+  useLocAsPrefix l p = l & over locFilePath (<> p)
+
+-- | Sets the file type of a location
+overrideLocType :: (TypedLocation f) => f a -> String -> f a
+overrideLocType loc newExt = setLocType loc (newExt `firstNonEmptyExt`)
+
+-- | Sets the file type of a location unless it already has one
+addExtToLocIfMissing :: (TypedLocation f) => f a -> String -> f a
+addExtToLocIfMissing loc newExt = setLocType loc (`firstNonEmptyExt` newExt)
+-- TODO: rename it
