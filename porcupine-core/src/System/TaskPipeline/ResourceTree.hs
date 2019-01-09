@@ -66,12 +66,14 @@ import           Data.DocRecord
 import           Data.DocRecord.OptParse
 import qualified Data.HashMap.Strict                     as HM
 import           Data.List                               (intersperse)
-import           Data.Locations
--- import           Data.Locations.Accessors
+import           Data.Locations                          hiding (writeBSS, readBSS)
+import           Data.Locations.Accessors
 import           Data.Maybe
 import           Data.Monoid                             (First (..))
 import           Data.Representable
 import qualified Data.Text                               as T
+import qualified Data.Text.Lazy                          as LT
+import qualified Data.Text.Lazy.Encoding                 as LTE
 import           Data.Typeable
 import           GHC.Generics                            (Generic)
 import           Katip
@@ -94,12 +96,11 @@ instance Semigroup SomeVirtualFile where
     Just vf'' -> SomeVirtualFile (vf <> vf'')
     Nothing -> error "Two differently typed VirtualFiles are at the same location"
 
--- data SomeLoc m = forall l. (LocationAccessor m l) => SomeLoc (LocOf l)
-
+-- | Packs together the two functions that will read
 data DataAccessor m a b = DataAccessor
   { daPerformWrite :: a -> m ()
   , daPerformRead  :: m b
-  , daLocsAccessed :: Either String [Loc] }
+  , daLocsAccessed :: Either String [SomeLoc m] }
 
 -- | The internal part of a 'DataAccessNode, closing over the type params of the
 -- access function.
@@ -128,13 +129,13 @@ vfnodeFileVoided _ vfn = pure vfn
 
 -- | The nodes of the ResourceTree, after mapping each 'VirtualFiles' to
 -- physical locations
-data PhysicalFileNode = MbPhysicalFileNode [LocWithVars] (Maybe SomeVirtualFile)
+data PhysicalFileNode m = MbPhysicalFileNode [SomeLocWithVars m] (Maybe SomeVirtualFile)
 -- | A non-empty 'PhysicalFileNode'
 pattern PhysicalFileNode l vf = MbPhysicalFileNode l (Just (SomeVirtualFile vf))
 
 -- | The nodes of the LocationTree after the 'VirtualFiles' have been resolved
 -- to physical paths, and data possibly extracted from these paths
-data DataAccessNode m = MbDataAccessNode [LocWithVars] (First (SomeDataAccess m))
+data DataAccessNode m = MbDataAccessNode [SomeLocWithVars m] (First (SomeDataAccess m))
   -- Data access function isn't a semigroup, hence the use of First here instead
   -- of Maybe.
 -- | A non-empty 'DataAccessNode'
@@ -161,11 +162,22 @@ instance Show VirtualFileNode where
   -- TODO: Cleaner Show
   -- TODO: Display read/written types here, since they're already Typeable
 
-instance Show PhysicalFileNode where
+-- | Wraps a @GLocOf l a@ where @l@ is a 'LocationAccessor' in monad @m@
+data SomeGLoc m a = forall l. (LocationAccessor m l) => SomeGLoc (GLocOf l a)
+
+type SomeLoc m = SomeGLoc m String
+type SomeLocWithVars m = SomeGLoc m LocString
+
+toJSONTxt :: SomeLocWithVars m -> T.Text
+toJSONTxt (SomeGLoc a) = case toJSON a of
+  String s -> s
+  v -> LT.toStrict $ LTE.decodeUtf8 $ encode v
+
+instance Show (PhysicalFileNode m) where
   show (MbPhysicalFileNode layers mbVF) =
     T.unpack (mconcat
               (intersperse " << "
-               (map toTextRepr layers)))
+               (map toJSONTxt layers)))
     ++ case mbVF of
          Just (SomeVirtualFile vf) ->
            " - " ++ show (getVirtualFileDescription vf)
@@ -179,7 +191,7 @@ type VirtualResourceTree = LocationTree VirtualFileNode
 
 -- | The tree manipulated when checking if each location is bound to something
 -- legit
-type PhysicalResourceTree = LocationTree PhysicalFileNode
+type PhysicalResourceTree m = LocationTree (PhysicalFileNode m)
 
 -- | The tree manipulated by tasks when they actually run
 type DataResourceTree m = LocationTree (DataAccessNode m)
@@ -388,10 +400,10 @@ rscTreeConfigurationReader (ResourceTreeAndMappings{rtamResourceTree=defTree}) =
 
 -- | Transform a virtual file node in file node with definite physical
 -- locations. Splices in the locs the variables that can be spliced.
-applyOneRscMapping :: LocVariableMap -> [LocWithVars] -> VirtualFileNode -> Bool -> PhysicalFileNode
+applyOneRscMapping :: LocVariableMap -> [SomeLocWithVars m] -> VirtualFileNode -> Bool -> PhysicalFileNode m
 applyOneRscMapping variables configLayers mbVF mappingIsExplicit = buildPhysicalNode mbVF
   where
-    configLayers' = map (spliceLocVariables variables) configLayers
+    configLayers' = map (\(SomeGLoc l) -> SomeGLoc $ spliceLocVariables variables l) configLayers
     buildPhysicalNode (VirtualFileNode{..}) = PhysicalFileNode layers vfnodeFile
       where
         First defExt = vfnodeFile ^. vfileSerials . serialDefaultExt
@@ -401,12 +413,12 @@ applyOneRscMapping variables configLayers mbVF mappingIsExplicit = buildPhysical
              -- mapping to be present in the config file, if we want them to be
              -- read from external files instead
                | otherwise = map resolveExt configLayers'
-        resolveExt loc = addExtToLocIfMissing loc $ T.unpack $ fromMaybe "" defExt
+        resolveExt (SomeGLoc loc) = SomeGLoc $ addExtToLocIfMissing loc $ T.unpack $ fromMaybe "" defExt
     buildPhysicalNode _ = MbPhysicalFileNode configLayers' Nothing
 
 -- | Binds together a 'VirtualResourceTree' with physical locations an splices
 -- in the variables read from the configuration.
-getPhysicalResourceTreeFromMappings :: ResourceTreeAndMappings -> PhysicalResourceTree
+getPhysicalResourceTreeFromMappings :: ResourceTreeAndMappings -> PhysicalResourceTree m
 getPhysicalResourceTreeFromMappings (ResourceTreeAndMappings tree mappings variables) =
   applyMappings (applyOneRscMapping variables) m' tree
   where
@@ -501,7 +513,7 @@ makeDataAccessor vpath (VFileImportance sevRead sevWrite sevError)
 -- available in the 'VirtualFile'.
 resolveDataAccess
   :: forall m m'. (LocationMonad m, KatipContext m, MonadThrow m')
-  => PhysicalFileNode
+  => PhysicalFileNode m
   -> m' (DataAccessNode m)
 resolveDataAccess (PhysicalFileNode layers vf) = do
   -- resolveDataAccess performs some buildtime checks: --
