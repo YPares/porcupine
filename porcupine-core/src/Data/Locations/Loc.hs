@@ -291,13 +291,14 @@ takeDirectory = over (locFilePath . pathWithoutExt) Path.takeDirectory . dropExt
 dropExtension :: URLLikeLoc a -> URLLikeLoc a
 dropExtension f = f & locFilePath . pathExtension .~ ""
 
--- | The class of all locations that can be mapped to VirtualFiles
+-- | The class of all locations that can be mapped to VirtualFiles in a
+-- configuration file.
 class (Traversable f
-      -- Just ensure that `forall a. (IsLocString a) => (FromJSON (GLocOf l a),
-      -- ToJSON (GLocOf l a))`:
+      -- Just ensure that `forall a. (IsLocString a) => (FromJSON (f a),
+      -- ToJSON (f a))`:
       ,FromJSON (f String), FromJSON (f LocString)
       ,ToJSON (f String), ToJSON (f LocString)
-      -- `forall a. (IsLocString a) => (Show (GLocOf l a))
+      -- `forall a. (IsLocString a) => (Show (f a))`
       ,Show (f String), Show (f LocString)) => TypedLocation f where
 
   -- TODO: Find a way to replace get/setLocType by a Lens. This displeased

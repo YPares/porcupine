@@ -23,6 +23,7 @@ module Data.Locations.Accessors
   , FromJSON(..), ToJSON(..)
   , LocationAccessor(..)
   , LocOf, LocWithVarsOf
+  , SomeGLoc(..), SomeLoc, SomeLocWithVars
   , FieldWithAccessors
   , Rec(..), ElField(..)
   , MayProvideLocationAccessors(..)
@@ -62,9 +63,10 @@ import qualified System.IO.Temp                    as Tmp
 import           System.TaskPipeline.Logger
 
 
--- | A location resolved. No variables left to be instanciated.
+-- | A location where no variables left to be instanciated.
 type LocOf l = GLocOf l String
 
+-- | A location that contains variables needing to be instanciated.
 type LocWithVarsOf l = GLocOf l LocString
 
 -- | Creates some Loc type, indexed over a symbol (see ReaderSoup for how that
@@ -173,6 +175,25 @@ instance (IsLocString a) => FromJSON (GLocOf "resource" a) where
 
 instance (MonadResource m, MonadMask m) => MayProvideLocationAccessors m "resource"
 
+
+-- * Treating locations in a general manner
+
+-- | Some generalized location. Wraps a @GLocOf l a@ where @l@ is a
+-- 'LocationAccessor' in monad @m@.
+data SomeGLoc m a = forall l. (LocationAccessor m l) => SomeGLoc (GLocOf l a)
+
+type SomeLoc m = SomeGLoc m String
+type SomeLocWithVars m = SomeGLoc m LocString
+
+instance Show (SomeLoc m) where
+  show (SomeGLoc l) = show l
+instance Show (SomeLocWithVars m) where
+  show (SomeGLoc l) = show l
+
+instance ToJSON (SomeLoc m) where
+  toJSON (SomeGLoc l) = toJSON l
+instance ToJSON (SomeLocWithVars m) where
+  toJSON (SomeGLoc l) = toJSON l
 
 --- The rest of the file is used as a compatiblity layer with the LocationMonad
 --- class

@@ -18,8 +18,6 @@ module Data.Locations.Mappings
   ( LocationMappings, LocationMappings_(..)
   , HasDefaultMappingRule(..)
   , LocShortcut(..), SerializableLocShortcut
-  , SomeGLoc(..)
-  , SomeLoc, SomeLocWithVars
   --, allLocsInMappings
   , mappingsFromLocTree
   , mappingRootOnly
@@ -119,17 +117,6 @@ mappingRootOnly l = LocationMappings_ $
 
 
 -- * How to parse mappings to and from JSON
-
--- | Wraps a @GLocOf l a@ where @l@ is a 'LocationAccessor' in monad @m@
-data SomeGLoc m a = forall l. (LocationAccessor m l) => SomeGLoc (GLocOf l a)
-
-type SomeLoc m = SomeGLoc m String
-type SomeLocWithVars m = SomeGLoc m LocString
-
-instance Show (SomeLoc m) where
-  show (SomeGLoc l) = show l
-instance Show (SomeLocWithVars m) where
-  show (SomeGLoc l) = show l
 
 -- | A location with variables where some parts may have been eluded
 data LocShortcut a

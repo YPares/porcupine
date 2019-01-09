@@ -102,7 +102,7 @@ runPipelineCommandOnPTask
   => PTask m i o
   -> i
   -> PipelineCommand o --, RscAccessTree (ResourceTreeNode m))
-  -> PhysicalResourceTree
+  -> PhysicalResourceTree m
   -> m o --, RscAccessTree (PhysicalTreeNode m)
 runPipelineCommandOnPTask ptask input cmd boundTree = do
   let (origTree, runnable) = ptask ^. splittedPTask
@@ -142,7 +142,7 @@ bindResourceTreeAndRun
   => PipelineConfigMethod r -- ^ How to get CLI args from ModelOpts
   -> Rec (FieldWithAccessors (ReaderSoup ctxs)) args
   -> VirtualResourceTree    -- ^ The tree to look for DocRecOfoptions in
-  -> (PipelineCommand r -> PhysicalResourceTree -> PorcupineM ctxs r)
+  -> (PipelineCommand r -> PhysicalResourceTree m -> PorcupineM ctxs r)
              -- ^ What to do with the tree
   -> IO r
 bindResourceTreeAndRun (NoConfig _ root) accessors tree f =
