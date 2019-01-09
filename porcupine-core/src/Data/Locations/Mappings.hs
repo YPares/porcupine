@@ -9,12 +9,18 @@
 {-# LANGUAGE OverloadedStrings          #-}
 {-# LANGUAGE TupleSections              #-}
 {-# LANGUAGE ViewPatterns               #-}
+{-# LANGUAGE ExistentialQuantification  #-}
+{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TypeApplications #-}
 {-# OPTIONS_GHC -Wall #-}
 
 module Data.Locations.Mappings
   ( LocationMappings, LocationMappings_(..)
   , HasDefaultMappingRule(..)
   , LocShortcut(..)
+  , SomeGLoc(..)
+  , SomeLoc, SomeLocWithVars
+  , parseLocationMappingsFromJSON
   , allLocsInMappings
   , mappingsFromLocTree
   , mappingRootOnly
@@ -24,15 +30,19 @@ module Data.Locations.Mappings
   ) where
 
 import           Control.Lens
+import           Control.Monad.ReaderSoup
 import           Data.Aeson
+import qualified Data.Foldable                      as F
 import qualified Data.HashMap.Strict                as HM
 import           Data.List
+import           Data.Locations.Accessors
 import           Data.Locations.Loc
 import           Data.Locations.LocationTree
 import           Data.Locations.SerializationMethod (FileExt)
 import           Data.Maybe
 import           Data.Representable
 import qualified Data.Text                          as T
+import           Katip
 
 
 -- * The 'LocationMappings' type
@@ -113,13 +123,18 @@ mappingRootOnly l = LocationMappings_ $
 
 -- * How to parse mappings to and from JSON
 
--- | A 'LocWithVars' where some parts might have been eluded. Possibly
--- associated to some data.
+-- | Wraps a @GLocOf l a@ where @l@ is a 'LocationAccessor' in monad @m@
+data SomeGLoc m a = forall l. (LocationAccessor m l) => SomeGLoc (GLocOf l a)
+
+type SomeLoc m = SomeGLoc m String
+type SomeLocWithVars m = SomeGLoc m LocString
+
+-- | A 'LocWithVars' where some parts might have been eluded
 data LocShortcut = DeriveWholeLocFromTree FileExt
                    -- ^ Means that this loc path should be inherited from locs
                    -- up the resource tree.
                  | DeriveLocPrefixFromTree (LocFilePath LocString)
-                 | FullySpecifiedLoc LocWithVars
+                 | FullySpecifiedLoc Value
   deriving (Show)
 
       -- The underscore sign here means "reuse inherited", depending on the
@@ -149,9 +164,9 @@ instance FromJSON LocShortcut where
 -- 'LocationMappings_' that don't correspond to anything in the 'LocationTree'
 -- will just be ignored
 insertMappings
-  :: LocationMappings
+  :: LocationMappings m
   -> LocationTree a
-  -> LocationTree (a, Maybe [LocShortcut])
+  -> LocationTree (a, Maybe [LocShortcut m])
 insertMappings (LocationMappings_ m) tree = foldl' go initTree $ HM.toList m
   where
     initTree = fmap (,Nothing) tree
@@ -161,10 +176,11 @@ insertMappings (LocationMappings_ m) tree = foldl' go initTree $ HM.toList m
       -- ...then we update the tree for each mapping present in the
       -- LocationMappings
 
--- | For each location in the tree, gives it a final list of physical location,
+-- | For each location in the tree, gives it a final list of physical locations,
 -- as /layers/ (which can be empty)
-propagateMappings :: ([LocWithVars] -> a -> Bool -> b)
-                  -> LocationTree (a, Maybe [LocShortcut])
+propagateMappings :: forall m a b.
+                     ([SomeLocWithVars m] -> a -> Bool -> b)
+                  -> LocationTree (a, Maybe [LocShortcut m])
                   -> LocationTree b
 propagateMappings f tree = propagateMappings' [] tree
   where
@@ -181,25 +197,29 @@ propagateMappings f tree = propagateMappings' [] tree
         thisNode' = f theseLayers thisNode (isJust mbTheseMappings)
         recur fname subtree = propagateMappings' sublayers subtree
           where
-            sublayers = fmap (</> T.unpack (_ltpiName fname)) theseLayers
+            addSubdir :: SomeLocWithVars m -> SomeLocWithVars m
+            addSubdir (SomeGLoc l) = SomeGLoc $ addSubdirToLoc l $ T.unpack (_ltpiName fname)
+            sublayers = fmap addSubdir theseLayers
 
 -- | Given a list of loc layers inherited from further up the tree, fills in the
 -- blanks in the loc shortcuts given for once node of the tree in order to get
 -- the final loc layers mapped to this node.
 applyInheritedLayersToShortcuts
-  :: [LocWithVars] -- ^ Inherited layers
-  -> Maybe [LocShortcut] -- ^ LocShortcuts mapped to the node
-  -> [LocWithVars] -- ^ Final layers mapped to this node
+  :: forall m. [SomeLocWithVars m] -- ^ Inherited layers
+  -> Maybe [LocShortcut m] -- ^ LocShortcuts mapped to the node
+  -> [SomeLocWithVars m] -- ^ Final layers mapped to this node
 applyInheritedLayersToShortcuts inheritedLayers Nothing = inheritedLayers
 applyInheritedLayersToShortcuts inheritedLayers (Just shortcuts) =
   concatMap fillShortcut shortcuts
   where
     fillShortcut = \case
       FullySpecifiedLoc l -> [l]
-      DeriveLocPrefixFromTree fp -> flip map inheritedLayers $
-                                    over locFilePath (<> fp)
-      DeriveWholeLocFromTree ext -> flip map inheritedLayers $
-                                    over locExt (firstNonEmptyExt $ T.unpack ext)
+      DeriveLocPrefixFromTree fp ->
+        flip map inheritedLayers $ \(SomeGLoc l) ->
+                                     SomeGLoc @m $ useLocAsPrefix l fp
+      DeriveWholeLocFromTree ext ->
+        flip map inheritedLayers $ \(SomeGLoc l) ->
+                                     SomeGLoc @m $ overrideLocType l (T.unpack ext)
 
 -- | Transform a tree to one where unmapped nodes have been changed to 'mempty'
 -- and mapped nodes have been associated to their physical 'Loc'. A function is
@@ -208,9 +228,9 @@ applyInheritedLayersToShortcuts inheritedLayers (Just shortcuts) =
 -- ie. if it was explicitely declared in the config file or if it was derived
 -- from the mapping of a parent folder. @n'@ is often some file type or metadata
 -- that's required in the mapping.
-applyMappings :: ([LocWithVars] -> a -> Bool -> b)
+applyMappings :: ([SomeLocWithVars m] -> a -> Bool -> b)
                                    -- ^ Add physical locations (if they exist) to a node
-              -> LocationMappings  -- ^ Mappings to apply
+              -> LocationMappings m  -- ^ Mappings to apply
               -> LocationTree a    -- ^ Original tree
               -> LocationTree b    -- ^ Tree with physical locations
 applyMappings f mappings loctree =

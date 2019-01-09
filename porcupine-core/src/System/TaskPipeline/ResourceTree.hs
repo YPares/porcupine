@@ -162,12 +162,6 @@ instance Show VirtualFileNode where
   -- TODO: Cleaner Show
   -- TODO: Display read/written types here, since they're already Typeable
 
--- | Wraps a @GLocOf l a@ where @l@ is a 'LocationAccessor' in monad @m@
-data SomeGLoc m a = forall l. (LocationAccessor m l) => SomeGLoc (GLocOf l a)
-
-type SomeLoc m = SomeGLoc m String
-type SomeLocWithVars m = SomeGLoc m LocString
-
 toJSONTxt :: SomeLocWithVars m -> T.Text
 toJSONTxt (SomeGLoc a) = case toJSON a of
   String s -> s
