@@ -153,7 +153,7 @@ splitAccessorsFromRec = over _1 AvailableAccessors . rtraverse getCompose
 -- | Accessing local resources
 instance (MonadResource m, MonadMask m) => LocationAccessor m "resource" where
   newtype GLocOf "resource" a = L (URLLikeLoc a)
-    deriving (Functor, Foldable, Traversable, ToJSON, TypedLocation)
+    deriving (Functor, Foldable, Traversable, ToJSON, Show, TypedLocation)
   locExists (L l) = LM.checkLocal "locExists" LM.locExists_Local l
   writeBSS (L l) = LM.checkLocal "writeBSS" LM.writeBSS_Local l
   readBSS (L l) f =

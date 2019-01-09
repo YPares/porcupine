@@ -296,8 +296,15 @@ class (Traversable f
       -- Just ensure that `forall a. (IsLocString a) => (FromJSON (GLocOf l a),
       -- ToJSON (GLocOf l a))`:
       ,FromJSON (f String), FromJSON (f LocString)
-      ,ToJSON (f String), ToJSON (f LocString)) => TypedLocation f where
+      ,ToJSON (f String), ToJSON (f LocString)
+      -- `forall a. (IsLocString a) => (Show (GLocOf l a))
+      ,Show (f String), Show (f LocString)) => TypedLocation f where
 
+  -- TODO: Find a way to replace get/setLocType by a Lens. This displeased
+  -- GeneralizedNewtypeDeriving when making LocationAccessor and trying to
+  -- automatically derived instances of TypedLocation
+  getLocType :: f a -> String
+  
   -- | Access the file type part of a location
   --
   -- For locations that encode types as extensions, this would access the
@@ -317,11 +324,12 @@ class (Traversable f
   -- its extension) to the location. For now, non URL-based locations should
   -- send an error
   --
-  -- Note: conversely to 'addSubdirToLoc', the filepath MAY contain slashes
+  -- Note: contrary to 'addSubdirToLoc', the filepath MAY contain slashes
   useLocAsPrefix :: (IsLocString a) => f a -> LocFilePath a -> f a
   
 instance TypedLocation URLLikeLoc where
   setLocType l f = l & over (locFilePath . pathExtension) f
+  getLocType = view (locFilePath . pathExtension)
   addSubdirToLoc = (</>)
   useLocAsPrefix l p = l & over locFilePath (<> p)
 
