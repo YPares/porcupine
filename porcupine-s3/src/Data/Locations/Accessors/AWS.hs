@@ -8,11 +8,14 @@
 {-# LANGUAGE PatternSynonyms            #-}
 {-# LANGUAGE RankNTypes                 #-}
 {-# LANGUAGE TypeFamilies               #-}
+{-# LANGUAGE TypeOperators              #-}
 {-# OPTIONS_GHC "-fno-warn-orphans" #-}
 {-# OPTIONS_GHC "-fno-warn-name-shadowing" #-}
 
 module Data.Locations.Accessors.AWS
   ( module Control.Monad.ReaderSoup.AWS
+  , runPipelineTaskS3
+  -- * Backward-compat API
   , selectRun
   , runWriteLazyByte
   , runReadLazyByte
@@ -36,6 +39,9 @@ import           Data.String
 import           Network.AWS                      hiding (Error)
 import           Network.AWS.S3
 import qualified Network.AWS.S3.TaskPipelineUtils as S3
+import           System.TaskPipeline.CLI
+import           System.TaskPipeline.PTask
+import           System.TaskPipeline.Run
 
 
 -- | Just a compatiblity overlay for code explicitly dealing with S3 URLs
@@ -101,6 +107,22 @@ copy_S3 locFrom@(S3Obj bucket1 obj1) locTo@(S3Obj bucket2 obj2)
   | otherwise = readBSS_S3 locFrom (writeBSS_S3 locTo)
 copy_S3 _ _ = undefined
 
+-- | Just a shortcut for when you want ONLY local files and S3 support, with AWS
+-- credentials discovery. Use 'runPipelineTask' if you want to activate other
+-- location accessors.
+runPipelineTaskS3
+  :: PipelineConfigMethod o  -- ^ How to configure the pipeline
+  -> Maybe Region            -- ^ Change the default AWS region
+  -> PTask (PorcupineM (("aws":::ContextFromName "aws") : BasePorcupineContexts)) () o
+  -> IO o
+runPipelineTaskS3 pcm mbRegion ptask =
+  runPipelineTask pcm (  #aws <-- case mbRegion of
+                                    Nothing  -> useAWS Discover
+                                    Just reg -> useAWSRegion Discover reg
+                      :& baseContexts (pcm ^. pipelineConfigMethodProgName) ) ptask ()
+
+
+-- DEPRECATED CODE:
 
 -- * Automatically switching from Resource to AWS monad, depending on some
 -- reference Loc.

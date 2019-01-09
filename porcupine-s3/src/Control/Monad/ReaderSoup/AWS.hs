@@ -10,10 +10,13 @@
 
 module Control.Monad.ReaderSoup.AWS
   ( Credentials(..)
+  , Region(..)
   , useAWS
+  , useAWSRegion
   ) where
 
 import           Control.Exception.Safe
+import           Control.Lens
 import           Control.Monad.Reader
 import           Control.Monad.ReaderSoup
 import           Control.Monad.ReaderSoup.Resource ()
@@ -27,10 +30,18 @@ instance SoupContext Env AWST where
   toReaderT act = ReaderT $ \env -> runAWST env act
   fromReaderT (ReaderT act) = ask >>= lift . act
 
+-- | See 'Credentials' documentation to know how to
 useAWS :: (MonadIO m, MonadCatch m) => Credentials -> ContextRunner AWST m
 useAWS creds = ContextRunner $ \act -> do
   env <- newEnv creds
   runAWST env act
+
+-- | Like 'useAWS', but you set the default 'Region'
+useAWSRegion :: (MonadIO m, MonadCatch m) => Credentials -> Region -> ContextRunner AWST m
+useAWSRegion creds region = ContextRunner $ \act -> do
+  env <- newEnv creds
+  let env' = env & envRegion .~ region
+  runAWST env' act
 
 instance (IsInSoup ctxs "aws", IsInSoup ctxs "resource") => MonadAWS (ReaderSoup ctxs) where
   liftAWS act =
