@@ -1,5 +1,6 @@
 {-# OPTIONS_GHC -fno-warn-type-defaults #-}
 {-# LANGUAGE DeriveFunctor              #-}
+{-# LANGUAGE ExistentialQuantification  #-}
 {-# LANGUAGE FlexibleContexts           #-}
 {-# LANGUAGE FlexibleInstances          #-}
 {-# LANGUAGE FunctionalDependencies     #-}
@@ -7,11 +8,10 @@
 {-# LANGUAGE LambdaCase                 #-}
 {-# LANGUAGE MultiParamTypeClasses      #-}
 {-# LANGUAGE OverloadedStrings          #-}
+{-# LANGUAGE ScopedTypeVariables        #-}
 {-# LANGUAGE TupleSections              #-}
+{-# LANGUAGE TypeApplications           #-}
 {-# LANGUAGE ViewPatterns               #-}
-{-# LANGUAGE ExistentialQuantification  #-}
-{-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE TypeApplications #-}
 {-# OPTIONS_GHC -Wall #-}
 
 module Data.Locations.Mappings
@@ -98,7 +98,7 @@ mappingsFromLocTree (LocationTree node subtree) | HM.null subtree =
     HM.singleton (LTP [])
                  (case getDefaultLocShortcut node of
                     Just shortcuts -> [shortcuts]
-                    Nothing -> [])
+                    Nothing        -> [])
 mappingsFromLocTree (LocationTree _ sub) =
   LocationMappings_ (mconcat $ map f $ HM.toList sub)
   where
@@ -252,4 +252,4 @@ applyMappings f mappings loctree = do
         (\rs -> (node, Just rs)) <$> mapM resolveLocShortcut shortcuts
   treeWithResolvedShortcuts <- traverse resolve treeWithShortcuts
   return $ propagateMappings f treeWithResolvedShortcuts
-    
+

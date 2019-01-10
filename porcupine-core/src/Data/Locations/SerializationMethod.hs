@@ -19,24 +19,24 @@
 
 module Data.Locations.SerializationMethod where
 
-import           Control.Lens                 hiding ((:>))
-import           Data.Aeson                   as A
+import           Control.Lens                hiding ((:>))
+import           Data.Aeson                  as A
+import qualified Data.ByteString.Lazy        as LBS
+import qualified Data.ByteString.Streaming   as BSS
 import           Data.DocRecord
-import           Data.DocRecord.OptParse      (RecordUsableWithCLI)
-import qualified Data.HashMap.Strict          as HM
+import           Data.DocRecord.OptParse     (RecordUsableWithCLI)
+import qualified Data.HashMap.Strict         as HM
 import           Data.Locations.LocVariable
 import           Data.Locations.LogAndErrors
-import           Data.Monoid                  (First (..))
-import qualified Data.Text                    as T
-import qualified Data.Text.Encoding           as TE
-import qualified Data.Text.Lazy               as LT
-import qualified Data.Text.Lazy.Encoding      as LTE
+import           Data.Monoid                 (First (..))
+import qualified Data.Text                   as T
+import qualified Data.Text.Encoding          as TE
+import qualified Data.Text.Lazy              as LT
+import qualified Data.Text.Lazy.Encoding     as LTE
 import           Data.Typeable
 import           Data.Void
 import           Streaming
-import qualified Streaming.Prelude as S
-import qualified Data.ByteString.Lazy as LBS
-import qualified Data.ByteString.Streaming as BSS
+import qualified Streaming.Prelude           as S
 
 
 -- | A file extension
@@ -168,7 +168,7 @@ data SerialWriters a = SerialWriters
   { _serialWritersToAtomic :: HM.HashMap (TypeRep,Maybe FileExt) (ToAtomicFn a)
       -- ^ How to write the data to an intermediate type (like 'A.Value'). As
       -- much as possible this intermediate type should be **lazy**.
-                           
+
   -- , _serialWritersToStream :: HM.HashMap (TypeRep,Maybe FileExt) (ToStreamFn a)
   --     -- ^ How to write the data to an external file or storage.
   , _serialWriterToConfig  :: First (WriteToConfigFn a)
@@ -309,7 +309,7 @@ data CustomPureSerial a = CustomPureSerial
   { customPureSerialExtensionSpecific :: Maybe FileExt
                                  -- ^ Nothing if we shouldn't be
                                  -- extension-specific
-  , customPureSerialWrite      :: a -> LBS.ByteString
+  , customPureSerialWrite             :: a -> LBS.ByteString
                                -- ^ Writing function
   }
 instance SerializationMethod (CustomPureSerial a) where
@@ -339,9 +339,9 @@ instance DeserializesWith (CustomPureDeserial a) a where
 
 -- | Can serialize @a@ and deserialize @b@.
 data SerialsFor a b = SerialsFor
-  { _serialWriters    :: SerialWriters a
-  , _serialReaders    :: SerialReaders b
-  , _serialDefaultExt :: First FileExt
+  { _serialWriters        :: SerialWriters a
+  , _serialReaders        :: SerialReaders b
+  , _serialDefaultExt     :: First FileExt
   , _serialRepetitionKeys :: [LocVariable] }
   deriving (Show)
 

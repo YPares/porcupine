@@ -44,6 +44,7 @@ import           Data.Locations.LocationTree
 import           Data.Locations.Mappings            (HasDefaultMappingRule (..),
                                                      LocShortcut (..))
 import           Data.Locations.SerializationMethod
+import           Data.Maybe
 import           Data.Monoid                        (First (..))
 import           Data.Profunctor                    (Profunctor (..))
 import           Data.Representable
@@ -52,8 +53,7 @@ import           Data.Type.Equality
 import           Data.Typeable
 import           Data.Void
 import           Katip
-import Data.Maybe
-  
+
 
 -- * The general 'VirtualFile' type
 

@@ -256,8 +256,8 @@ makePTask :: (KatipContext m)
 makePTask = makePTask' def
 
 data FunflowPaths m = FunflowPaths
-  { storePath :: FilePath
-  , coordPath :: FilePath
+  { storePath      :: FilePath
+  , coordPath      :: FilePath
   , remoteCacheLoc :: Maybe (SomeLoc m) }
 
 withFunflowRunConfig

@@ -4,6 +4,7 @@
 {-# LANGUAGE DeriveFunctor         #-}
 {-# LANGUAGE DeriveGeneric         #-}
 {-# LANGUAGE DeriveTraversable     #-}
+{-# LANGUAGE FlexibleContexts      #-}
 {-# LANGUAGE FlexibleInstances     #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE NamedFieldPuns        #-}
@@ -196,7 +197,7 @@ parseStringWithVars s = (StringWithVars . reverse . map (over locBitContent reve
     oneChar [] c = return [SWVB_Chunk [c]]
 
     isFull (SWVB_Chunk "") = False
-    isFull _                = True
+    isFull _               = True
 
 refuseVarRefs :: String -> String -> Either String String
 refuseVarRefs place s = do
@@ -305,7 +306,7 @@ class (Traversable f
   -- GeneralizedNewtypeDeriving when making LocationAccessor and trying to
   -- automatically derived instances of TypedLocation
   getLocType :: f a -> String
-  
+
   -- | Access the file type part of a location
   --
   -- For locations that encode types as extensions, this would access the
@@ -313,7 +314,7 @@ class (Traversable f
   -- translate it first to a mime type, or some other implementation-specific
   -- way to to represent resource types
   setLocType :: f a -> (String -> String) -> f a
-  
+
   -- | Use the location as a directory and append a "subdir" to it. Depending on
   -- the implementation this "subdir" relationship can only be semantic (the
   -- result doesn't have to physically be a subdirectory of the input)
@@ -327,7 +328,7 @@ class (Traversable f
   --
   -- Note: contrary to 'addSubdirToLoc', the filepath MAY contain slashes
   useLocAsPrefix :: (IsLocString a) => f a -> LocFilePath a -> f a
-  
+
 instance TypedLocation URLLikeLoc where
   setLocType l f = l & over (locFilePath . pathExtension) f
   getLocType = view (locFilePath . pathExtension)
@@ -339,6 +340,5 @@ overrideLocType :: (TypedLocation f) => f a -> String -> f a
 overrideLocType loc newExt = setLocType loc (newExt `firstNonEmptyExt`)
 
 -- | Sets the file type of a location unless it already has one
-addExtToLocIfMissing :: (TypedLocation f) => f a -> String -> f a
-addExtToLocIfMissing loc newExt = setLocType loc (`firstNonEmptyExt` newExt)
--- TODO: rename it
+setLocTypeIfMissing :: (TypedLocation f) => f a -> String -> f a
+setLocTypeIfMissing loc newExt = setLocType loc (`firstNonEmptyExt` newExt)

@@ -1,4 +1,5 @@
 {-# LANGUAGE DataKinds                  #-}
+{-# LANGUAGE DeriveTraversable          #-}
 {-# LANGUAGE FlexibleContexts           #-}
 {-# LANGUAGE FlexibleInstances          #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
@@ -8,7 +9,6 @@
 {-# LANGUAGE PatternSynonyms            #-}
 {-# LANGUAGE RankNTypes                 #-}
 {-# LANGUAGE TypeFamilies               #-}
-{-# LANGUAGE DeriveTraversable          #-}
 {-# OPTIONS_GHC "-fno-warn-orphans" #-}
 {-# OPTIONS_GHC "-fno-warn-name-shadowing" #-}
 

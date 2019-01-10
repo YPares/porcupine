@@ -8,7 +8,7 @@
 {-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TupleSections       #-}
-{-# LANGUAGE TypeOperators #-}
+{-# LANGUAGE TypeOperators       #-}
 {-# LANGUAGE ViewPatterns        #-}
 {-# OPTIONS_GHC -fno-warn-missing-pattern-synonym-signatures #-}
 {-# OPTIONS_GHC -fno-warn-name-shadowing #-}
@@ -56,7 +56,7 @@
 module System.TaskPipeline.ResourceTree where
 
 import           Control.Exception.Safe
-import           Control.Lens                            hiding ((<.>), (:>))
+import           Control.Lens                            hiding ((:>), (<.>))
 import           Control.Monad
 import           Data.Aeson
 import qualified Data.ByteString                         as Strict
@@ -66,7 +66,8 @@ import           Data.DocRecord
 import           Data.DocRecord.OptParse
 import qualified Data.HashMap.Strict                     as HM
 import           Data.List                               (intersperse)
-import           Data.Locations                          hiding (writeBSS, readBSS)
+import           Data.Locations                          hiding (readBSS,
+                                                          writeBSS)
 import           Data.Locations.Accessors
 import           Data.Maybe
 import           Data.Monoid                             (First (..))
@@ -165,7 +166,7 @@ instance Show VirtualFileNode where
 toJSONTxt :: SomeLocWithVars m -> T.Text
 toJSONTxt (SomeGLoc a) = case toJSON a of
   String s -> s
-  v -> LT.toStrict $ LTE.decodeUtf8 $ encode v
+  v        -> LT.toStrict $ LTE.decodeUtf8 $ encode v
 
 instance Show (PhysicalFileNode m) where
   show (MbPhysicalFileNode layers mbVF) =
@@ -407,7 +408,7 @@ applyOneRscMapping variables configLayers mbVF mappingIsExplicit = buildPhysical
              -- mapping to be present in the config file, if we want them to be
              -- read from external files instead
                | otherwise = map resolveExt configLayers'
-        resolveExt (SomeGLoc loc) = SomeGLoc $ addExtToLocIfMissing loc $ T.unpack $ fromMaybe "" defExt
+        resolveExt (SomeGLoc loc) = SomeGLoc $ setLocTypeIfMissing loc $ T.unpack $ fromMaybe "" defExt
     buildPhysicalNode _ = MbPhysicalFileNode configLayers' Nothing
 
 -- | Binds together a 'VirtualResourceTree' with physical locations an splices
@@ -539,7 +540,7 @@ resolveDataAccess (PhysicalFileNode layers vf) = do
 
     readers = vf ^. vfileSerials . serialReaders . serialReadersFromStream
     writers = vf ^. vfileSerials . serialWriters . serialWritersToAtomic
-  
+
     findFunctions :: TypeRep -> HM.HashMap (TypeRep,Maybe FileExt) v -> m' [(v, SomeLocWithVars m)]
     findFunctions typeRep hm | HM.null hm = return []
                              | otherwise  = mapM findFunction layers

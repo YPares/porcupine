@@ -1,5 +1,7 @@
 {-# LANGUAGE DataKinds                  #-}
 {-# LANGUAGE DefaultSignatures          #-}
+{-# LANGUAGE DeriveTraversable          #-}
+{-# LANGUAGE ExistentialQuantification  #-}
 {-# LANGUAGE FlexibleContexts           #-}
 {-# LANGUAGE FlexibleInstances          #-}
 {-# LANGUAGE GADTs                      #-}
@@ -7,6 +9,7 @@
 {-# LANGUAGE MultiParamTypeClasses      #-}
 {-# LANGUAGE OverloadedLabels           #-}
 {-# LANGUAGE OverloadedStrings          #-}
+{-# LANGUAGE PatternSynonyms            #-}
 {-# LANGUAGE RankNTypes                 #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
 {-# LANGUAGE TupleSections              #-}
@@ -14,8 +17,6 @@
 {-# LANGUAGE TypeFamilies               #-}
 {-# LANGUAGE TypeOperators              #-}
 {-# LANGUAGE UndecidableInstances       #-}
-{-# LANGUAGE DeriveTraversable          #-}
-{-# LANGUAGE PatternSynonyms #-}
 {-# OPTIONS_GHC "-fno-warn-incomplete-uni-patterns" #-}
 {-# OPTIONS_GHC "-fno-warn-missing-signatures" #-}
 
@@ -31,18 +32,16 @@ module Data.Locations.Accessors
   , SomeLocationAccessor(..)
   , AvailableAccessors
   , LocResolutionM
-  , PorcupineM, SimplePorcupineM, BasePorcupineContexts
+  , BasePorcupineContexts
   , (<--)
   , pattern L
   , baseContexts
-  , runPorcupineM
   , splitAccessorsFromArgRec
   , withParsedLocs, withParsedLocsWithVars, resolvePathToSomeLoc
-  , writeLazyByte, readLazyByte, readText
+  , writeLazyByte, readLazyByte, readText, writeText
   ) where
 
 import           Control.Lens                      (over, (^.), _1)
--- import           Control.Funflow.ContentHashable
 import           Control.Monad.IO.Unlift
 import           Control.Monad.ReaderSoup
 import           Control.Monad.ReaderSoup.Resource
@@ -52,16 +51,18 @@ import           Data.Aeson
 import qualified Data.ByteString.Lazy              as LBS
 import qualified Data.ByteString.Streaming         as BSS
 import           Data.Locations.Loc
-import qualified Data.Locations.LocationMonad      as LM
 import           Data.Locations.LogAndErrors
--- import           Data.Store                      (Store)
 import qualified Data.Text                         as T
+import qualified Data.Text.Encoding                as TE
 import qualified Data.Text.Lazy                    as LT
-import           Data.Text.Lazy.Encoding           (decodeUtf8)
+import qualified Data.Text.Lazy.Encoding           as LTE
 import           Data.Vinyl
 import           Data.Vinyl.Functor
 import           GHC.TypeLits
 import           Katip
+import           System.Directory                  (createDirectoryIfMissing,
+                                                    createFileLink,
+                                                    doesPathExist)
 import qualified System.FilePath                   as Path
 import qualified System.IO.Temp                    as Tmp
 import           System.TaskPipeline.Logger
@@ -159,19 +160,30 @@ splitAccessorsFromArgRec = over _1 AvailableAccessors . rtraverse getCompose
 
 -- * Making "resource" a LocationAccessor
 
+checkLocal :: String -> Loc -> (LocalFilePath -> p) -> p
+checkLocal _ (LocalFile fname) f = f fname
+checkLocal funcName loc _ = error $ funcName ++ ": location " ++ show loc ++ " isn't a LocalFile"
+
 -- | Accessing local resources
 instance (MonadResource m, MonadMask m) => LocationAccessor m "resource" where
   newtype GLocOf "resource" a = L (URLLikeLoc a)
     deriving (Functor, Foldable, Traversable, ToJSON, Show, TypedLocation)
-  locExists (L l) = LM.checkLocal "locExists" LM.locExists_Local l
-  writeBSS (L l) = LM.checkLocal "writeBSS" LM.writeBSS_Local l
-  readBSS (L l) f =
-    LM.checkLocal "readBSS" (\l' -> LM.readBSS_Local l' f) l
-  withLocalBuffer f (L l) =
-    LM.checkLocal "withLocalBuffer" (\l' -> f $ l'^.locFilePathAsRawFilePath) l
+  locExists (L l) = checkLocal "locExists" l $
+    liftIO . doesPathExist . (^. locFilePathAsRawFilePath)
+  writeBSS (L l) body = checkLocal "writeBSS" l $ \path -> do
+    let raw = path ^. locFilePathAsRawFilePath
+    liftIO $ createDirectoryIfMissing True (Path.takeDirectory raw)
+    BSS.writeFile raw body
+  readBSS (L l) f = checkLocal "readBSS" l $ \path ->
+    f $ BSS.readFile $ path ^. locFilePathAsRawFilePath
+  withLocalBuffer f (L l) = checkLocal "withLocalBuffer" l $ \path ->
+    f $ path ^. locFilePathAsRawFilePath
   copy (L l1) (L l2) =
-    LM.checkLocal "copy" (\file1 ->
-      LM.checkLocal "copy (2nd argument)" (LM.copy_Local file1) l2) l1
+    checkLocal "copy" l1 $ \path1 ->
+    checkLocal "copy (2nd argument)" l2 $ \path2 ->
+      liftIO $ createFileLink
+        (path1 ^. locFilePathAsRawFilePath)
+        (path2 ^. locFilePathAsRawFilePath)
 
 instance (IsLocString a) => FromJSON (GLocOf "resource" a) where
   parseJSON v = do
@@ -233,7 +245,14 @@ readText
   => LocOf l
   -> m T.Text
 readText loc =
-  LT.toStrict . decodeUtf8 <$> readLazyByte loc
+  LT.toStrict . LTE.decodeUtf8 <$> readLazyByte loc
+
+writeText
+  :: (LocationAccessor m l)
+  => LocOf l
+  -> T.Text
+  -> m ()
+writeText loc = writeBSS loc . BSS.fromStrict . TE.encodeUtf8
 
 
 -- * Base contexts, providing LocationAccessor to local filesystem resources
@@ -255,20 +274,6 @@ baseContexts topNamespace =
 -- | The context in which aeson Values can be resolved to actual Locations
 type LocResolutionM m = ReaderT (AvailableAccessors m) m
 
--- | Temporary type until LocationMonad is removed.
-type PorcupineM ctxs = LocResolutionM (ReaderSoup ctxs)
-
--- | The simplest, minimal ReaderSoup to run a local accessor
-type SimplePorcupineM = PorcupineM BasePorcupineContexts
-
--- | Temporary runner until LocationMonad is removed
-runPorcupineM :: (ArgsForSoupConsumption args)
-              => Rec (FieldWithAccessors (ReaderSoup (ContextsFromArgs args))) args
-              -> PorcupineM (ContextsFromArgs args) a
-              -> IO a
-runPorcupineM argsWithAccsRec act = consumeSoup argsRec $ runReaderT act parserCtx
-  where (parserCtx, argsRec) = splitAccessorsFromArgRec argsWithAccsRec
-
 -- | Finds in the accessors list a way to parse a list of JSON values that
 -- should correspond to some `LocOf l` type
 withParsedLocsWithVars
@@ -284,7 +289,7 @@ withParsedLocsWithVars aesonVals f = do
     _  -> return ()
   loop allAccessors mempty
   where
-    showJ = LT.unpack . LT.intercalate ", " . map (decodeUtf8 . encode)
+    showJ = LT.unpack . LT.intercalate ", " . map (LTE.decodeUtf8 . encode)
     loop [] errCtxs =
       katipAddContext (sl "errorsFromAccessors" errCtxs) $
       throwWithPrefix $ "Location(s) " ++ showJ aesonVals
@@ -308,7 +313,7 @@ withParsedLocs aesonVals f = do
     _  -> return ()
   loop allAccessors mempty
   where
-    showJ = LT.unpack . LT.intercalate ", " . map (decodeUtf8 . encode)
+    showJ = LT.unpack . LT.intercalate ", " . map (LTE.decodeUtf8 . encode)
     loop [] errCtxs =
       katipAddContext (sl "errorsFromAccessors" errCtxs) $
       throwWithPrefix $ "Location(s) " ++ showJ aesonVals
@@ -326,16 +331,3 @@ resolvePathToSomeLoc
   -> LocResolutionM m (SomeLoc m)
 resolvePathToSomeLoc p =
   withParsedLocs [String $ T.pack p] $ \[l] -> return $ SomeGLoc l
-
--- Temporary, until LocationMonad is removed and LocOf types are directly
--- integrated into the resource tree:
-instance (KatipContext (ReaderSoup ctxs)) => LM.LocationMonad (PorcupineM ctxs) where
-  locExists l = withParsedLocs [toJSON l] $ lift . locExists . head
-  writeBSS l bs = withParsedLocs [toJSON l] $ \[l'] -> do
-    lpc <- ask
-    lift $ writeBSS l' $ hoist (flip runReaderT lpc) bs
-  readBSS l f = withParsedLocs [toJSON l] $ \[l'] -> do
-    lpc <- ask
-    lift $ readBSS l' (flip runReaderT lpc . f . hoist (ReaderT . const))
-  copy l1 l2 = withParsedLocs [toJSON l1, toJSON l2] $ \[l1', l2'] -> do
-    lift $ copy l1' l2'

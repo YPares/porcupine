@@ -5,10 +5,8 @@ module System.TaskPipeline
   , module System.TaskPipeline.Options
   , module System.TaskPipeline.Repetition
   , module Data.Locations.LogAndErrors
-  , LocationMonad
   ) where
 
-import           Data.Locations.LocationMonad
 import           Data.Locations.LogAndErrors
 import           System.TaskPipeline.Options
 import           System.TaskPipeline.PTask
