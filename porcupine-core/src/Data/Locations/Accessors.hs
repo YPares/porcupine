@@ -15,6 +15,7 @@
 {-# LANGUAGE TypeOperators              #-}
 {-# LANGUAGE UndecidableInstances       #-}
 {-# LANGUAGE DeriveTraversable          #-}
+{-# LANGUAGE PatternSynonyms #-}
 {-# OPTIONS_GHC "-fno-warn-incomplete-uni-patterns" #-}
 {-# OPTIONS_GHC "-fno-warn-missing-signatures" #-}
 
@@ -32,9 +33,10 @@ module Data.Locations.Accessors
   , LocResolutionM
   , PorcupineM, SimplePorcupineM, BasePorcupineContexts
   , (<--)
+  , pattern L
   , baseContexts
   , runPorcupineM
-  , splitAccessorsFromRec
+  , splitAccessorsFromArgRec
   , withParsedLocs, withParsedLocsWithVars, resolvePathToSomeLoc
   , writeLazyByte, readLazyByte, readText
   ) where
@@ -146,9 +148,12 @@ lbl <-- args = Compose (getLocationAccessors lbl, lbl =: args)
 newtype AvailableAccessors m = AvailableAccessors [SomeLocationAccessor m]
 
 -- | Retrieves the list of all available LocationAccessors
-splitAccessorsFromRec ::
-  Rec (FieldWithAccessors m) ctxs -> (AvailableAccessors m, Rec ElField ctxs)
-splitAccessorsFromRec = over _1 AvailableAccessors . rtraverse getCompose
+splitAccessorsFromArgRec
+  :: (ArgsForSoupConsumption args)
+  => Rec (FieldWithAccessors (ReaderSoup (ContextsFromArgs args))) args
+  -> ( AvailableAccessors (ReaderSoup (ContextsFromArgs args))
+     , Rec ElField args )
+splitAccessorsFromArgRec = over _1 AvailableAccessors . rtraverse getCompose
   -- `(,) a` is an Applicative if a is a Monoid, so this will merge all the lists
   -- of SomeLocationAccessors
 
@@ -262,7 +267,7 @@ runPorcupineM :: (ArgsForSoupConsumption args)
               -> PorcupineM (ContextsFromArgs args) a
               -> IO a
 runPorcupineM argsWithAccsRec act = consumeSoup argsRec $ runReaderT act parserCtx
-  where (parserCtx, argsRec) = splitAccessorsFromRec argsWithAccsRec
+  where (parserCtx, argsRec) = splitAccessorsFromArgRec argsWithAccsRec
 
 -- | Finds in the accessors list a way to parse a list of JSON values that
 -- should correspond to some `LocOf l` type

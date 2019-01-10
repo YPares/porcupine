@@ -32,7 +32,6 @@ import qualified Data.ByteString.Lazy             as LBS
 import qualified Data.ByteString.Streaming        as BSS
 import           Data.Locations.Accessors
 import           Data.Locations.Loc
-import           Data.Locations.LocationMonad     as LM
 import           Data.String
 import           Network.AWS                      hiding (Error)
 import           Network.AWS.S3
@@ -50,8 +49,8 @@ instance (MonadAWS m, MonadMask m, MonadResource m)
     deriving (Functor, Foldable, Traversable, ToJSON, Show, TypedLocation)
   locExists _ = return True -- TODO: Implement it
   writeBSS (S l) = writeBSS_S3 l
-  readBSS (S l) f = readBSS_S3 l f -- >>= LM.eitherToExn
-  copy (S l1) (S l2) = copy_S3 l1 l2 -- >>= LM.eitherToExn
+  readBSS (S l) f = readBSS_S3 l f
+  copy (S l1) (S l2) = copy_S3 l1 l2
 
 instance (MonadAWS m, MonadMask m, MonadResource m)
       => MayProvideLocationAccessors m "aws"
@@ -105,23 +104,26 @@ copy_S3 locFrom@(S3Obj bucket1 obj1) locTo@(S3Obj bucket2 obj2)
 copy_S3 _ _ = undefined
 
 
--- * Automatically switching from Resource to AWS monad, depending on some
--- reference Loc.
+-- * Automatically switching from Resource to AWS monad when accessing some loc
 
 -- | Run a computation or a sequence of computations that will access some
 -- locations. Selects whether to run in IO or AWS based on some Loc used as
 -- selector.
-selectRun :: URLLikeLoc t  -- ^ A Loc to use as switch (RunContext root or file)
-          -> Bool -- ^ Verbosity
-          -> (forall m. (LocationMonad m, MonadIO m, MonadBaseControl IO m) => m a)
+selectRun :: Loc  -- ^ A Loc to access
+          -> (forall m l. (LocationAccessor m l) => LocOf l -> m a)
              -- ^ The action to run, either in AWS or IO
           -> IO a
-selectRun refLoc _verbose act =
-  case refLoc of
-    LocalFile{} ->
-      runPorcupineM (baseContexts "selectRun_Local") act
-    S3Obj{} ->
-      runPorcupineM (#aws <-- useAWS Discover :& baseContexts "selectRun_AWS") act
+selectRun loc f =
+  case loc of
+    LocalFile{} -> do
+      let accessorsRec = baseContexts "selectRun_Local"
+          (_,argsRec) = splitAccessorsFromArgRec accessorsRec
+      consumeSoup argsRec $ f (L loc)
+    S3Obj{} -> do
+      let accessorsRec =    #aws <-- useAWS Discover
+                         :& baseContexts "selectRun_AWS"
+          (_,argsRec) = splitAccessorsFromArgRec accessorsRec
+      consumeSoup argsRec $ f (S loc)
     _ -> error "selectRun only handles local and S3 locations"
 
 -- | Just a shortcut
@@ -129,12 +131,9 @@ runWriteLazyByte
   :: Loc
   -> LBS.ByteString
   -> IO ()
-runWriteLazyByte l bs = selectRun l True $ LM.writeLazyByte l bs
+runWriteLazyByte l bs = selectRun l $ \l' -> writeLazyByte l' bs
 
 -- | Just a shortcut
-runReadLazyByte :: Loc -> IO LBS.ByteString
-runReadLazyByte l = selectRun l True $ LM.readLazyByte l
-
--- | Just a shortcut
-runReadLazyByte_ :: Loc -> IO LBS.ByteString
-runReadLazyByte_ l = selectRun l True $ LM.readLazyByte l
+runReadLazyByte, runReadLazyByte_ :: Loc -> IO LBS.ByteString
+runReadLazyByte l = selectRun l readLazyByte
+runReadLazyByte_ = runReadLazyByte
