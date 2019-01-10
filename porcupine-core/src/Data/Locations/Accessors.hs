@@ -69,7 +69,7 @@ import           System.TaskPipeline.Logger
 type LocOf l = GLocOf l String
 
 -- | A location that contains variables needing to be instanciated.
-type LocWithVarsOf l = GLocOf l LocString
+type LocWithVarsOf l = GLocOf l StringWithVars
 
 -- | Creates some Loc type, indexed over a symbol (see ReaderSoup for how that
 -- symbol should be used), and equipped with functions to access it in some
@@ -192,7 +192,7 @@ instance Traversable (SomeGLoc m) where
   traverse f (SomeGLoc l) = SomeGLoc <$> traverse f l
 
 type SomeLoc m = SomeGLoc m String
-type SomeLocWithVars m = SomeGLoc m LocString
+type SomeLocWithVars m = SomeGLoc m StringWithVars
 
 instance Show (SomeLoc m) where
   show (SomeGLoc l) = show l

@@ -101,9 +101,9 @@ instance HasDefaultMappingRule (VirtualFile a b) where
         -- LIMITATION: For now we suppose that every reading/writing function in
         -- the serials has the same repetition keys
         Just rkeys -> DeriveLocPrefixFromTree $
-          let toVar rkey = LocBitVarRef rkey
-              locStr = LocString $ (LocBitChunk "-")
-                       : intersperse (LocBitChunk "-") (map toVar rkeys)
+          let toVar rkey = SWVB_VarRef rkey
+              locStr = StringWithVars $ (SWVB_Chunk "-")
+                       : intersperse (SWVB_Chunk "-") (map toVar rkeys)
           in LocFilePath locStr $ T.unpack defExt
     else Nothing
     where
