@@ -8,6 +8,7 @@
 {-# LANGUAGE PatternSynonyms            #-}
 {-# LANGUAGE RankNTypes                 #-}
 {-# LANGUAGE TypeFamilies               #-}
+{-# LANGUAGE DeriveTraversable          #-}
 {-# OPTIONS_GHC "-fno-warn-orphans" #-}
 {-# OPTIONS_GHC "-fno-warn-name-shadowing" #-}
 
@@ -43,15 +44,17 @@ pattern S3Obj :: String -> LocFilePath a -> URLLikeLoc a
 pattern S3Obj{bucketName,objectName} = RemoteFile "s3" bucketName objectName
 
 -- | Accessing resources on S3
-instance (MonadAWS m, MonadMask m, MonadResource m) => LocationAccessor m "aws" where
+instance (MonadAWS m, MonadMask m, MonadResource m)
+      => LocationAccessor m "aws" where
   newtype GLocOf "aws" a = S (URLLikeLoc a)
-    deriving (Functor, ToJSON)
+    deriving (Functor, Foldable, Traversable, ToJSON, Show, TypedLocation)
   locExists _ = return True -- TODO: Implement it
   writeBSS (S l) = writeBSS_S3 l
   readBSS (S l) f = readBSS_S3 l f -- >>= LM.eitherToExn
   copy (S l1) (S l2) = copy_S3 l1 l2 -- >>= LM.eitherToExn
 
-instance (MonadAWS m, MonadMask m, MonadResource m) => MayProvideLocationAccessors m "aws"
+instance (MonadAWS m, MonadMask m, MonadResource m)
+      => MayProvideLocationAccessors m "aws"
 
 instance (IsLocString a) => FromJSON (GLocOf "aws" a) where
   parseJSON v = do
@@ -126,12 +129,12 @@ runWriteLazyByte
   :: Loc
   -> LBS.ByteString
   -> IO ()
-runWriteLazyByte l bs = selectRun l True $ writeLazyByte l bs
+runWriteLazyByte l bs = selectRun l True $ LM.writeLazyByte l bs
 
 -- | Just a shortcut
 runReadLazyByte :: Loc -> IO LBS.ByteString
-runReadLazyByte l = selectRun l True $ readLazyByte l
+runReadLazyByte l = selectRun l True $ LM.readLazyByte l
 
 -- | Just a shortcut
 runReadLazyByte_ :: Loc -> IO LBS.ByteString
-runReadLazyByte_ l = selectRun l True $ readLazyByte l
+runReadLazyByte_ l = selectRun l True $ LM.readLazyByte l
