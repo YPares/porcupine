@@ -65,7 +65,14 @@ secondP :: (Arrow a) => a c c' -> a (Pair b c) (Pair b c')
 secondP ar =
   arr toTup >>> second ar >>> arr fromTup
 
--- | If @i@ is () and @arr@ is (->), then 'FoldA' is just 'Fold'
+-- | This is a generalization of 'Control.Foldl.Fold' that
+-- allows computing on arrows.
+--
+-- 'FoldA (->) ()' is isomorphic to 'Fold' as testified
+-- by 'generalizeA' and 'specializeA'.
+--
+-- 'FoldA (Kleisly m) ()' is isomorphic to 'FoldM m'.
+--
 data FoldA arr i a b =
   forall x. FoldA (arr (Pair x a) x) (arr i x) (arr x b)
 
