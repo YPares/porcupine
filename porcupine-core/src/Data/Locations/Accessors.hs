@@ -184,6 +184,13 @@ instance (MonadResource m, MonadMask m) => MayProvideLocationAccessors m "resour
 -- 'LocationAccessor' in monad @m@.
 data SomeGLoc m a = forall l. (LocationAccessor m l) => SomeGLoc (GLocOf l a)
 
+instance Functor (SomeGLoc m) where
+  fmap f (SomeGLoc l) = SomeGLoc $ fmap f l
+instance Foldable (SomeGLoc m) where
+  foldMap f (SomeGLoc l) = foldMap f l
+instance Traversable (SomeGLoc m) where
+  traverse f (SomeGLoc l) = SomeGLoc <$> traverse f l
+
 type SomeLoc m = SomeGLoc m String
 type SomeLocWithVars m = SomeGLoc m LocString
 
@@ -196,7 +203,6 @@ instance ToJSON (SomeLoc m) where
   toJSON (SomeGLoc l) = toJSON l
 instance ToJSON (SomeLocWithVars m) where
   toJSON (SomeGLoc l) = toJSON l
-
 
 -- * Some helper functions to directly read write/read bytestring into/from
 -- locations
