@@ -19,54 +19,67 @@
 
 module Data.Locations.SerializationMethod where
 
-import           Control.Lens
-import           Data.Aeson                   as A
+import           Control.Lens                hiding ((:>))
+import           Data.Aeson                  as A
+import qualified Data.ByteString.Lazy        as LBS
+import qualified Data.ByteString.Streaming   as BSS
 import           Data.DocRecord
-import           Data.DocRecord.OptParse      (RecordUsableWithCLI)
-import qualified Data.HashMap.Strict          as HM
-import           Data.Locations.Loc           as Loc
-import           Data.Locations.LocationMonad as Loc
+import           Data.DocRecord.OptParse     (RecordUsableWithCLI)
+import qualified Data.HashMap.Strict         as HM
 import           Data.Locations.LocVariable
 import           Data.Locations.LogAndErrors
-import           Data.Monoid                  (First (..))
-import qualified Data.Text                    as T
+import           Data.Monoid                 (First (..))
+import qualified Data.Text                   as T
+import qualified Data.Text.Encoding          as TE
+import qualified Data.Text.Lazy              as LT
+import qualified Data.Text.Lazy.Encoding     as LTE
 import           Data.Typeable
 import           Data.Void
+import           Streaming
+import qualified Streaming.Prelude           as S
 
+
+-- | A file extension
+type FileExt = T.Text
 
 -- | How to read an @a@ from some identified type @i@, which is meant to be a
 -- general-purpose intermediate representation, like 'A.Value'.
-data FromIntermediaryFn a =
-  forall i. (Typeable i) => FromIntermediaryFn (i -> Either String a)
-deriving instance Functor FromIntermediaryFn
+data FromAtomicFn a =
+  forall i. (Typeable i) => FromAtomicFn (i -> Either String a)
+deriving instance Functor FromAtomicFn
 
-instance Show (FromIntermediaryFn a) where
-  show _ = "<FromIntermediaryFn>"
+instance Show (FromAtomicFn a) where
+  show _ = "<FromAtomicFn>"
 
-singletonFromIntermediaryFn
-  :: forall i a. (Typeable i) => (i -> Either String a) -> HM.HashMap TypeRep (FromIntermediaryFn a)
-singletonFromIntermediaryFn f = HM.singleton argTypeRep (FromIntermediaryFn f)
+singletonFromAtomicFn
+  :: forall i a. (Typeable i)
+  => Maybe FileExt
+  -> (i -> Either String a)
+  -> HM.HashMap (TypeRep,Maybe FileExt) (FromAtomicFn a)
+singletonFromAtomicFn ext f = HM.singleton (argTypeRep,ext) (FromAtomicFn f)
   where argTypeRep = typeOf (undefined :: i)
 
--- | How to read an @a@ from some file, in any 'LocationMonad'.
-data ReadFromLoc a =
-  ReadFromLoc { _readFromLocRepetitionKeys :: [LocVariable]
-              , _readFromLocPerform        ::
-                  (forall m. (LocationMonad m, LogThrow m)
-                  => Loc -> m a)
-              }
-  deriving (Functor)
+-- | How to read an @a@ from some @Stream (Of i) m r@
+data FromStreamFn a =
+  forall i. (Typeable i)
+  => FromStreamFn (forall m r. (LogMask m)
+                   => Stream (Of i) m r -> m (Of a r))
 
-instance Show (ReadFromLoc a) where
-  show _ = "<ReadFromLoc>"
+instance Functor FromStreamFn where
+  fmap f (FromStreamFn g) = FromStreamFn $ \s -> do
+    (a :> r) <- g s
+    return $ f a :> r
 
-makeLenses ''ReadFromLoc
+instance Show (FromStreamFn a) where
+  show _ = "<FromStreamFn>"
 
--- | Constructs a 'ReadFromLoc' that will not expect any repetition.
-simpleReadFromLoc
-  :: (forall m. (LocationMonad m, MonadThrow m) => Loc -> m a)
-  -> ReadFromLoc a
-simpleReadFromLoc f = ReadFromLoc [] f
+singletonFromStreamFn
+  :: forall i a. (Typeable i)
+  => Maybe FileExt
+  -> (forall m r. (LogMask m) => Stream (Of i) m r -> m (Of a r))
+  -> HM.HashMap (TypeRep,Maybe FileExt) (FromStreamFn a)
+singletonFromStreamFn ext f = HM.singleton (argTypeRep,ext) (FromStreamFn f)
+  where argTypeRep = typeOf (undefined :: i)
 
 -- | A function to read @a@ from a 'DocRec'
 data ReadFromConfigFn a = forall rs. (Typeable rs) => ReadFromConfigFn (DocRec rs -> a)
@@ -75,66 +88,71 @@ deriving instance Functor ReadFromConfigFn
 instance Show (ReadFromConfigFn a) where
   show _ = "<ReadFromConfigFn>"
 
--- | A file extension
-type FileExt = T.Text
-
 -- | Here, "serial" is short for "serialization method". 'SerialReaders' is the
 -- **covariant** part of 'SerialsFor'. It describes the different ways a serial
 -- can be used to obtain data.
 data SerialReaders a = SerialReaders
-  { _serialReadersFromIntermediary :: HM.HashMap TypeRep (FromIntermediaryFn a)
+  { -- TODO: Establish whether we should remove readersFromAtomic? It is often
+    -- equivalent to reading from a stream of just one element, and therefore
+    -- mostly duplicates code.
+    _serialReadersFromAtomic ::
+        HM.HashMap (TypeRep,Maybe FileExt) (FromAtomicFn a)
        -- ^ How to read data from an intermediate type (like 'A.Value' or
-       -- 'T.Text') that should be directly read from the pipeline's
-       -- configuration
-  , _serialReaderFromConfig        :: First (ReadFromConfigFn a)
-    -- ^ How to read data from the CLI. It can be seen as a special kind of
-    -- reader FromIntermediary.
-  , _serialReaderEmbeddedValue     :: First a
+       -- 'T.Text'). As much as possible these intermediate atomic
+       -- representations should be **strict**.
+  , _serialReadersFromStream ::
+        HM.HashMap (TypeRep,Maybe FileExt) (FromStreamFn a)
+       -- ^ How to read data from a stream of intermediate data types (like
+       -- strict ByteStrings). Each one of them being strict as much as
+       -- possible.
+  , _serialReaderFromConfig :: First (ReadFromConfigFn a)
+       -- ^ How to read data from the CLI. It can be seen as a special kind of
+       -- reader FromAtomic.
+  , _serialReaderEmbeddedValue :: First a
       -- ^ Simply read from an embedded value. Depending on when this field is
       -- accessed, it can correspond to a default value or the value we read
       -- from the configuration.
-  , _serialReadersFromInputFile    :: HM.HashMap FileExt (ReadFromLoc a)
-       -- ^ How to read data from an external file or data storage.
   }
   deriving (Functor, Show)
 
 makeLenses ''SerialReaders
 
 instance Semigroup (SerialReaders a) where
-  SerialReaders i c v f <> SerialReaders i' c' v' f' =
-    SerialReaders (HM.unionWith const i i') (c<>c') (v<>v') (HM.unionWith const f f')
+  SerialReaders a s c v <> SerialReaders a' s' c' v' =
+    SerialReaders (HM.unionWith const a a') (HM.unionWith const s s') (c<>c') (v<>v')
 instance Monoid (SerialReaders a) where
   mempty = SerialReaders mempty mempty mempty mempty
 
 -- | How to turn an @a@ into some identified type @i@, which is meant to a
 -- general purpose intermediate representation, like 'A.Value' or even 'T.Text'.
-data ToIntermediaryFn a =
-  forall i. (Typeable i) => ToIntermediaryFn (a -> i)
+data ToAtomicFn a =
+  forall i. (Typeable i) => ToAtomicFn (a -> i)
 
-instance Show (ToIntermediaryFn a) where
-  show _ = "<ToIntermediaryFn>"
+instance Show (ToAtomicFn a) where
+  show _ = "<ToAtomicFn>"
 
-singletonToIntermediaryFn :: (Typeable i) => (a -> i) -> HM.HashMap TypeRep (ToIntermediaryFn a)
-singletonToIntermediaryFn f = HM.singleton (typeOf $ f undefined) (ToIntermediaryFn f)
+singletonToAtomicFn :: (Typeable i)
+                    => Maybe FileExt
+                    -> (a -> i)
+                    -> HM.HashMap (TypeRep,Maybe FileExt) (ToAtomicFn a)
+singletonToAtomicFn ext f = HM.singleton (typeOf $ f undefined,ext) (ToAtomicFn f)
 
--- | How to write an @a@ to some file, in any 'LocationMonad'.
-data WriteToLoc a = WriteToLoc
-  { _writeToLocRepetitionKeys :: [LocVariable]
-  , _writeToLocPerform ::
-      (forall m. (LocationMonad m, LogThrow m)
-      =>  a -> Loc -> m ())
-  }
+-- -- | How to turn an @a@ into some @Stream (Of i) m ()@
+-- data ToStreamFn a =
+--   forall i. (Typeable i)
+--   => ToStreamFn (forall m. (LogMask m)
+--                  => a -> Stream (Of i) m ())
 
-instance Show (WriteToLoc a) where
-  show (WriteToLoc rks _) = "<WriteToLoc, rep keys: " ++ show rks ++ ">"
+-- instance Show (ToStreamFn a) where
+--   show _ = "<ToStreamFn>"
 
-makeLenses ''WriteToLoc
-
--- | Constructs a 'WriteToLoc' that will not expect any repetition.
-simpleWriteToLoc
-  :: (forall m. (LocationMonad m, MonadThrow m) => a -> Loc -> m ())
-  -> WriteToLoc a
-simpleWriteToLoc f = WriteToLoc [] f
+-- singletonToStreamFn
+--   :: forall i a. (Typeable i)
+--   => Maybe FileExt
+--   -> (forall m. (LogMask m) => a -> Stream (Of i) m ())
+--   -> HM.HashMap (TypeRep,Maybe FileExt) (ToStreamFn a)
+-- singletonToStreamFn ext f = HM.singleton (argTypeRep,ext) (ToStreamFn f)
+--   where argTypeRep = typeOf (undefined :: i)
 
 -- | The contravariant part of 'ReadFromConfigFn'. Permits to write default values
 -- of the input config
@@ -147,32 +165,32 @@ instance Show (WriteToConfigFn a) where
 -- | The writing part of a serial. 'SerialWriters' describes the different ways
 -- a serial can be used to serialize (write) data.
 data SerialWriters a = SerialWriters
-  { _serialWritersToIntermediary :: HM.HashMap TypeRep (ToIntermediaryFn a)
-      -- ^ How to write the data to an intermediate type (like 'A.Value') that
-      -- should be integrated to the stdout of the pipeline.
-  , _serialWriterToConfig        :: First (WriteToConfigFn a)
-  , _serialWritersToOutputFile   :: HM.HashMap FileExt (WriteToLoc a)
-      -- ^ How to write the data to an external file or storage.
+  { _serialWritersToAtomic :: HM.HashMap (TypeRep,Maybe FileExt) (ToAtomicFn a)
+      -- ^ How to write the data to an intermediate type (like 'A.Value'). As
+      -- much as possible this intermediate type should be **lazy**.
+
+  -- , _serialWritersToStream :: HM.HashMap (TypeRep,Maybe FileExt) (ToStreamFn a)
+  --     -- ^ How to write the data to an external file or storage.
+  , _serialWriterToConfig  :: First (WriteToConfigFn a)
   }
   deriving (Show)
 
 makeLenses ''SerialWriters
 
 instance Semigroup (SerialWriters a) where
-  SerialWriters i c f <> SerialWriters i' c' f' =
-    SerialWriters (HM.unionWith const i i') (c<>c') (HM.unionWith const f f')
+  SerialWriters a c <> SerialWriters a' c' =
+    SerialWriters (HM.unionWith const a a') (c<>c')
 instance Monoid (SerialWriters a) where
-  mempty = SerialWriters mempty mempty mempty
+  mempty = SerialWriters mempty mempty
 
 instance Contravariant SerialWriters where
   contramap f sw = SerialWriters
-    { _serialWritersToIntermediary = fmap (\(ToIntermediaryFn f') -> ToIntermediaryFn $ f' . f)
-                                     (_serialWritersToIntermediary sw)
+    { _serialWritersToAtomic = fmap (\(ToAtomicFn f') -> ToAtomicFn $ f' . f)
+                               (_serialWritersToAtomic sw)
+    -- , _serialWritersToStream = fmap (\(ToStreamFn f') -> ToStreamFn $ f' . f)
+    --                            (_serialWritersToStream sw)
     , _serialWriterToConfig = fmap (\(WriteToConfigFn f') -> WriteToConfigFn $ f' . f)
                               (_serialWriterToConfig sw)
-    , _serialWritersToOutputFile = fmap (\(WriteToLoc rk f') ->
-                                           WriteToLoc rk $ f' . f)
-                                   (_serialWritersToOutputFile sw)
     }
 
 -- | Links a serialization method to a prefered file extension, if this is
@@ -201,11 +219,11 @@ instance SerializationMethod (JSONSerial a) where
   getSerialDefaultExt _ = Just "json"
 
 instance (ToJSON a) => SerializesWith (JSONSerial a) a where
-  getSerialWriters _ = mempty
-    { _serialWritersToIntermediary = singletonToIntermediaryFn A.toJSON
-    , _serialWritersToOutputFile   = HM.singleton "json" $ simpleWriteToLoc write
-    } where
-    write x loc = Loc.writeLazyByte loc $ A.encode x
+  getSerialWriters srl = mempty
+    { _serialWritersToAtomic =
+        singletonToAtomicFn Nothing A.toJSON  -- To A.Value
+        <> singletonToAtomicFn (getSerialDefaultExt srl) A.encode  -- To lazy bytestring
+    }
 
 parseJSONEither :: (A.FromJSON t) => A.Value -> Either String t
 parseJSONEither x = case A.fromJSON x of
@@ -214,41 +232,55 @@ parseJSONEither x = case A.fromJSON x of
 {-# INLINE parseJSONEither #-}
 
 instance (FromJSON a) => DeserializesWith (JSONSerial a) a where
-  getSerialReaders _ = mempty
-    { _serialReadersFromIntermediary = singletonFromIntermediaryFn parseJSONEither
-    , _serialReadersFromInputFile    = HM.singleton "json" $ simpleReadFromLoc readFn
+  getSerialReaders srl = mempty
+    { _serialReadersFromAtomic =
+        singletonFromAtomicFn Nothing parseJSONEither  -- From A.Value
+        <> singletonFromAtomicFn (getSerialDefaultExt srl) A.eitherDecodeStrict -- From strict bytestring
+    , _serialReadersFromStream =
+        -- Decoding from a stream of bytestrings _only if it originates from a
+        -- json source_
+        singletonFromStreamFn (getSerialDefaultExt srl) $ \strm -> do
+          (bs :> r) <- BSS.toStrict $ BSS.fromChunks strm
+            -- TODO: Enhance this so we don't have to accumulate the whole
+            -- stream
+          (:> r) <$> decode_ bs
+        -- TODO: Add reading from a stream of JSON objects (which would
+        -- therefore be considered a JSON array of objects?)
     } where
-    readFn loc = Loc.readLazyByte loc >>= decodeWithLoc loc
-    decodeWithLoc loc x = case A.eitherDecode x of
+    decode_ x = case A.eitherDecodeStrict x of
       Right y  -> return y
-      Left msg -> throwString $ show loc ++ ": " ++ msg
+      Left msg -> throwString msg
 
 
 -- | The crudest SerializationMethod there is. Can read from text files or raw
 -- input strings in the pipeline configuration file. Should be used only for
--- small files or input strings. The prefered file extension is the first of the
--- list.
-newtype PlainTextSerial = PlainTextSerial { plainTextSerialFileExtensions :: [FileExt] }
+-- small files or input strings. If we should accept only some extension,
+-- specify it. Else just use Nothing.
+newtype PlainTextSerial = PlainTextSerial { plainTextExtensionSpecific :: Maybe FileExt }
 
 instance SerializationMethod PlainTextSerial where
-  getSerialDefaultExt (PlainTextSerial exts) = Just $ head exts
+  getSerialDefaultExt (PlainTextSerial ext) = ext
 
 instance SerializesWith PlainTextSerial T.Text where
-  getSerialWriters (PlainTextSerial exts) = mempty
-    { _serialWritersToIntermediary =
-        singletonToIntermediaryFn id <> singletonToIntermediaryFn toJSON
-        -- A text can be written to a raw string or a String field in a JSON
-        -- output
-    , _serialWritersToOutputFile = HM.fromList $ map (,writeFn) exts
-    } where
-    writeFn = simpleWriteToLoc $ \x loc -> writeText loc x
+  getSerialWriters (PlainTextSerial ext) = mempty
+    { _serialWritersToAtomic =
+      singletonToAtomicFn ext (\t -> LT.fromChunks [t]) -- To lazy text
+      <> singletonToAtomicFn ext (\t -> LTE.encodeUtf8 $ LT.fromChunks [t]) -- To lazy bytestring
+      <> singletonToAtomicFn ext toJSON  -- To A.Value
+    }
 
 instance DeserializesWith PlainTextSerial T.Text where
-  getSerialReaders (PlainTextSerial exts) = mempty
-    { _serialReadersFromIntermediary =
-        singletonFromIntermediaryFn Right <> singletonFromIntermediaryFn parseJSONEither
-    , _serialReadersFromInputFile = HM.fromList $ map (,simpleReadFromLoc readText) exts
-    } where
+  getSerialReaders (PlainTextSerial ext) = mempty
+    { _serialReadersFromAtomic =
+        singletonFromAtomicFn ext Right
+        <> singletonFromAtomicFn ext parseJSONEither
+        <> singletonFromAtomicFn ext (Right . TE.decodeUtf8)
+    , _serialReadersFromStream =
+        singletonFromStreamFn ext S.mconcat
+        <>
+        singletonFromStreamFn ext
+          (fmap (S.mapOf TE.decodeUtf8) . S.mconcat)
+    }
 
 -- | A serialization method used for options which can have a default value,
 -- that can be exposed through the configuration.
@@ -274,38 +306,43 @@ instance DeserializesWith (DocRecSerial a) a where
 -- | A SerializationMethod that's meant to be used just for one datatype. Don't
 -- abuse it.
 data CustomPureSerial a = CustomPureSerial
-  { customPureSerialExtensions :: [FileExt]
-                               -- ^ Possible file extensions to write to
-  , customPureSerialWrite      :: forall m. (LocationMonad m) => a -> Loc -> m ()
+  { customPureSerialExtensionSpecific :: Maybe FileExt
+                                 -- ^ Nothing if we shouldn't be
+                                 -- extension-specific
+  , customPureSerialWrite             :: a -> LBS.ByteString
                                -- ^ Writing function
   }
 instance SerializationMethod (CustomPureSerial a) where
-  getSerialDefaultExt (CustomPureSerial exts _) = Just $ head exts
+  getSerialDefaultExt (CustomPureSerial ext _) = ext
 instance SerializesWith (CustomPureSerial a) a where
-  getSerialWriters (CustomPureSerial exts f) = mempty
-    { _serialWritersToOutputFile = HM.fromList $ map (,simpleWriteToLoc f) exts
+  getSerialWriters (CustomPureSerial ext f) = mempty
+    { _serialWritersToAtomic = singletonToAtomicFn ext f
     }
 
 -- | A DeserializationMethod that's meant to be used just for one
 -- datatype. Don't abuse it.
 data CustomPureDeserial a = CustomPureDeserial
-  { customPureDeserialExtensions :: [FileExt]
-                                 -- ^ Possible file extensions to read from
-  , customPureDeserialRead       :: forall m. (LocationMonad m) => Loc -> m a
+  { customPureDeserialExtensionSpecific :: Maybe FileExt
+                                        -- ^ Nothing if we shouldn't be
+                                        -- extension-specific
+  , customPureDeserialRead ::
+      forall m r. (MonadMask m) => BSS.ByteString m r -> m (Of a r)
                                  -- ^ Reading function
   }
 instance SerializationMethod (CustomPureDeserial a) where
-  getSerialDefaultExt (CustomPureDeserial exts _) = Just $ head exts
+  getSerialDefaultExt (CustomPureDeserial ext _) = ext
 instance DeserializesWith (CustomPureDeserial a) a where
-  getSerialReaders (CustomPureDeserial exts f) = mempty
-    { _serialReadersFromInputFile = HM.fromList $ map (,simpleReadFromLoc f) exts }
-
+  getSerialReaders (CustomPureDeserial ext f) = mempty
+    { _serialReadersFromStream =
+        singletonFromStreamFn ext $ f . BSS.fromChunks
+    }
 
 -- | Can serialize @a@ and deserialize @b@.
 data SerialsFor a b = SerialsFor
-  { _serialWriters    :: SerialWriters a
-  , _serialReaders    :: SerialReaders b
-  , _serialDefaultExt :: First FileExt }
+  { _serialWriters        :: SerialWriters a
+  , _serialReaders        :: SerialReaders b
+  , _serialDefaultExt     :: First FileExt
+  , _serialRepetitionKeys :: [LocVariable] }
   deriving (Show)
 
 makeLenses ''SerialsFor
@@ -320,61 +357,62 @@ type PureSerials a = SerialsFor a ()
 type PureDeserials a = SerialsFor Void a
 
 instance Profunctor SerialsFor where
-  lmap f (SerialsFor sers desers ext) = SerialsFor (contramap f sers) desers ext
-  rmap f (SerialsFor sers desers ext) = SerialsFor sers (fmap f desers) ext
+  lmap f (SerialsFor sers desers ext rk) = SerialsFor (contramap f sers) desers ext rk
+  rmap f (SerialsFor sers desers ext rk) = SerialsFor sers (fmap f desers) ext rk
 
 instance Semigroup (SerialsFor a b) where
-  SerialsFor s d ext <> SerialsFor s' d' ext' =
-    SerialsFor (s<>s') (d<>d') (ext<>ext')
+  SerialsFor s d ext rk <> SerialsFor s' d' ext' _ =
+    SerialsFor (s<>s') (d<>d') (ext<>ext') rk
 instance Monoid (SerialsFor a b) where
-  mempty = SerialsFor mempty mempty mempty
+  mempty = SerialsFor mempty mempty mempty []
 
 -- | Packs together ways to serialize and deserialize some data @a@
 someBidirSerial :: (SerializesWith s a, DeserializesWith s a) => s -> BidirSerials a
 someBidirSerial s =
-  SerialsFor (getSerialWriters s) (getSerialReaders s) (First $ getSerialDefaultExt s)
+  SerialsFor (getSerialWriters s) (getSerialReaders s) (First $ getSerialDefaultExt s) []
 
 makeBidir :: PureSerials a -> PureDeserials a -> BidirSerials a
-makeBidir (SerialsFor sers _ ext) (SerialsFor _ desers ext') =
-  SerialsFor sers desers (ext<>ext')
+makeBidir (SerialsFor sers _ ext rk) (SerialsFor _ desers ext' _) =
+  SerialsFor sers desers (ext<>ext') rk
 
 -- | Packs together ways to serialize some data @a@
 somePureSerial :: (SerializesWith s a) => s -> PureSerials a
 somePureSerial s =
-  SerialsFor (getSerialWriters s) mempty (First $ getSerialDefaultExt s)
+  SerialsFor (getSerialWriters s) mempty (First $ getSerialDefaultExt s) []
 
 -- | Packs together ways to deserialize and deserialize some data @a@
 somePureDeserial :: (DeserializesWith s a) => s -> PureDeserials a
-somePureDeserial s = SerialsFor mempty (getSerialReaders s) (First $ getSerialDefaultExt s)
+somePureDeserial s =
+  SerialsFor mempty (getSerialReaders s) (First $ getSerialDefaultExt s) []
 
 eraseSerials :: SerialsFor a b -> PureDeserials b
-eraseSerials (SerialsFor _ desers ext) = SerialsFor mempty desers ext
+eraseSerials (SerialsFor _ desers ext rk) = SerialsFor mempty desers ext rk
 
 eraseDeserials :: SerialsFor a b -> PureSerials a
-eraseDeserials (SerialsFor sers _ ext) = SerialsFor sers mempty ext
+eraseDeserials (SerialsFor sers _ ext rk) = SerialsFor sers mempty ext rk
 
 
 -- | Builds a custom SerializationMethod (ie. which cannot be used for
 -- deserialization) which is just meant to be used for one datatype.
 customPureSerial
-  :: [FileExt]   -- ^ The file extensions associated to this SerializationMethod
-  -> (forall m. (LocationMonad m) => a -> Loc -> m ())
+  :: Maybe FileExt -- ^ The file extension associated to this SerializationMethod
+  -> (a -> LBS.ByteString)
   -> PureSerials a
-customPureSerial exts f = somePureSerial $ CustomPureSerial exts f
+customPureSerial ext f = somePureSerial $ CustomPureSerial ext f
 
 -- | Builds a custom SerializationMethod (ie. which cannot be used for
 -- deserialization) which is just meant to be used for one datatype.
 customPureDeserial
-  :: [FileExt]   -- ^ The file extensions associated to this SerializationMethod
-  -> (forall m. (LocationMonad m) => Loc -> m a)
+  :: Maybe FileExt -- ^ The file extension associated to this SerializationMethod
+  -> (forall m r. (MonadMask m) => BSS.ByteString m r -> m (Of a r))
   -> PureDeserials a
-customPureDeserial exts f = somePureDeserial $ CustomPureDeserial exts f
+customPureDeserial ext f = somePureDeserial $ CustomPureDeserial ext f
 
--- | Traverses to the repetition keys stored in the access functions of a
--- 'SerialsFor'
-serialsRepetitionKeys :: Traversal' (SerialsFor a b) [LocVariable]
-serialsRepetitionKeys f (SerialsFor writers readers ext) =
-  rebuild <$> (serialWritersToOutputFile . traversed . writeToLocRepetitionKeys) f writers
-          <*> (serialReadersFromInputFile . traversed . readFromLocRepetitionKeys) f readers
-  where
-    rebuild w r = SerialsFor w r ext
+-- -- | Traverses to the repetition keys stored in the access functions of a
+-- -- 'SerialsFor'
+-- serialsRepetitionKeys :: Traversal' (SerialsFor a b) [LocVariable]
+-- serialsRepetitionKeys f (SerialsFor writers readers ext rk) =
+--   rebuild <$> (serialWritersToOutputFile . traversed . writeToLocRepetitionKeys) f writers
+--           <*> (serialReadersFromInputFile . traversed . readFromLocRepetitionKeys) f readers
+--   where
+--     rebuild w r = SerialsFor w r ext rk

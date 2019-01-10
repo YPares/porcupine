@@ -71,7 +71,7 @@ makeRepeatable (RepInfo repetitionKey mbVerb) =
     addKeyToVirtualFile (VirtualFileNode{..}) =
       VirtualFileNode
       {vfnodeFile = vfnodeFile &
-        over (vfileSerials.serialsRepetitionKeys) (repetitionKey:)
+        over (vfileSerials.serialRepetitionKeys) (repetitionKey:)
       ,..}
     addKeyToVirtualFile emptyNode = emptyNode
 
