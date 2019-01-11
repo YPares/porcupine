@@ -23,6 +23,7 @@ import           Control.Lens                hiding ((:>))
 import           Data.Aeson                  as A
 -- import qualified Data.Attoparsec.Lazy        as AttoL
 import qualified Data.Binary.Builder         as BinBuilder
+import qualified Data.ByteString             as BS
 import qualified Data.ByteString.Lazy        as LBS
 import qualified Data.ByteString.Streaming   as BSS
 import           Data.Char                   (ord)
@@ -327,13 +328,38 @@ instance (Csv.FromRecord a)
     hh = if hasHeader then Csv.HasHeader else Csv.NoHeader
     decOpts = Csv.defaultDecodeOptions {Csv.decDelimiter=fromIntegral $ ord delim}
 
+-- * "Serialization" to/from bytestrings
+
+-- | ByteStringSerial is just a reader of strict ByteStrings and writer of lazy
+-- ByteStrings. It's the simplest SerializationMethod possible
+newtype ByteStringSerial = ByteStringSerial { rawSerialSpecificExt :: Maybe FileExt }
+
+instance SerializationMethod ByteStringSerial where
+  getSerialDefaultExt (ByteStringSerial ext) = ext
+
+instance SerializesWith ByteStringSerial LBS.ByteString where
+  getSerialWriters (ByteStringSerial ext) = mempty
+    { _serialWritersToAtomic = singletonToAtomicFn ext id }
+    -- TODO: Add base64 encoding so it can be read/written from/to JSON strings
+    -- too
+
+-- We only deserialize *strict* bytestrings, in order not to hide the fact that
+-- the data must be accumulated from the stream we read if you want to break
+-- away from it
+
+instance DeserializesWith ByteStringSerial BS.ByteString where
+  getSerialReaders (ByteStringSerial ext) = mempty
+    { _serialReadersFromAtomic =
+        singletonFromAtomicFn ext Right
+    , _serialReadersFromStream =
+        singletonFromStreamFn ext S.mconcat }
+    
 -- * Serialization to/from plain text
 
--- | The crudest SerializationMethod there is. Can read from text files or raw
--- input strings in the pipeline configuration file. Should be used only for
--- small files or input strings. If we should accept only some extension,
--- specify it. Else just use Nothing.
-newtype PlainTextSerial = PlainTextSerial { plainTextExtensionSpecific :: Maybe FileExt }
+-- | Can read from text files or raw input strings in the pipeline configuration
+-- file. Should be used only for small files or input strings. If we should
+-- accept only some extension, specify it. Else just use Nothing.
+newtype PlainTextSerial = PlainTextSerial { plainTextSpecificExt :: Maybe FileExt }
 
 instance SerializationMethod PlainTextSerial where
   getSerialDefaultExt (PlainTextSerial ext) = ext
@@ -341,7 +367,7 @@ instance SerializationMethod PlainTextSerial where
 instance SerializesWith PlainTextSerial T.Text where
   getSerialWriters (PlainTextSerial ext) = mempty
     { _serialWritersToAtomic =
-      singletonToAtomicFn ext (\t -> LT.fromChunks [t]) -- To lazy text
+      singletonToAtomicFn Nothing (\t -> LT.fromChunks [t]) -- To lazy text
       <> singletonToAtomicFn ext (\t -> LTE.encodeUtf8 $ LT.fromChunks [t]) -- To lazy bytestring
       <> singletonToAtomicFn ext toJSON  -- To A.Value
     }
@@ -349,7 +375,7 @@ instance SerializesWith PlainTextSerial T.Text where
 instance DeserializesWith PlainTextSerial T.Text where
   getSerialReaders (PlainTextSerial ext) = mempty
     { _serialReadersFromAtomic =
-        singletonFromAtomicFn ext Right
+        singletonFromAtomicFn Nothing Right
         <> singletonFromAtomicFn ext parseJSONEither
         <> singletonFromAtomicFn ext (Right . TE.decodeUtf8)
     , _serialReadersFromStream =
@@ -387,7 +413,7 @@ instance DeserializesWith (DocRecSerial a) a where
 -- | A SerializationMethod that's meant to be used just for one datatype. Don't
 -- abuse it.
 data CustomPureSerial a = CustomPureSerial
-  { customPureSerialExtensionSpecific :: Maybe FileExt
+  { customPureSerialSpecificExt :: Maybe FileExt
                                  -- ^ Nothing if we shouldn't be
                                  -- extension-specific
   , customPureSerialWrite             :: a -> LBS.ByteString
@@ -403,7 +429,7 @@ instance SerializesWith (CustomPureSerial a) a where
 -- | A DeserializationMethod that's meant to be used just for one
 -- datatype. Don't abuse it.
 data CustomPureDeserial a = CustomPureDeserial
-  { customPureDeserialExtensionSpecific :: Maybe FileExt
+  { customPureDeserialSpecificExt :: Maybe FileExt
                                         -- ^ Nothing if we shouldn't be
                                         -- extension-specific
   , customPureDeserialRead ::
@@ -490,6 +516,7 @@ customPureDeserial
   -> (forall m r. (MonadMask m) => BSS.ByteString m r -> m (Of a r))
   -> PureDeserials a
 customPureDeserial ext f = somePureDeserial $ CustomPureDeserial ext f
+
 
 -- -- | Traverses to the repetition keys stored in the access functions of a
 -- -- 'SerialsFor'
