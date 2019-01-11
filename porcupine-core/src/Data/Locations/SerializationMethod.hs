@@ -21,8 +21,14 @@ module Data.Locations.SerializationMethod where
 
 import           Control.Lens                hiding ((:>))
 import           Data.Aeson                  as A
+-- import qualified Data.Attoparsec.Lazy        as AttoL
+import qualified Data.Binary.Builder         as BinBuilder
 import qualified Data.ByteString.Lazy        as LBS
 import qualified Data.ByteString.Streaming   as BSS
+import           Data.Char                   (ord)
+import qualified Data.Csv                    as Csv
+import qualified Data.Csv.Builder            as CsvBuilder
+-- import qualified Data.Csv.Parser             as CsvParser
 import           Data.DocRecord
 import           Data.DocRecord.OptParse     (RecordUsableWithCLI)
 import qualified Data.HashMap.Strict         as HM
@@ -34,6 +40,7 @@ import qualified Data.Text.Encoding          as TE
 import qualified Data.Text.Lazy              as LT
 import qualified Data.Text.Lazy.Encoding     as LTE
 import           Data.Typeable
+import qualified Data.Vector                 as V
 import           Data.Void
 import           Streaming
 import qualified Streaming.Prelude           as S
@@ -211,6 +218,8 @@ class (SerializationMethod serial) => SerializesWith serial a | serial -> a wher
 class (SerializationMethod serial) => DeserializesWith serial a | serial -> a where
   getSerialReaders :: serial -> SerialReaders a
 
+-- * Serialization to/from JSON
+
 -- | Has 'SerializesWith' & 'DeserializesWith' instances that permits to
 -- store/load JSON files and 'A.Value's.
 data JSONSerial a = JSONSerial
@@ -251,6 +260,69 @@ instance (FromJSON a) => DeserializesWith (JSONSerial a) a where
       Right y  -> return y
       Left msg -> throwString msg
 
+-- * Serialization to/from CSV
+
+-- | Just packs data that can be converted to CSV with a header
+data Tabular a = Tabular
+  { tabularHeader :: Maybe [String]
+  , tabularData :: a }
+
+-- | Can serialize and deserialize any @Tabular a@ where @a@ is an instance of
+-- 'CSV'.
+data CSVSerial a = CSVSerial
+  { csvSerialHasHeader :: Bool  -- ^ Used by the reader part
+  , csvSerialDelimiter :: Char  -- ^ Used by both reader and writer
+  }
+
+instance SerializationMethod (CSVSerial a) where
+  getSerialDefaultExt _ = Just "csv"
+
+-- NOTE: In the end, vectors of records should be intermediate types, much like
+-- Data.Aeson.Value is, so backends specialized in storing tabular data (like
+-- Apache Parquet/Arrow) can directly access it.
+instance (Csv.ToRecord a, Foldable f)
+      => SerializesWith (CSVSerial (f a)) (Tabular (f a)) where
+  getSerialWriters srl@(CSVSerial _ delim) = mempty
+    { _serialWritersToAtomic =
+      singletonToAtomicFn (getSerialDefaultExt srl) $ -- To lazy bytestring
+        \(Tabular mbHeader dat) -> BinBuilder.toLazyByteString $
+           maybe id (<>) (enc <$> mbHeader) $ foldMap enc dat
+    }
+    where
+      encodeOpts = Csv.defaultEncodeOptions
+                   {Csv.encDelimiter = fromIntegral $ ord delim}
+      enc :: (Csv.ToRecord t) => t -> BinBuilder.Builder
+      enc = CsvBuilder.encodeRecordWith encodeOpts
+
+-- TODO: recover header when deserializing CSV (which cassava doesn't return)
+-- decodeTabular :: Bool -> Char -> LBS.ByteString -> Either String (Tabular (V.Vector a))
+-- decodeTabular hasHeader delim bs =
+--   mbHeader <- if hasHeader
+--     then AttoL.parse (CsvParser.header delim') bs
+--     else return Nothing
+--   where
+--     delim' = fromIntegral $ ord delim
+--     decOpts = Csv.defaultDecodeOptions {Csv.decDelimiter=delim'}
+
+-- We cannot easily deserialize a Tabular from a CSV because cassava doesn't
+-- return the header when decoding. We should change that
+instance (Csv.FromRecord a)
+      => DeserializesWith (CSVSerial a) (V.Vector a) where
+  getSerialReaders srl@(CSVSerial hasHeader delim) = mempty
+    { _serialReadersFromAtomic =
+        singletonFromAtomicFn (getSerialDefaultExt srl) $ -- From strict bytestring
+        Csv.decode hh . LBS.fromStrict
+    , _serialReadersFromStream =
+        singletonFromStreamFn (getSerialDefaultExt srl) $ \strm -> do
+          (bs :> r) <- BSS.toLazy $ BSS.fromChunks strm
+          vec <- case Csv.decode hh bs of
+            Right y -> return y
+            Left msg -> throwString msg
+          return (vec :> r)
+    } where
+    hh = if hasHeader then Csv.HasHeader else Csv.NoHeader
+
+-- * Serialization to/from plain text
 
 -- | The crudest SerializationMethod there is. Can read from text files or raw
 -- input strings in the pipeline configuration file. Should be used only for
@@ -282,6 +354,8 @@ instance DeserializesWith PlainTextSerial T.Text where
           (fmap (S.mapOf TE.decodeUtf8) . S.mconcat)
     }
 
+-- * Serialization of options
+
 -- | A serialization method used for options which can have a default value,
 -- that can be exposed through the configuration.
 data DocRecSerial a = forall rs. (Typeable rs, RecordUsableWithCLI rs)
@@ -302,6 +376,8 @@ instance DeserializesWith (DocRecSerial a) a where
 -- instance DeserializesWith (DefaultValueDeserial a) a where
 --   getSerialReaders (DefaultValueDeserial x) = mempty
 --     { serialReaderFromNothing = First $ Just x }
+
+-- * Custom quick'n'dirty serializers
 
 -- | A SerializationMethod that's meant to be used just for one datatype. Don't
 -- abuse it.
@@ -336,6 +412,8 @@ instance DeserializesWith (CustomPureDeserial a) a where
     { _serialReadersFromStream =
         singletonFromStreamFn ext $ f . BSS.fromChunks
     }
+
+-- * Combining serializers and deserializers into one structure
 
 -- | Can serialize @a@ and deserialize @b@.
 data SerialsFor a b = SerialsFor
