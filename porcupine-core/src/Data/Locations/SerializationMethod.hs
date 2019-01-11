@@ -267,6 +267,10 @@ data Tabular a = Tabular
   { tabularHeader :: Maybe [String]
   , tabularData :: a }
 
+-- | To pass around some tabular data that should be written
+data SomeTabular = forall f a. (Csv.ToRecord a, Foldable f)
+                => SomeTabular { fromSomeTabular :: Tabular (f a) }
+
 -- | Can serialize and deserialize any @Tabular a@ where @a@ is an instance of
 -- 'CSV'.
 data CSVSerial a = CSVSerial
@@ -311,16 +315,17 @@ instance (Csv.FromRecord a)
   getSerialReaders srl@(CSVSerial hasHeader delim) = mempty
     { _serialReadersFromAtomic =
         singletonFromAtomicFn (getSerialDefaultExt srl) $ -- From strict bytestring
-        Csv.decode hh . LBS.fromStrict
+        Csv.decodeWith decOpts hh . LBS.fromStrict
     , _serialReadersFromStream =
         singletonFromStreamFn (getSerialDefaultExt srl) $ \strm -> do
           (bs :> r) <- BSS.toLazy $ BSS.fromChunks strm
-          vec <- case Csv.decode hh bs of
+          vec <- case Csv.decodeWith decOpts hh bs of
             Right y -> return y
             Left msg -> throwString msg
           return (vec :> r)
     } where
     hh = if hasHeader then Csv.HasHeader else Csv.NoHeader
+    decOpts = Csv.defaultDecodeOptions {Csv.decDelimiter=fromIntegral $ ord delim}
 
 -- * Serialization to/from plain text
 
