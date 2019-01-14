@@ -66,8 +66,7 @@ import           Data.DocRecord
 import           Data.DocRecord.OptParse
 import qualified Data.HashMap.Strict                     as HM
 import           Data.List                               (intersperse)
-import           Data.Locations                          hiding (readBSS,
-                                                          writeBSS)
+import           Data.Locations
 import           Data.Locations.Accessors
 import           Data.Maybe
 import           Data.Monoid                             (First (..))

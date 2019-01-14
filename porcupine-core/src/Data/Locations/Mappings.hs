@@ -13,6 +13,7 @@
 {-# LANGUAGE TypeApplications           #-}
 {-# LANGUAGE ViewPatterns               #-}
 {-# OPTIONS_GHC -Wall #-}
+{-# OPTIONS_GHC "-fno-warn-incomplete-uni-patterns" #-}
 
 module Data.Locations.Mappings
   ( LocationMappings, LocationMappings_(..)

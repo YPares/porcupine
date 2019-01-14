@@ -25,11 +25,9 @@ module Data.Locations.Accessors.AWS
 
 import           Control.Exception.Safe
 import           Control.Lens
-import           Control.Monad.IO.Class
 import           Control.Monad.ReaderSoup
 import           Control.Monad.ReaderSoup.AWS
 import           Control.Monad.ReaderSoup.Katip   ()
-import           Control.Monad.Trans.Control
 import           Control.Monad.Trans.Resource
 import qualified Data.ByteString.Lazy             as LBS
 import qualified Data.ByteString.Streaming        as BSS

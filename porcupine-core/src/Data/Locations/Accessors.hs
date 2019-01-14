@@ -19,6 +19,7 @@
 {-# LANGUAGE UndecidableInstances       #-}
 {-# OPTIONS_GHC "-fno-warn-incomplete-uni-patterns" #-}
 {-# OPTIONS_GHC "-fno-warn-missing-signatures" #-}
+{-# OPTIONS_GHC "-fno-warn-redundant-constraints" #-}
 
 module Data.Locations.Accessors
   ( module Control.Monad.ReaderSoup.Resource
@@ -45,7 +46,6 @@ import           Control.Lens                      (over, (^.), _1)
 import           Control.Monad.IO.Unlift
 import           Control.Monad.ReaderSoup
 import           Control.Monad.ReaderSoup.Resource
-import           Control.Monad.Trans
 import           Control.Monad.Trans.Resource
 import           Data.Aeson
 import qualified Data.ByteString.Lazy              as LBS
@@ -149,6 +149,9 @@ lbl <-- args = Compose (getLocationAccessors lbl, lbl =: args)
 newtype AvailableAccessors m = AvailableAccessors [SomeLocationAccessor m]
 
 -- | Retrieves the list of all available LocationAccessors
+--
+-- The ArgsForSoupConsumption constraint is redundant, but it is placed here to
+-- help type inference when using this function.
 splitAccessorsFromArgRec
   :: (ArgsForSoupConsumption args)
   => Rec (FieldWithAccessors (ReaderSoup (ContextsFromArgs args))) args

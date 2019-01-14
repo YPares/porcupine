@@ -14,13 +14,10 @@ module System.TaskPipeline.Caching
 
 import qualified Control.Exception.Safe                as SE
 import           Control.Funflow
-import           Control.Lens                          (over, traversed)
 import           Data.Aeson
 import           Data.Default                          (Default (..))
-import           Data.Locations.Loc
 import           Data.Locations.LogAndErrors
 import           Data.Locations.VirtualFile
-import qualified Data.Text                             as T
 import           System.TaskPipeline.PTask
 import           System.TaskPipeline.ResourceTree
 import           System.TaskPipeline.VirtualFileAccess
