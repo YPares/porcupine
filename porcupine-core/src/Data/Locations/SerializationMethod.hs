@@ -267,10 +267,7 @@ instance (FromJSON a) => DeserializesWith (JSONSerial a) a where
 data Tabular a = Tabular
   { tabularHeader :: Maybe [String]
   , tabularData :: a }
-
--- | To pass around some tabular data that should be written
-data SomeTabular = forall f a. (Csv.ToRecord a, Foldable f)
-                => SomeTabular { fromSomeTabular :: Tabular (f a) }
+  deriving (Show)
 
 -- | Can serialize and deserialize any @Tabular a@ where @a@ is an instance of
 -- 'CSV'.
@@ -286,7 +283,7 @@ instance SerializationMethod (CSVSerial a) where
 -- Data.Aeson.Value is, so backends specialized in storing tabular data (like
 -- Apache Parquet/Arrow) can directly access it.
 instance (Csv.ToRecord a, Foldable f)
-      => SerializesWith (CSVSerial (f a)) (Tabular (f a)) where
+      => SerializesWith (CSVSerial (Tabular (f a))) (Tabular (f a)) where
   getSerialWriters srl@(CSVSerial _ delim) = mempty
     { _serialWritersToAtomic =
       singletonToAtomicFn (getSerialDefaultExt srl) $ -- To lazy bytestring
