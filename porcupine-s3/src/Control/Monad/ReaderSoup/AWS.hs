@@ -15,8 +15,8 @@ module Control.Monad.ReaderSoup.AWS
   , useAWSRegion
   ) where
 
-import           Control.Lens
 import           Control.Exception.Safe
+import           Control.Lens
 import           Control.Monad.Reader
 import           Control.Monad.ReaderSoup
 import           Control.Monad.ReaderSoup.Resource ()

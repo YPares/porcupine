@@ -266,7 +266,7 @@ instance (FromJSON a) => DeserializesWith (JSONSerial a) a where
 -- | Just packs data that can be converted to CSV with a header
 data Tabular a = Tabular
   { tabularHeader :: Maybe [String]
-  , tabularData :: a }
+  , tabularData   :: a }
   deriving (Show)
 
 -- | Can serialize and deserialize any @Tabular a@ where @a@ is an instance of
@@ -318,7 +318,7 @@ instance (Csv.FromRecord a)
         singletonFromStreamFn (getSerialDefaultExt srl) $ \strm -> do
           (bs :> r) <- BSS.toLazy $ BSS.fromChunks strm
           vec <- case Csv.decodeWith decOpts hh bs of
-            Right y -> return y
+            Right y  -> return y
             Left msg -> throwString msg
           return (vec :> r)
     } where
@@ -350,7 +350,7 @@ instance DeserializesWith ByteStringSerial BS.ByteString where
         singletonFromAtomicFn ext Right
     , _serialReadersFromStream =
         singletonFromStreamFn ext S.mconcat }
-    
+
 -- * Serialization to/from plain text
 
 -- | Can read from text files or raw input strings in the pipeline configuration
@@ -413,7 +413,7 @@ data CustomPureSerial a = CustomPureSerial
   { customPureSerialSpecificExt :: Maybe FileExt
                                  -- ^ Nothing if we shouldn't be
                                  -- extension-specific
-  , customPureSerialWrite             :: a -> LBS.ByteString
+  , customPureSerialWrite       :: a -> LBS.ByteString
                                -- ^ Writing function
   }
 instance SerializationMethod (CustomPureSerial a) where
