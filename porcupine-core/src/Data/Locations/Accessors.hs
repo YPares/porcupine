@@ -103,7 +103,7 @@ class ( MonadMask m, MonadIO m
 
   withLocalBuffer :: (FilePath -> m a) -> LocOf l -> m a
   -- If we have a local resource accessor, we use it:
-  default withLocalBuffer :: (MonadResource m, MonadMask m)
+  default withLocalBuffer :: (MonadResource m)
                           => (FilePath -> m a) -> LocOf l -> m a
   withLocalBuffer f loc =
     Tmp.withSystemTempDirectory "pipeline-tools-tmp" writeAndUpload
@@ -168,7 +168,7 @@ checkLocal _ (LocalFile fname) f = f fname
 checkLocal funcName loc _ = error $ funcName ++ ": location " ++ show loc ++ " isn't a LocalFile"
 
 -- | Accessing local resources
-instance (MonadResource m) => LocationAccessor m "resource" where
+instance (MonadResource m, MonadMask m) => LocationAccessor m "resource" where
   newtype GLocOf "resource" a = L (URLLikeLoc a)
     deriving (Functor, Foldable, Traversable, ToJSON, Show, TypedLocation)
   locExists (L l) = checkLocal "locExists" l $
@@ -195,7 +195,7 @@ instance (IsLocString a) => FromJSON (GLocOf "resource" a) where
       LocalFile{} -> return $ L loc
       _           -> fail "Isn't a local file"
 
-instance (MonadResource m) => MayProvideLocationAccessors m "resource"
+instance (MonadResource m, MonadMask m) => MayProvideLocationAccessors m "resource"
 
 
 -- * Treating locations in a general manner

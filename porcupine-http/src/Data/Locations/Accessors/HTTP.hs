@@ -9,6 +9,7 @@
 {-# LANGUAGE PatternSynonyms            #-}
 {-# LANGUAGE RankNTypes                 #-}
 {-# LANGUAGE TypeFamilies               #-}
+{-# LANGUAGE DeriveTraversable          #-}
 {-# OPTIONS_GHC "-fno-warn-orphans" #-}
 {-# OPTIONS_GHC "-fno-warn-name-shadowing" #-}
 
@@ -46,8 +47,8 @@ makeReq (H loc) = error $ show loc ++ " isn't an http(s) URL"
 
 instance (MonadResource m, MonadMask m)
   => LocationAccessor m "http" where
-  newtype LocOf "http" = H Loc
-    deriving (ToJSON)
+  newtype GLocOf "http" a = H (URLLikeLoc a)
+    deriving (Functor, Foldable, Traversable, ToJSON, Show, TypedLocation)
   locExists _ = return True
   writeBSS l bss = do
     req <- makeReq l
@@ -60,7 +61,7 @@ instance (MonadResource m, MonadMask m)
     req <- makeReq l
     f $ SC.toBStream $ httpSource req getResponseBody
 
-instance FromJSON (LocOf "http") where
+instance (IsLocString a) => FromJSON (GLocOf "http" a) where
   parseJSON v = do
     loc <- parseJSON v
     case loc of
