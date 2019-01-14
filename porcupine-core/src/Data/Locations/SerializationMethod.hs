@@ -396,50 +396,7 @@ instance DeserializesWith (DocRecSerial a) a where
   getSerialReaders (DocRecSerial d _ f) = mempty
     { _serialReaderEmbeddedValue = First $ Just d
     , _serialReaderFromConfig = First $ Just $ ReadFromConfigFn f }
-
--- -- | A very simple deserial that deserializing nothing and just returns a default
--- -- value.
--- newtype DefaultValueDeserial a = DefaultValueDeserial a
--- instance SerializationMethod (DefaultValueDeserial a)
--- instance DeserializesWith (DefaultValueDeserial a) a where
---   getSerialReaders (DefaultValueDeserial x) = mempty
---     { serialReaderFromNothing = First $ Just x }
-
--- * Custom quick'n'dirty serializers
-
--- | A SerializationMethod that's meant to be used just for one datatype. Don't
--- abuse it.
-data CustomPureSerial a = CustomPureSerial
-  { customPureSerialSpecificExt :: Maybe FileExt
-                                 -- ^ Nothing if we shouldn't be
-                                 -- extension-specific
-  , customPureSerialWrite       :: a -> LBS.ByteString
-                               -- ^ Writing function
-  }
-instance SerializationMethod (CustomPureSerial a) where
-  getSerialDefaultExt (CustomPureSerial ext _) = ext
-instance SerializesWith (CustomPureSerial a) a where
-  getSerialWriters (CustomPureSerial ext f) = mempty
-    { _serialWritersToAtomic = singletonToAtomicFn ext f
-    }
-
--- | A DeserializationMethod that's meant to be used just for one
--- datatype. Don't abuse it.
-data CustomPureDeserial a = CustomPureDeserial
-  { customPureDeserialSpecificExt :: Maybe FileExt
-                                        -- ^ Nothing if we shouldn't be
-                                        -- extension-specific
-  , customPureDeserialRead ::
-      forall m r. (MonadMask m) => BSS.ByteString m r -> m (Of a r)
-                                 -- ^ Reading function
-  }
-instance SerializationMethod (CustomPureDeserial a) where
-  getSerialDefaultExt (CustomPureDeserial ext _) = ext
-instance DeserializesWith (CustomPureDeserial a) a where
-  getSerialReaders (CustomPureDeserial ext f) = mempty
-    { _serialReadersFromStream =
-        singletonFromStreamFn ext $ f . BSS.fromChunks
-    }
+    
 
 -- * Combining serializers and deserializers into one structure
 
@@ -496,23 +453,6 @@ eraseSerials (SerialsFor _ desers ext rk) = SerialsFor mempty desers ext rk
 
 eraseDeserials :: SerialsFor a b -> PureSerials a
 eraseDeserials (SerialsFor sers _ ext rk) = SerialsFor sers mempty ext rk
-
-
--- | Builds a custom SerializationMethod (ie. which cannot be used for
--- deserialization) which is just meant to be used for one datatype.
-customPureSerial
-  :: Maybe FileExt -- ^ The file extension associated to this SerializationMethod
-  -> (a -> LBS.ByteString)
-  -> PureSerials a
-customPureSerial ext f = somePureSerial $ CustomPureSerial ext f
-
--- | Builds a custom SerializationMethod (ie. which cannot be used for
--- deserialization) which is just meant to be used for one datatype.
-customPureDeserial
-  :: Maybe FileExt -- ^ The file extension associated to this SerializationMethod
-  -> (forall m r. (MonadMask m) => BSS.ByteString m r -> m (Of a r))
-  -> PureDeserials a
-customPureDeserial ext f = somePureDeserial $ CustomPureDeserial ext f
 
 
 -- -- | Traverses to the repetition keys stored in the access functions of a
