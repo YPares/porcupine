@@ -132,3 +132,24 @@ jinko_haskell_library(
 	    ":reader-soup",
         ],
 )
+
+jinko_haskell_library(
+    name = "porcupine-http",
+    srcs = glob(["porcupine-http/src/**/*.hs"]),
+    src_strip_prefix = "porcupine-http/src",
+    deps =
+        [
+            "@hackage//:base",
+	    "@hackage//:transformers",
+            "@hackage//:safe-exceptions",
+	    "@hackage//:http-conduit",
+            "@hackage//:resourcet",
+            "@hackage//:bytestring",
+            "@hackage//:streaming",
+            "@hackage//:streaming-bytestring",
+            "@hackage//:conduit",
+            "@hackage//:streaming-conduit",
+	    ":reader-soup",
+            ":porcupine-core",
+        ],
+)
