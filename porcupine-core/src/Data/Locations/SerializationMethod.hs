@@ -6,7 +6,6 @@
 {-# LANGUAGE ExistentialQuantification #-}
 {-# LANGUAGE FlexibleContexts          #-}
 {-# LANGUAGE FlexibleInstances         #-}
-{-# LANGUAGE FunctionalDependencies    #-}
 {-# LANGUAGE GADTs                     #-}
 {-# LANGUAGE MultiParamTypeClasses     #-}
 {-# LANGUAGE OverloadedStrings         #-}
@@ -211,24 +210,24 @@ class SerializationMethod serial where
 
 -- | Tells whether some type @a@ can be serialized by some _serial_ (serialization
 -- method).
-class (SerializationMethod serial) => SerializesWith serial a | serial -> a where
+class (SerializationMethod serial) => SerializesWith serial a where
   getSerialWriters :: serial -> SerialWriters a
 
 -- | Tells whether some type @a@ can be deserialized by some _serial_
 -- (serialization method).
-class (SerializationMethod serial) => DeserializesWith serial a | serial -> a where
+class (SerializationMethod serial) => DeserializesWith serial a where
   getSerialReaders :: serial -> SerialReaders a
 
 -- * Serialization to/from JSON
 
 -- | Has 'SerializesWith' & 'DeserializesWith' instances that permits to
 -- store/load JSON files and 'A.Value's.
-data JSONSerial a = JSONSerial
+data JSONSerial = JSONSerial
 
-instance SerializationMethod (JSONSerial a) where
+instance SerializationMethod JSONSerial where
   getSerialDefaultExt _ = Just "json"
 
-instance (ToJSON a) => SerializesWith (JSONSerial a) a where
+instance (ToJSON a) => SerializesWith JSONSerial a where
   getSerialWriters srl = mempty
     { _serialWritersToAtomic =
         singletonToAtomicFn Nothing A.toJSON  -- To A.Value
@@ -241,7 +240,7 @@ parseJSONEither x = case A.fromJSON x of
   A.Error r   -> Left r
 {-# INLINE parseJSONEither #-}
 
-instance (FromJSON a) => DeserializesWith (JSONSerial a) a where
+instance (FromJSON a) => DeserializesWith JSONSerial a where
   getSerialReaders srl = mempty
     { _serialReadersFromAtomic =
         singletonFromAtomicFn Nothing parseJSONEither  -- From A.Value
@@ -271,19 +270,19 @@ data Tabular a = Tabular
 
 -- | Can serialize and deserialize any @Tabular a@ where @a@ is an instance of
 -- 'CSV'.
-data CSVSerial a = CSVSerial
+data CSVSerial = CSVSerial
   { csvSerialHasHeader :: Bool  -- ^ Used by the reader part
   , csvSerialDelimiter :: Char  -- ^ Used by both reader and writer
   }
 
-instance SerializationMethod (CSVSerial a) where
+instance SerializationMethod CSVSerial where
   getSerialDefaultExt _ = Just "csv"
 
 -- NOTE: In the end, vectors of records should be intermediate types, much like
 -- Data.Aeson.Value is, so backends specialized in storing tabular data (like
 -- Apache Parquet/Arrow) can directly access it.
 instance (Csv.ToRecord a, Foldable f)
-      => SerializesWith (CSVSerial (Tabular (f a))) (Tabular (f a)) where
+      => SerializesWith CSVSerial (Tabular (f a)) where
   getSerialWriters srl@(CSVSerial _ delim) = mempty
     { _serialWritersToAtomic =
       singletonToAtomicFn (getSerialDefaultExt srl) $ -- To lazy bytestring
@@ -309,7 +308,7 @@ instance (Csv.ToRecord a, Foldable f)
 -- We cannot easily deserialize a Tabular from a CSV because cassava doesn't
 -- return the header when decoding. We should change that
 instance (Csv.FromRecord a)
-      => DeserializesWith (CSVSerial a) (V.Vector a) where
+      => DeserializesWith CSVSerial (V.Vector a) where
   getSerialReaders srl@(CSVSerial hasHeader delim) = mempty
     { _serialReadersFromAtomic =
         singletonFromAtomicFn (getSerialDefaultExt srl) $ -- From strict bytestring
@@ -329,7 +328,7 @@ instance (Csv.FromRecord a)
 
 -- | ByteStringSerial is just a reader of strict ByteStrings and writer of lazy
 -- ByteStrings. It's the simplest SerializationMethod possible
-newtype ByteStringSerial = ByteStringSerial { rawSerialSpecificExt :: Maybe FileExt }
+newtype ByteStringSerial = ByteStringSerial { bsSerialSpecificExt :: Maybe FileExt }
 
 instance SerializationMethod ByteStringSerial where
   getSerialDefaultExt (ByteStringSerial ext) = ext
@@ -356,7 +355,7 @@ instance DeserializesWith ByteStringSerial BS.ByteString where
 -- | Can read from text files or raw input strings in the pipeline configuration
 -- file. Should be used only for small files or input strings. If we should
 -- accept only some extension, specify it. Else just use Nothing.
-newtype PlainTextSerial = PlainTextSerial { plainTextSpecificExt :: Maybe FileExt }
+newtype PlainTextSerial = PlainTextSerial { plainTextSerialSpecificExt :: Maybe FileExt }
 
 instance SerializationMethod PlainTextSerial where
   getSerialDefaultExt (PlainTextSerial ext) = ext
