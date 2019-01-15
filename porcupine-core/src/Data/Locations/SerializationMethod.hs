@@ -395,7 +395,7 @@ instance DeserializesWith (DocRecSerial a) a where
   getSerialReaders (DocRecSerial d _ f) = mempty
     { _serialReaderEmbeddedValue = First $ Just d
     , _serialReaderFromConfig = First $ Just $ ReadFromConfigFn f }
-    
+
 
 -- * Combining serializers and deserializers into one structure
 
