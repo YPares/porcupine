@@ -10,16 +10,19 @@ copyright: 2018 EURL Tweag, NovaDiscovery
 ghc-options: -Wall
 
 dependencies:
+  - aeson
   - base
   - transformers
   - safe-exceptions
   - http-conduit
   - resourcet
   - bytestring
+  - mime-types
   - streaming
   - streaming-bytestring
   - conduit
   - streaming-conduit
+  - text
   - reader-soup
   - porcupine-core
 
