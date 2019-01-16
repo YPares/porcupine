@@ -29,14 +29,14 @@ dependencies:
 library:
   source-dirs: src
 
-executables:
-  exampleHTTP:
-    source-dirs: examples
-    main: ExampleHTTP.hs
-    dependencies:
-      - porcupine-core
-      - porcupine-http
-      - docrecords
-      - aeson
-      - unordered-containers
-      - text
+# executables:
+#   exampleHTTP:
+#     source-dirs: examples
+#     main: ExampleHTTP.hs
+#     dependencies:
+#       - porcupine-core
+#       - porcupine-http
+#       - docrecords
+#       - aeson
+#       - unordered-containers
+#       - text
