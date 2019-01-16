@@ -31,6 +31,7 @@ module System.TaskPipeline.VirtualFileAccess
   , AccessToPerform(..)
   , DataAccessor(..)
   , VFNodeAccessType(..)
+  , SomeGLoc(..), SomeLoc
   , accessVirtualFile'
   , getVFileDataAccessor
   , getLocsMappedTo
@@ -49,6 +50,7 @@ import           Control.Monad.Trans
 import qualified Data.Foldable                      as F
 import qualified Data.HashMap.Strict                as HM
 import           Data.Locations
+import           Data.Locations.Accessors
 import           Data.Locations.LogAndErrors
 import           Data.Monoid
 import           Data.Representable
@@ -235,7 +237,7 @@ accessVirtualFile accessToDo repIndices vfile =
         lvMap = HM.fromList $ zip repIndices $ map show ixVals
     vfile' = case repIndices of
       [] -> vfile
-      _  -> vfile & over (vfileSerials.serialsRepetitionKeys) (repIndices++)
+      _  -> vfile & over (vfileSerials.serialRepetitionKeys) (repIndices++)
 
 -- | Executes as a task a function that needs to access the content of the
 -- DataAccessNode of a VirtualFile.
@@ -295,7 +297,7 @@ withFolderDataAccessNodes path filesToAccess accessFn =
 -- mapping might exist). SHOULD NOT BE USED UNLESS loadData/writeData cannot do
 -- what you want.
 getLocsMappedTo :: (LogThrow m)
-                => [LocationTreePathItem] -> PTask m () [Loc]
+                => [LocationTreePathItem] -> PTask m () [SomeLoc m]
 getLocsMappedTo path = runnableWithoutReqs $ withRunnableState $
                          \state _ -> getLocs $ state^.ptrsDataAccessTree
   where

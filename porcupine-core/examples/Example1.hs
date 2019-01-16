@@ -46,11 +46,11 @@ computeAnalysis (User name surname _) = Analysis $
 -- This task may look very opaque from the outside, having no parameters and no
 -- return value. But we will be able to reuse it over different users without
 -- having to change it at all.
-analyseOneUser :: (LocationMonad m, KatipContext m) => PTask m () ()
+analyseOneUser :: (LogThrow m) => PTask m () ()
 analyseOneUser =
   loadData userFile >>> arr computeAnalysis >>> writeData analysisFile
 
-mainTask :: (LocationMonad m, KatipContext m) => PTask m () ()
+mainTask :: (LogThrow m) => PTask m () ()
 mainTask =
   -- First we get the ids of the users that we want to analyse. We need only one
   -- field that will contain a range of values, see IndexRange. By default, this
