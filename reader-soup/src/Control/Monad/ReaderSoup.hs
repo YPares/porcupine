@@ -45,7 +45,7 @@ module Control.Monad.ReaderSoup
 
   -- * Low-level API
   , ElField(..)
-  , Spoon(..)
+  , Spoon
   , CookedReaderSoup
   , cookReaderSoup
   , pickTopping
@@ -129,7 +129,7 @@ type IsInSoup ctxs l = IsInSoup_ ARec ctxs l
 
 -- * Working in a 'ReaderSoup'
 
-askSoup :: (IsInSoup_ r ctxs l, RecElemFCtx r ElField)
+askSoup :: (IsInSoup_ r ctxs l)
         => Label l -> ReaderSoup_ r ctxs (ContextFromName l)
 askSoup l = ReaderSoup $ rvalf l <$> ask
 
