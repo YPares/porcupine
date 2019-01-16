@@ -27,7 +27,7 @@ instance SoupContext InternalState ResourceT where
 useResource :: (MonadUnliftIO m) => ContextRunner ResourceT m
 useResource = ContextRunner runResourceT
 
-instance (IsInSoup ctxs "resource") => MonadResource (ReaderSoup ctxs) where
+instance (IsInSoup_ r ctxs "resource") => MonadResource (ReaderSoup_ r ctxs) where
   liftResourceT act = picking #resource act
 
 
