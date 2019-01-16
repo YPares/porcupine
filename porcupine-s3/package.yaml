@@ -16,6 +16,7 @@ dependencies:
   - amazonka
   - amazonka-core
   - amazonka-s3
+  - katip
   - lens
   - monad-control
   - resourcet
