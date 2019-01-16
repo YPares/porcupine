@@ -25,12 +25,12 @@ instance SoupContext KatipContextTState KatipContextT where
 useKatip :: LogEnv -> Namespace -> ContextRunner KatipContextT m
 useKatip e n = ContextRunner $ runKatipContextT e () n
 
-instance (IsInSoup ctxs "katip") => Katip (ReaderSoup ctxs) where
+instance (IsInSoup_ r ctxs "katip") => Katip (ReaderSoup_ r ctxs) where
   getLogEnv = picking #katip getLogEnv
   localLogEnv f act = scooping #katip $
     localLogEnv f (pouring #katip act)
 
-instance (IsInSoup ctxs "katip") => KatipContext (ReaderSoup ctxs) where
+instance (IsInSoup_ r ctxs "katip") => KatipContext (ReaderSoup_ r ctxs) where
   getKatipContext = picking #katip getKatipContext
   localKatipContext f act = scooping #katip $
     localKatipContext f (pouring #katip act)

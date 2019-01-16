@@ -14,12 +14,10 @@ module System.TaskPipeline.Caching
 
 import qualified Control.Exception.Safe                as SE
 import           Control.Funflow
-import           Control.Lens                          (over, traversed)
+import           Data.Aeson
 import           Data.Default                          (Default (..))
-import           Data.Locations.Loc
 import           Data.Locations.LogAndErrors
 import           Data.Locations.VirtualFile
-import qualified Data.Text                             as T
 import           System.TaskPipeline.PTask
 import           System.TaskPipeline.ResourceTree
 import           System.TaskPipeline.VirtualFileAccess
@@ -32,7 +30,8 @@ import           Prelude                               hiding (id, (.))
 -- VirtualFile to compute the hash. That means that if the VirtualFile is bound
 -- to something else, the step will be re-executed.
 cacheWithVFile :: (LogCatch m, Typeable c, Typeable c')
-               => Properties (a', [URLLikeLoc T.Text]) b  -- String isn't ContentHashable
+               => Properties (a', [Value]) b  -- Locs aren't ContentHashable,
+                                              -- but they are convertible to JSON
                -> (a -> a')
                -> VirtualFile c c'
                -> (a -> m (b,c))
@@ -40,16 +39,19 @@ cacheWithVFile :: (LogCatch m, Typeable c, Typeable c')
 cacheWithVFile props inputHashablePart vf action = proc input -> do
   (locs,accessor) <-
     withVFileInternalAccessFunction [ATWrite,ATRead] vf getLocsAndAccessor -< ()
-  output <- unsafeLiftToPTask' props' cached -< (input,locs,accessor)
+  output <- unsafeLiftToPTask' props' cached -< (input,map toJ locs,accessor)
   unsafeLiftToPTask afterCached -< (output,accessor)
   where
+    toJ :: SomeLoc m -> Value
+    toJ (SomeGLoc l) = toJSON l
+
     getLocsAndAccessor getAccessor _ = do
       let accessor = getAccessor mempty
       locs <- case daLocsAccessed accessor of
         Left e  -> throwWithPrefix $
           "cacheWithVFile (" ++ showVFileOriginalPath vf ++ "): " ++ e
         Right r -> return r
-      return (map (over traversed T.pack) locs, accessor)
+      return (locs, accessor)
 
     cached (input,_,accessor) = do
       res <- SE.try $ action input

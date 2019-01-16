@@ -1,4 +1,4 @@
-name: porcupine-s3
+name: porcupine-http
 version: 0.0.1.0
 synopsis: A tool to express portable, composable and reusable datascience task pipelines
 description: See README at <https://github.com/tweag/porcupine#README.md>
@@ -10,38 +10,33 @@ copyright: 2018 EURL Tweag, NovaDiscovery
 ghc-options: -Wall
 
 dependencies:
+  - aeson
   - base
-  - mtl
+  - transformers
   - safe-exceptions
-  - amazonka
-  - amazonka-core
-  - amazonka-s3
-  - katip
-  - lens
-  - monad-control
+  - http-conduit
   - resourcet
   - bytestring
+  - mime-types
   - streaming
   - streaming-bytestring
-  - directory
+  - conduit
+  - streaming-conduit
+  - text
   - reader-soup
   - porcupine-core
-  - retry
-  - text
-  - filepath
-  - conduit
-  - conduit-extra
 
 library:
   source-dirs: src
 
-executables:
-  exampleS3:
-    source-dirs: examples
-    main: ExampleS3.hs
-    dependencies:
-      - porcupine-core
-      - porcupine-s3
-      - docrecords
-      - aeson
-      - unordered-containers
+# executables:
+#   exampleHTTP:
+#     source-dirs: examples
+#     main: ExampleHTTP.hs
+#     dependencies:
+#       - porcupine-core
+#       - porcupine-http
+#       - docrecords
+#       - aeson
+#       - unordered-containers
+#       - text

@@ -19,6 +19,7 @@
 module Control.Monad.ReaderSoup
   ( -- * API for running a ReaderSoup
     ReaderSoup_(..)
+  , IsInSoup_
   , IsInSoup
   , ArgsForSoupConsumption(..)
   , ContextRunner(..)
@@ -35,6 +36,7 @@ module Control.Monad.ReaderSoup
   , ReaderSoup
   , ContextFromName
   , SoupContext(..)
+  , CanBeScoopedIn_
   , CanBeScoopedIn
   , CanRunSoupContext
   , askSoup
@@ -43,7 +45,7 @@ module Control.Monad.ReaderSoup
 
   -- * Low-level API
   , ElField(..)
-  , Spoon(..)
+  , Spoon
   , CookedReaderSoup
   , cookReaderSoup
   , pickTopping
@@ -55,9 +57,12 @@ module Control.Monad.ReaderSoup
   , fromLabel
   ) where
 
+import           Control.Applicative
 import           Control.Exception.Safe
 import           Control.Lens                (over)
+import           Control.Monad
 import           Control.Monad.Base          (MonadBase)
+import           Control.Monad.Fail
 import           Control.Monad.IO.Unlift
 import           Control.Monad.Morph         (hoist)
 import           Control.Monad.Reader.Class
@@ -77,7 +82,7 @@ import           GHC.TypeLits
 newtype ReaderSoup_ (record::((Symbol, *) -> *) -> [(Symbol, *)] -> *) ctxs a = ReaderSoup
   { unReaderSoup ::
       ReaderT (record ElField ctxs) IO a }
-  deriving ( Functor, Applicative, Monad
+  deriving ( Functor, Applicative, Alternative, Monad, MonadFail, MonadPlus
            , MonadIO, MonadUnliftIO, MonadBase IO, MonadBaseControl IO
            , MonadCatch, MonadThrow, MonadMask )
 
@@ -119,15 +124,16 @@ finishBroth (ReaderSoup (ReaderT act)) = act RNil
 -- | Associates the type-level label to the reader context
 type family ContextFromName (l::Symbol) :: *
 
-type IsInSoup ctxs l =
-  ( HasField ARec l ctxs ctxs (ContextFromName l) (ContextFromName l) )
-  -- , RecElemFContext ARec ElField )
+type IsInSoup_ r ctxs l =
+  ( HasField r l ctxs ctxs (ContextFromName l) (ContextFromName l)
+  , RecElemFCtx r ElField )
 
+type IsInSoup ctxs l = IsInSoup_ ARec ctxs l
 
 -- * Working in a 'ReaderSoup'
 
-askSoup :: (IsInSoup ctxs l)
-        => Label l -> ReaderSoup ctxs (ContextFromName l)
+askSoup :: (IsInSoup_ r ctxs l)
+        => Label l -> ReaderSoup_ r ctxs (ContextFromName l)
 askSoup l = ReaderSoup $ rvalf l <$> ask
 
 -- | Permits to select only a part of the whole contexts, to locally decide
@@ -147,14 +153,16 @@ filtering (ReaderSoup (ReaderT act)) =
 -- MonadReader of that context. 'Spoon' behaves exactly like a @ReaderT r
 -- IO@ (where r is the ContextFromName of @l@) but that keeps track of the whole
 -- context array.
-newtype Spoon ctxs (l::Symbol) a = Spoon
-  { unSpoon :: ReaderSoup ctxs a }
+newtype Spoon_ r ctxs (l::Symbol) a = Spoon
+  { unSpoon :: ReaderSoup_ r ctxs a }
   deriving ( Functor, Applicative, Monad
            , MonadIO, MonadUnliftIO, MonadBase IO, MonadBaseControl IO
            , MonadCatch, MonadThrow, MonadMask )
 
-instance (IsInSoup ctxs l, c ~ ContextFromName l)
-      => MonadReader c (Spoon ctxs l) where
+type Spoon = Spoon_ ARec
+
+instance (IsInSoup_ r ctxs l, c ~ ContextFromName l)
+      => MonadReader c (Spoon_ r ctxs l) where
   ask = Spoon $ askSoup $ fromLabel @l
   local f (Spoon (ReaderSoup (ReaderT act))) =
     Spoon $ ReaderSoup $ ReaderT $
@@ -164,21 +172,21 @@ instance (IsInSoup ctxs l, c ~ ContextFromName l)
 -- of just this context. This makes it possible that the same context type
 -- occurs several times in the broth, because the Label will disambiguate them.
 dipping :: Label l
-        -> Spoon ctxs l a
-        -> ReaderSoup ctxs a
+        -> Spoon_ r ctxs l a
+        -> ReaderSoup_ r ctxs a
 dipping _ = unSpoon
 
 -- | If you have a code that cannot cope with any MonadReader but explicitly
 -- wants a ReaderT
-rioToSpoon :: forall l ctxs a. (IsInSoup ctxs l)
-           => ReaderT (ContextFromName l) IO a -> Spoon ctxs l a
+rioToSpoon :: forall l ctxs a r. (IsInSoup_ r ctxs l)
+           => ReaderT (ContextFromName l) IO a -> Spoon_ r ctxs l a
 rioToSpoon (ReaderT act) = Spoon $ ReaderSoup $ ReaderT $
   act . rvalf (fromLabel @l)
 
 -- | Converting Spoon back to a ReaderT has to happen in the ReaderSoup
 -- because we need the global context
-spoonToReaderT :: forall l ctxs a. (IsInSoup ctxs l, KnownSymbol l)
-               => Spoon ctxs l a -> ReaderT (ContextFromName l) (ReaderSoup ctxs) a
+spoonToReaderT :: forall l ctxs a r. (IsInSoup_ r ctxs l, KnownSymbol l)
+               => Spoon_ r ctxs l a -> ReaderT (ContextFromName l) (ReaderSoup_ r ctxs) a
 spoonToReaderT (Spoon (ReaderSoup (ReaderT act))) =
   ReaderT $ \v -> ReaderSoup $ ReaderT $ \record ->
     act $ rputf (fromLabel @l) v record
@@ -192,16 +200,18 @@ class SoupContext c t | c -> t where
   -- | Reconstruct this monad trans from an actual ReaderT
   fromReaderT :: (Monad m) => ReaderT c m a -> t m a
 
-type CanBeScoopedIn t ctxs l =
-  (IsInSoup ctxs l, KnownSymbol l, SoupContext (ContextFromName l) t)
+type CanBeScoopedIn_ r t ctxs l =
+  (IsInSoup_ r ctxs l, KnownSymbol l, SoupContext (ContextFromName l) t)
+
+type CanBeScoopedIn t ctxs l = CanBeScoopedIn_ ARec t ctxs l
 
 -- | Converts an action in some ReaderT-like monad to 'Spoon', this
 -- monad being determined by @c@. This is for code that cannot cope with any
 -- MonadReader and want some specific monad.
-withSpoon :: forall l ctxs t a.
-             (CanBeScoopedIn t ctxs l)
-          => t (ReaderSoup ctxs) a
-          -> Spoon ctxs l a
+withSpoon :: forall l ctxs t a r.
+             (CanBeScoopedIn_ r t ctxs l)
+          => t (ReaderSoup_ r ctxs) a
+          -> Spoon_ r ctxs l a
 withSpoon act = Spoon $ ReaderSoup $ ReaderT $ \record ->
   runReaderT (unReaderSoup $
                (runReaderT (toReaderT act) $
@@ -212,28 +222,28 @@ withSpoon act = Spoon $ ReaderSoup $ ReaderT $ \record ->
 -- monad. That permits to reuse some already existing monad from an existing
 -- library (ResourceT, KatipContextT, etc.) if you cannot just use a MonadReader
 -- instance.
-picking :: (CanBeScoopedIn t ctxs l)
+picking :: (CanBeScoopedIn_ r t ctxs l)
         => Label l
         -> t IO a
-        -> ReaderSoup ctxs a
+        -> ReaderSoup_ r ctxs a
 picking lbl = dipping lbl . rioToSpoon . toReaderT
 
 -- | Like 'picking', but gives you more context: instead of just running over
 -- IO, it makes the monad run over the whole soup (so instances of MonadXXX
 -- classes defined over the whole soup can still be used).
-scooping :: (CanBeScoopedIn t ctxs l)
+scooping :: (CanBeScoopedIn_ r t ctxs l)
          => Label l
-         -> t (ReaderSoup ctxs) a
-         -> ReaderSoup ctxs a
+         -> t (ReaderSoup_ r ctxs) a
+         -> ReaderSoup_ r ctxs a
 scooping lbl = dipping lbl . withSpoon
 
 -- | The opposite of 'scooping'.
-pouring :: forall l ctxs t a.
-           (CanBeScoopedIn t ctxs l)
+pouring :: forall l ctxs t a r.
+           (CanBeScoopedIn_ r t ctxs l)
         => Label l
-        -> ReaderSoup ctxs a
-        -> t (ReaderSoup ctxs) a
-pouring _ act = fromReaderT $ spoonToReaderT (Spoon act :: Spoon ctxs l a)
+        -> ReaderSoup_ r ctxs a
+        -> t (ReaderSoup_ r ctxs) a
+pouring _ act = fromReaderT $ spoonToReaderT (Spoon act :: Spoon_ r ctxs l a)
 
 
 -- * Running a whole 'ReaderSoup'

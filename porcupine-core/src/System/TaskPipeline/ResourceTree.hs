@@ -8,6 +8,7 @@
 {-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TupleSections       #-}
+{-# LANGUAGE TypeOperators       #-}
 {-# LANGUAGE ViewPatterns        #-}
 {-# OPTIONS_GHC -fno-warn-missing-pattern-synonym-signatures #-}
 {-# OPTIONS_GHC -fno-warn-name-shadowing #-}
@@ -55,22 +56,29 @@
 module System.TaskPipeline.ResourceTree where
 
 import           Control.Exception.Safe
-import           Control.Lens                            hiding ((<.>))
+import           Control.Lens                            hiding ((:>), (<.>))
 import           Control.Monad
 import           Data.Aeson
+import qualified Data.ByteString                         as Strict
+import qualified Data.ByteString.Lazy                    as Lazy
+import qualified Data.ByteString.Streaming               as BSS
 import           Data.DocRecord
 import           Data.DocRecord.OptParse
 import qualified Data.HashMap.Strict                     as HM
 import           Data.List                               (intersperse)
 import           Data.Locations
+import           Data.Locations.Accessors
 import           Data.Maybe
 import           Data.Monoid                             (First (..))
 import           Data.Representable
 import qualified Data.Text                               as T
+import qualified Data.Text.Lazy                          as LT
+import qualified Data.Text.Lazy.Encoding                 as LTE
 import           Data.Typeable
 import           GHC.Generics                            (Generic)
 import           Katip
 import           Options.Applicative
+import           Streaming
 import           System.TaskPipeline.ConfigurationReader
 
 
@@ -88,11 +96,11 @@ instance Semigroup SomeVirtualFile where
     Just vf'' -> SomeVirtualFile (vf <> vf'')
     Nothing -> error "Two differently typed VirtualFiles are at the same location"
 
-
+-- | Packs together the two functions that will read
 data DataAccessor m a b = DataAccessor
   { daPerformWrite :: a -> m ()
   , daPerformRead  :: m b
-  , daLocsAccessed :: Either String [Loc] }
+  , daLocsAccessed :: Either String [SomeLoc m] }
 
 -- | The internal part of a 'DataAccessNode, closing over the type params of the
 -- access function.
@@ -121,13 +129,13 @@ vfnodeFileVoided _ vfn = pure vfn
 
 -- | The nodes of the ResourceTree, after mapping each 'VirtualFiles' to
 -- physical locations
-data PhysicalFileNode = MbPhysicalFileNode [LocWithVars] (Maybe SomeVirtualFile)
+data PhysicalFileNode m = MbPhysicalFileNode [SomeLocWithVars m] (Maybe SomeVirtualFile)
 -- | A non-empty 'PhysicalFileNode'
 pattern PhysicalFileNode l vf = MbPhysicalFileNode l (Just (SomeVirtualFile vf))
 
 -- | The nodes of the LocationTree after the 'VirtualFiles' have been resolved
 -- to physical paths, and data possibly extracted from these paths
-data DataAccessNode m = MbDataAccessNode [LocWithVars] (First (SomeDataAccess m))
+data DataAccessNode m = MbDataAccessNode [SomeLocWithVars m] (First (SomeDataAccess m))
   -- Data access function isn't a semigroup, hence the use of First here instead
   -- of Maybe.
 -- | A non-empty 'DataAccessNode'
@@ -154,11 +162,16 @@ instance Show VirtualFileNode where
   -- TODO: Cleaner Show
   -- TODO: Display read/written types here, since they're already Typeable
 
-instance Show PhysicalFileNode where
+toJSONTxt :: SomeLocWithVars m -> T.Text
+toJSONTxt (SomeGLoc a) = case toJSON a of
+  String s -> s
+  v        -> LT.toStrict $ LTE.decodeUtf8 $ encode v
+
+instance Show (PhysicalFileNode m) where
   show (MbPhysicalFileNode layers mbVF) =
     T.unpack (mconcat
               (intersperse " << "
-               (map toTextRepr layers)))
+               (map toJSONTxt layers)))
     ++ case mbVF of
          Just (SomeVirtualFile vf) ->
            " - " ++ show (getVirtualFileDescription vf)
@@ -172,7 +185,7 @@ type VirtualResourceTree = LocationTree VirtualFileNode
 
 -- | The tree manipulated when checking if each location is bound to something
 -- legit
-type PhysicalResourceTree = LocationTree PhysicalFileNode
+type PhysicalResourceTree m = LocationTree (PhysicalFileNode m)
 
 -- | The tree manipulated by tasks when they actually run
 type DataResourceTree m = LocationTree (DataAccessNode m)
@@ -265,10 +278,10 @@ data LayerOperator = ReplaceLayers | AddLayer
 type ResourceTreeAndMappingsOverrides =
   ( LocVariableMap
     -- The map of variables and their values read from CLI too
-  , [(LocationTreePath, LayerOperator, LocShortcut)]
+  , [(LocationTreePath, LayerOperator, SerializableLocShortcut)]
     -- Locations mapped to new layers
   , LocationTree (VirtualFileNode, Maybe (RecOfOptions SourcedDocField))
-    -- The tree containing options parsed by optparse-applicative
+    -- The tree containing the options parsed by optparse-applicative
   )
 
 -- | Reads the data from the input config file. Constructs the parser for the
@@ -381,10 +394,10 @@ rscTreeConfigurationReader (ResourceTreeAndMappings{rtamResourceTree=defTree}) =
 
 -- | Transform a virtual file node in file node with definite physical
 -- locations. Splices in the locs the variables that can be spliced.
-applyOneRscMapping :: LocVariableMap -> [LocWithVars] -> VirtualFileNode -> Bool -> PhysicalFileNode
+applyOneRscMapping :: LocVariableMap -> [SomeLocWithVars m] -> VirtualFileNode -> Bool -> PhysicalFileNode m
 applyOneRscMapping variables configLayers mbVF mappingIsExplicit = buildPhysicalNode mbVF
   where
-    configLayers' = map (spliceLocVariables variables) configLayers
+    configLayers' = map (\(SomeGLoc l) -> SomeGLoc $ spliceLocVariables variables l) configLayers
     buildPhysicalNode (VirtualFileNode{..}) = PhysicalFileNode layers vfnodeFile
       where
         First defExt = vfnodeFile ^. vfileSerials . serialDefaultExt
@@ -394,12 +407,13 @@ applyOneRscMapping variables configLayers mbVF mappingIsExplicit = buildPhysical
              -- mapping to be present in the config file, if we want them to be
              -- read from external files instead
                | otherwise = map resolveExt configLayers'
-        resolveExt loc = addExtToLocIfMissing loc $ T.unpack $ fromMaybe "" defExt
+        resolveExt (SomeGLoc loc) = SomeGLoc $ setLocTypeIfMissing loc $ T.unpack $ fromMaybe "" defExt
     buildPhysicalNode _ = MbPhysicalFileNode configLayers' Nothing
 
 -- | Binds together a 'VirtualResourceTree' with physical locations an splices
 -- in the variables read from the configuration.
-getPhysicalResourceTreeFromMappings :: ResourceTreeAndMappings -> PhysicalResourceTree
+getPhysicalResourceTreeFromMappings
+  :: (LogThrow m) => ResourceTreeAndMappings -> LocResolutionM m (PhysicalResourceTree m)
 getPhysicalResourceTreeFromMappings (ResourceTreeAndMappings tree mappings variables) =
   applyMappings (applyOneRscMapping variables) m' tree
   where
@@ -416,10 +430,10 @@ data TaskConstructionError =
 instance Exception TaskConstructionError
 
 data DataAccessContext = DAC
-  { locationAccessed     :: String
+  { locationAccessed     :: Value
   , requiredLocVariables :: [LocVariable]
   , providedLocVariables :: LocVariableMap
-  , splicedLocation      :: String }
+  , splicedLocation      :: Value }
   deriving (Generic)
 
 instance ToJSON DataAccessContext
@@ -431,38 +445,46 @@ instance LogItem DataAccessContext where
     | otherwise = SomeKeys []
 
 makeDataAccessor
-  :: (LocationMonad m, LogMask m)
+  :: forall m a b. (LogMask m)
   => String  -- ^ VirtualFile path (for doc)
   -> VFileImportance  -- ^ How to log the accesses
-  -> [LocWithVars]  -- ^ Every mapped layer (for doc)
+  -> [SomeLocWithVars m]  -- ^ Every mapped layer (for doc)
   -> Maybe b -- ^ Default value (used as base layer)
   -> LayeredReadScheme b  -- ^ How to handle the different layers
-  -> [(WriteToLoc a, LocWithVars)]  -- ^ Layers to write to
-  -> [(ReadFromLoc b, LocWithVars)] -- ^ Layers to read from
+  -> [(ToAtomicFn a, SomeLocWithVars m)]  -- ^ Layers to write to
+  -> [(FromStreamFn b, SomeLocWithVars m)] -- ^ Layers to read from
   -> LocVariableMap  -- ^ The map of the values of the repetition indices
   -> DataAccessor m a b
 makeDataAccessor vpath (VFileImportance sevRead sevWrite sevError)
                  layers mbDefVal readScheme writeLocs readLocs repetKeyMap =
   DataAccessor{..}
   where
-    daLocsAccessed = traverse (fillLoc' repetKeyMap) layers
+    daLocsAccessed = traverse (\(SomeGLoc loc) -> SomeGLoc <$> fillLoc' repetKeyMap loc) layers
     daPerformWrite input = do
-        forM_ writeLocs $ \(WriteToLoc rkeys f, loc) -> do
-          loc' <- fillLoc repetKeyMap loc
-          katipAddNamespace "dataAccessor" $ katipAddNamespace "writer" $
-            katipAddContext (DAC (show loc) rkeys repetKeyMap (show loc')) $ do
-              withException (f input loc') $ \ioError ->
-                logFM sevError $ logStr $ displayException (ioError :: IOException)
-              logFM sevWrite $ logStr $ "Wrote '" ++ show loc' ++ "'"
+        forM_ writeLocs $ \(ToAtomicFn {-rkeys-} f, SomeGLoc loc) ->
+          case cast (f input) of
+            Nothing -> error "Some atomic serializer isn't converting to a lazy ByteString"
+            Just bs -> do
+              loc' <- fillLoc repetKeyMap loc
+              katipAddNamespace "dataAccessor" $ katipAddNamespace "writer" $
+                katipAddContext (DAC (toJSON loc) {-rkeys-}mempty repetKeyMap (toJSON loc')) $ do
+                  let runWrite = writeBSS loc' (BSS.fromLazy bs)
+                  withException runWrite $ \ioError ->
+                    logFM sevError $ logStr $ displayException (ioError :: IOException)
+                  logFM sevWrite $ logStr $ "Wrote '" ++ show loc' ++ "'"
     daPerformRead = do
-        dataFromLayers <- forM readLocs (\(ReadFromLoc rkeys f, loc) -> do
-          loc' <- fillLoc repetKeyMap loc
-          katipAddNamespace "dataAccessor" $ katipAddNamespace "reader" $
-            katipAddContext (DAC (show loc) rkeys repetKeyMap (show loc')) $ do
-              r <- withException (f loc') $ \ioError ->
-                logFM sevError $ logStr $ displayException (ioError :: IOException)
-              logFM sevRead $ logStr $ "Read '" ++ show loc' ++ "'"
-              return r)
+        dataFromLayers <- forM readLocs (\(FromStreamFn {-rkeys-} (f :: Stream (Of i) m () -> m (Of b ())), SomeGLoc loc) ->
+          case eqT :: Maybe (i :~: Strict.ByteString) of
+            Nothing -> error "Some stream reader isn't expecting a stream of strict ByteStrings"
+            Just Refl -> do
+              loc' <- fillLoc repetKeyMap loc
+              katipAddNamespace "dataAccessor" $ katipAddNamespace "reader" $
+                katipAddContext (DAC (toJSON loc) {-rkeys-}mempty repetKeyMap (toJSON loc')) $ do
+                  let runRead = readBSS loc' (f . BSS.toChunks)
+                  (r :> ()) <- withException runRead $ \ioError ->
+                    logFM sevError $ logStr $ displayException (ioError :: IOException)
+                  logFM sevRead $ logStr $ "Read '" ++ show loc' ++ "'"
+                  return r)
         let embeddedValAndLayers = maybe id (:) mbDefVal dataFromLayers
         case (readScheme, embeddedValAndLayers) of
           (_, [x]) -> return x
@@ -478,18 +500,18 @@ makeDataAccessor vpath (VFileImportance sevRead sevWrite sevError)
     fillLoc' rkMap loc = terminateLocWithVars $ spliceLocVariables rkMap loc
     fillLoc rkMap loc =
       case fillLoc' rkMap loc of
-        Left e  -> throwWithPrefix $ "resolveDataAccess: " ++ e
+        Left e  -> katipAddNamespace "dataAccessor" $ throwWithPrefix e
         Right r -> return r
 
 -- | Transform a file node with physical locations in node with a data access
--- function to run. Matches the location (esp. file extensions) to writers
--- available in the 'VirtualFile'.
+-- function to run. Matches the location (especially the filetype/extension) to
+-- the readers & writers available in the 'VirtualFile'.
 resolveDataAccess
-  :: forall m m'. (LocationMonad m, KatipContext m, MonadThrow m')
-  => PhysicalFileNode
+  :: forall m m'. (LogMask m, MonadThrow m')
+  => PhysicalFileNode m
   -> m' (DataAccessNode m)
 resolveDataAccess (PhysicalFileNode layers vf) = do
-  -- resolveDataAccess performs some buildtime checks: --
+  -- resolveDataAccess performs some checks when we build the pipeline: --
   -- First, that we aren't illegally binding to no layers:
   case layers of
     [] -> case readScheme of
@@ -501,9 +523,9 @@ resolveDataAccess (PhysicalFileNode layers vf) = do
                 vpath ++ " cannot be mapped to null. It doesn't contain any default value."
     _ -> return ()
   -- Then, that we aren't writing to an unsupported filetype:
-  writeLocs <- findFunctions writers
+  writeLocs <- findFunctions (typeOf (undefined :: Lazy.ByteString)) writers
   -- And finally, that we aren't reading from an unsupported filetype:
-  readLocs <- findFunctions readers
+  readLocs <- findFunctions (typeOf (undefined :: Strict.ByteString)) readers
   return $
     DataAccessNode layers $
       makeDataAccessor vpath (vf^.vfileImportance) layers
@@ -515,20 +537,20 @@ resolveDataAccess (PhysicalFileNode layers vf) = do
 
     vpath = T.unpack $ toTextRepr $ LTP $ vf ^. vfileOriginalPath
 
-    readers = vf ^. vfileSerials . serialReaders . serialReadersFromInputFile
-    writers = vf ^. vfileSerials . serialWriters . serialWritersToOutputFile
+    readers = vf ^. vfileSerials . serialReaders . serialReadersFromStream
+    writers = vf ^. vfileSerials . serialWriters . serialWritersToAtomic
 
-    findFunctions :: HM.HashMap FileExt v -> m' [(v, LocWithVars)]
-    findFunctions hm | HM.null hm = return []
-                     | otherwise  = mapM findFunction layers
+    findFunctions :: TypeRep -> HM.HashMap (TypeRep,Maybe FileExt) v -> m' [(v, SomeLocWithVars m)]
+    findFunctions typeRep hm | HM.null hm = return []
+                             | otherwise  = mapM findFunction layers
       where
-        findFunction loc = case HM.lookup (T.pack $ loc ^. locExt) hm of
-          Just f -> return (f, loc)
+        findFunction (SomeGLoc loc) = case HM.lookup (typeRep, Just $ T.pack $ getLocType loc) hm of
+          Just f -> return (f, SomeGLoc loc)
           -- TODO: add VirtualFile path to error
           Nothing -> throwM $ TaskConstructionError $
-            show loc ++ " is bound to " ++ vpath ++
-            " which doesn't support extension '" ++ (loc^.locExt) ++
-            "'. Accepted file extensions here are: " ++
-            mconcat (intersperse "," (map T.unpack $ HM.keys hm)) ++ "."
+            show loc ++ " is mapped to " ++ vpath ++ " which doesn't support filetype '" ++ getLocType loc ++
+            "'. Accepted filetypes here are: " ++
+            mconcat (intersperse "," [T.unpack ext | (_,Just ext) <- HM.keys hm]) ++ "."
+
 resolveDataAccess (MbPhysicalFileNode locs _) =
   return $ MbDataAccessNode locs $ First Nothing

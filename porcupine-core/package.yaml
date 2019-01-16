@@ -13,9 +13,11 @@ dependencies:
   - base
   - aeson
   - aeson-pretty
+  - attoparsec
   - binary
   - binary-orphans
   - bytestring
+  - cassava
   - clock
   - conduit
   - containers
@@ -52,6 +54,7 @@ dependencies:
   - unliftio-core
   - unordered-containers
   - url
+  - vector
   - vinyl
   - void
   - yaml

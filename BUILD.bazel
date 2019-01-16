@@ -55,10 +55,12 @@ jinko_haskell_library(
         [
             "@hackage//:aeson",
             "@hackage//:aeson-pretty",
+            "@hackage//:attoparsec",
             "@hackage//:base",
             "@hackage//:binary",
             "@hackage//:binary-orphans",
             "@hackage//:bytestring",
+            "@hackage//:cassava",
             "@hackage//:clock",
             "@hackage//:conduit",
             "@hackage//:containers",
@@ -93,6 +95,7 @@ jinko_haskell_library(
             "@hackage//:unliftio-core",
             "@hackage//:unordered-containers",
             "@hackage//:url",
+            "@hackage//:vector",
             "@hackage//:vinyl",
             "@hackage//:void",
             "@hackage//:yaml",
@@ -113,6 +116,7 @@ jinko_haskell_library(
             "@hackage//:amazonka",
             "@hackage//:amazonka-core",
             "@hackage//:amazonka-s3",
+            "@hackage//:katip",
             "@hackage//:lens",
             "@hackage//:monad-control",
             "@hackage//:resourcet",
@@ -127,5 +131,29 @@ jinko_haskell_library(
             "@hackage//:conduit-extra",
             ":porcupine-core",
 	    ":reader-soup",
+        ],
+)
+
+jinko_haskell_library(
+    name = "porcupine-http",
+    srcs = glob(["porcupine-http/src/**/*.hs"]),
+    src_strip_prefix = "porcupine-http/src",
+    deps =
+        [
+            "@hackage//:aeson",
+            "@hackage//:base",
+	    "@hackage//:transformers",
+            "@hackage//:safe-exceptions",
+	    "@hackage//:http-conduit",
+            "@hackage//:resourcet",
+            "@hackage//:bytestring",
+            "@hackage//:mime-types",
+            "@hackage//:streaming",
+            "@hackage//:streaming-bytestring",
+            "@hackage//:conduit",
+            "@hackage//:streaming-conduit",
+            "@hackage//:text",
+	    ":reader-soup",
+            ":porcupine-core",
         ],
 )
