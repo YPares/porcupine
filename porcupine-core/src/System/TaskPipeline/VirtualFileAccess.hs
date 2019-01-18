@@ -1,5 +1,4 @@
 {-# LANGUAGE Arrows                     #-}
-{-# LANGUAGE ConstrainedClassMethods    #-}
 {-# LANGUAGE ExistentialQuantification  #-}
 {-# LANGUAGE FlexibleContexts           #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
@@ -24,6 +23,7 @@ module System.TaskPipeline.VirtualFileAccess
   , tryLoadDataStream
   , writeData
   , writeDataStream
+  , writeEffData
 
     -- * Lower-level API
   , EffectSeq(..), EffectSeqFromList(..)
@@ -79,7 +79,7 @@ loadData vf =
 -- indices. The process is lazy: the data will actually be read when the
 -- resulting stream is consumed.
 loadDataStream :: forall idx m a b r.
-                  (Show idx, LogThrow m, Typeable a, Typeable b)
+                  (Show idx, LogThrow m, Typeable a, Typeable b, Monoid r)
                => LocVariable
                -> VirtualFile a b -- ^ Used as a 'DataSource'
                -> PTask m (Stream (Of idx) m r) (Stream (Of (idx, b)) m r)
@@ -89,7 +89,7 @@ loadDataStream lv vf =
   >>> arr streamFromES
 
 -- | Like 'loadDataStream', but won't stop on a failure on a single file
-tryLoadDataStream :: (Exception e, Show idx, LogCatch m, Typeable a, Typeable b)
+tryLoadDataStream :: (Exception e, Show idx, LogCatch m, Typeable a, Typeable b, Monoid r)
                   => LocVariable
                   -> VirtualFile a b -- ^ Used as a 'DataSource'
                   -> PTask m (Stream (Of idx) m r) (Stream (Of (idx, Either e b)) m r)
@@ -104,16 +104,28 @@ writeData
   :: (LogThrow m, Typeable a, Typeable b)
   => VirtualFile a b  -- ^ Used as a 'DataSink'
   -> PTask m a ()
-writeData vf =
-      arr (SingletonES . return . ([] :: [Int],))
+writeData vf = arr return >>> writeEffData vf
+
+-- | Like 'writeData', but the data to write first has to be computed by an
+-- action running some effects. Therefore, these effects will be executed only
+-- if the 'VirtualFile' is mapped to something.
+writeEffData
+  :: (LogThrow m, Typeable a, Typeable b)
+  => VirtualFile a b  -- ^ Used as a 'DataSink'
+  -> PTask m (m a) ()
+writeEffData vf =
+      arr (SingletonES . (fmap ([] :: [Int],)))
   >>> accessVirtualFile (DoWrite id) [] vf
   >>> unsafeLiftToPTask runES
 
 -- | The simplest way to consume a stream of data inside a pipeline. Just write
--- it to repeated occurences of a VirtualFile. See
+-- it to repeated occurences of a 'VirtualFile'. If this VirtualFile is not
+-- mapped to any physical file (this can be authorized if the VirtualFile
+-- 'canBeUnmapped'), then the input stream's effects will not be executed. This
+-- is why its end result must be a Monoid. See
 -- System.TaskPipeline.Repetition.Fold for more complex ways to consume a
 -- Stream.
-writeDataStream :: (Show idx, LogThrow m, Typeable a, Typeable b)
+writeDataStream :: (Show idx, LogThrow m, Typeable a, Typeable b, Monoid r)
                 => LocVariable
                 -> VirtualFile a b -- ^ Used as a 'DataSink'
                 -> PTask m (Stream (Of (idx, a)) m r) r
@@ -130,7 +142,7 @@ getVFileDataAccessor
   -> VirtualFile a b
   -> PTask m () (DataAccessor m a b)
 getVFileDataAccessor accesses vfile = withVFileInternalAccessFunction accesses vfile
-  (\mkAccessor _ -> return $ mkAccessor mempty)
+  (\mkAccessor _ _ -> return $ mkAccessor mempty)
 
 
 -- | Gives a wrapper that should be used when the actual read or write is
@@ -150,12 +162,13 @@ newtype ListES m a = ListES { getListFromES :: [m a] }
 newtype StreamES r m a = StreamES { getStreamFromES :: Stream (Of a) m r }
 
 -- | Some class around Stream (Of a) m () and [m a].
-class EffectSeq seq where
+class (Monoid (ESResult seq)) => EffectSeq seq where
   type ESResult seq :: *
   mapES :: (Monad m) => (a -> b) -> seq m a -> seq m b
   mapESM :: (Monad m) => (a -> m b) -> seq m a -> seq m b
   streamFromES :: (Monad m) => seq m a -> Stream (Of a) m (ESResult seq)
   runES :: (Monad m) => seq m a -> m (ESResult seq)
+  emptyES :: (Monad m) => seq m a
 
 instance EffectSeq SingletonES where
   type ESResult SingletonES = ()
@@ -163,6 +176,7 @@ instance EffectSeq SingletonES where
   mapESM f = SingletonES . (>>= f) . getSingletonFromES
   streamFromES (SingletonES act) = lift act >>= S.yield
   runES (SingletonES act) = act >> return ()
+  emptyES = SingletonES $ return $ error "SingletonES: THIS IS VOID"
 
 instance EffectSeq ListES where
   type ESResult ListES = ()
@@ -170,22 +184,24 @@ instance EffectSeq ListES where
   mapESM f = ListES . map (>>= f) . getListFromES
   streamFromES = mapM_ (\act -> lift act >>= S.yield) . getListFromES
   runES = sequence_ . getListFromES
+  emptyES = ListES []
 
-instance EffectSeq (StreamES r) where
+instance (Monoid r) => EffectSeq (StreamES r) where
   type ESResult (StreamES r) = r
   mapES f = StreamES . S.map f . getStreamFromES
   mapESM f = StreamES . S.mapM f . getStreamFromES
   streamFromES = getStreamFromES
   runES = S.effects . getStreamFromES
+  emptyES = StreamES (return mempty)
 
 class (EffectSeq seq) => EffectSeqFromList seq where
-  esFromList :: (Monad m, ESResult seq ~ ()) => [a] -> seq m a
+  esFromList :: (Monad m) => [a] -> seq m a
 
 instance EffectSeqFromList ListES where
   esFromList = ListES . map return
 
-instance EffectSeqFromList (StreamES r) where
-  esFromList = StreamES . S.each
+instance (Monoid r) => EffectSeqFromList (StreamES r) where
+  esFromList x = StreamES $ S.each x >> return mempty
 
 -- | Like 'accessVirtualFile', but uses only one repetition variable
 accessVirtualFile' :: forall seq idx m a b b'.
@@ -223,8 +239,12 @@ accessVirtualFile
                         -- associated to their outputs.
 accessVirtualFile accessToDo repIndices vfile =
   withVFileInternalAccessFunction (toAccessTypes accessToDo) vfile' $
-    \accessFn inputStream ->
-      return $ mapESM (runOnce accessFn) inputStream
+    \accessFn isMapped inputEffSeq ->
+      case (isMapped, accessToDo) of
+        (False, DoWrite{}) -> return emptyES
+                              -- We don't even run the input effects if the
+                              -- input shouldn't be written
+        _                  -> return $ mapESM (runOnce accessFn) inputEffSeq
   where
     runOnce :: (LocVariableMap -> DataAccessor m a b) -> ([idx], a) -> m ([idx], b')
     runOnce accessFn (ixVals, input) = do
@@ -246,18 +266,19 @@ withVFileInternalAccessFunction
      (LogThrow m, Typeable a, Typeable b)
   => [VFNodeAccessType]  -- ^ The accesses that will be performed on it
   -> VirtualFile a b  -- ^ The VirtualFile to access
-  -> ((LocVariableMap -> DataAccessor m a b) -> i -> m o)
-         -- ^ The action to run. It will be a function to access the
-         -- VirtualFile. The LocVariableMap can just be empty if the VirtualFile
-         -- isn't meant to be repeated
+  -> ((LocVariableMap -> DataAccessor m a b) -> Bool -> i -> m o)
+         -- ^ The action to run, and a Bool telling if the file has been
+         -- mapped. It will be a function to access the VirtualFile. The
+         -- LocVariableMap can just be empty if the VirtualFile isn't meant to
+         -- be repeated
   -> PTask m i o
 withVFileInternalAccessFunction accessesToDo vfile f =
   withFolderDataAccessNodes path (Identity fname) $
     \(Identity n) input -> case n of
-      DataAccessNode _ (action :: LocVariableMap -> DataAccessor m a' b') ->
+      DataAccessNode layers (action :: LocVariableMap -> DataAccessor m a' b') ->
         case (eqT :: Maybe (a :~: a'), eqT :: Maybe (b :~: b')) of
           (Just Refl, Just Refl)
-            -> f action input
+            -> f action (not $ null layers) input
           _ -> err "input or output types don't match"
       _ -> err "no access action is present in the tree"
   where
