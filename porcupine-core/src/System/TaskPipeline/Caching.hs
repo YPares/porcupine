@@ -45,7 +45,7 @@ cacheWithVFile props inputHashablePart vf action = proc input -> do
     toJ :: SomeLoc m -> Value
     toJ (SomeGLoc l) = toJSON l
 
-    getLocsAndAccessor getAccessor _ = do
+    getLocsAndAccessor getAccessor _ _ = do
       let accessor = getAccessor mempty
       locs <- case daLocsAccessed accessor of
         Left e  -> throwWithPrefix $
