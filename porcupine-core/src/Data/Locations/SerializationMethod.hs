@@ -258,7 +258,7 @@ instance (FromJSON a) => DeserializesWith JSONSerial a where
     } where
     decode_ x = case A.eitherDecodeStrict x of
       Right y  -> return y
-      Left msg -> throwString msg
+      Left msg -> throwWithPrefix msg
 
 -- * Serialization to/from CSV
 
@@ -318,7 +318,7 @@ instance (Csv.FromRecord a)
           (bs :> r) <- BSS.toLazy $ BSS.fromChunks strm
           vec <- case Csv.decodeWith decOpts hh bs of
             Right y  -> return y
-            Left msg -> throwString msg
+            Left msg -> throwWithPrefix msg
           return (vec :> r)
     } where
     hh = if hasHeader then Csv.HasHeader else Csv.NoHeader

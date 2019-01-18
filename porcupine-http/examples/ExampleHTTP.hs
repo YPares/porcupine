@@ -31,8 +31,11 @@ import           Data.Locations.Accessors.HTTP
 data Move = Move { name :: T.Text }
   deriving (Generic, FromJSON)
 
+newtype Move' = Move' { move :: Move }
+  deriving (Generic, FromJSON)
+
 data Pokemon = Pokemon { name  :: T.Text
-                       , moves :: [Move] }
+                       , moves :: [Move'] }
   deriving (Generic, FromJSON)
 
 -- | How to load pokemons.
@@ -57,16 +60,16 @@ analyzePokemon = Analysis . length . moves
 -- This task may look very opaque from the outside, having no parameters and no
 -- return value. But we will be able to reuse it over different users without
 -- having to change it at all.
-analyseOnePokemon :: (LocationMonad m, KatipContext m) => PTask m () ()
+analyseOnePokemon :: (LogThrow m) => PTask m () ()
 analyseOnePokemon =
   loadData pokemonFile >>> arr analyzePokemon >>> writeData analysisFile
 
-mainTask :: (LocationMonad m, KatipContext m) => PTask m () ()
+mainTask :: (LogThrow m) => PTask m () ()
 mainTask =
   -- First we get the ids of the users that we want to analyse. We need only one
   -- field that will contain a range of values, see IndexRange. By default, this
   -- range contains just one value, zero.
-  getOption ["Settings"] (docField @"pokemonIds" (oneIndex (0::Int)) "The indice of the pokemon to load")
+  getOption ["Settings"] (docField @"pokemonIds" (oneIndex (1::Int)) "The indice of the pokemon to load")
   -- We turn the range we read into a full lazy list:
   >>> arr enumIndices
   -- Then we just map over these ids and call analyseOnePokemon each time:

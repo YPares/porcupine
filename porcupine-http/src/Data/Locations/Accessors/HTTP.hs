@@ -74,6 +74,8 @@ instance (MonadResource m, MonadMask m)
       httpSource (setRequestMethod (TE.encodeUtf8 $ readMethod l) req)
                  getResponseBody
 
+instance (MonadResource m, MonadMask m) => MayProvideLocationAccessors m "http"
+
 instance (IsLocString a) => Show (GLocOf "http" a) where
   show = show . url
 
