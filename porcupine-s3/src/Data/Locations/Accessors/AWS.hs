@@ -50,7 +50,7 @@ pattern S3Obj{bucketName,objectName} = RemoteFile "s3" bucketName objectName
 instance (MonadAWS m, MonadMask m, MonadResource m)
       => LocationAccessor m "aws" where
   newtype GLocOf "aws" a = S (URLLikeLoc a)
-    deriving (Functor, Foldable, Traversable, ToJSON, Show, TypedLocation)
+    deriving (Functor, Foldable, Traversable, ToJSON, TypedLocation)
   locExists _ = return True -- TODO: Implement it
   writeBSS (S l) = writeBSS_S3 l
   readBSS (S l) f = readBSS_S3 l f
@@ -59,13 +59,15 @@ instance (MonadAWS m, MonadMask m, MonadResource m)
 instance (MonadAWS m, MonadMask m, MonadResource m)
       => MayProvideLocationAccessors m "aws"
 
+instance (IsLocString a) => Show (GLocOf "aws" a) where
+  show (S l) = show l
+
 instance (IsLocString a) => FromJSON (GLocOf "aws" a) where
   parseJSON v = do
     loc <- parseJSON v
     case loc of
       S3Obj{} -> return $ S loc
       _       -> fail "Doesn't use 's3' protocol"
-
 
 writeBSS_S3 :: MonadAWS m => Loc -> BSS.ByteString m a -> m a
 writeBSS_S3 S3Obj { bucketName, objectName } body = do

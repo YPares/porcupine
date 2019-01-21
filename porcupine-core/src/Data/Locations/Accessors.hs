@@ -170,7 +170,7 @@ checkLocal funcName loc _ = error $ funcName ++ ": location " ++ show loc ++ " i
 -- | Accessing local resources
 instance (MonadResource m, MonadMask m) => LocationAccessor m "resource" where
   newtype GLocOf "resource" a = L (URLLikeLoc a)
-    deriving (Functor, Foldable, Traversable, ToJSON, Show, TypedLocation)
+    deriving (Functor, Foldable, Traversable, ToJSON, TypedLocation)
   locExists (L l) = checkLocal "locExists" l $
     liftIO . doesPathExist . (^. locFilePathAsRawFilePath)
   writeBSS (L l) body = checkLocal "writeBSS" l $ \path -> do
@@ -188,14 +188,18 @@ instance (MonadResource m, MonadMask m) => LocationAccessor m "resource" where
         (path1 ^. locFilePathAsRawFilePath)
         (path2 ^. locFilePathAsRawFilePath)
 
+instance (MonadResource m, MonadMask m) => MayProvideLocationAccessors m "resource"
+
+instance (IsLocString a) => Show (GLocOf "resource" a) where
+  show (L l) = show l  -- Not automatically derived to avoid the 'L' constructor
+                       -- being added
+
 instance (IsLocString a) => FromJSON (GLocOf "resource" a) where
   parseJSON v = do
     loc <- parseJSON v
     case loc of
       LocalFile{} -> return $ L loc
       _           -> fail "Isn't a local file"
-
-instance (MonadResource m, MonadMask m) => MayProvideLocationAccessors m "resource"
 
 
 -- * Treating locations in a general manner
