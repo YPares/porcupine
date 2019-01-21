@@ -17,7 +17,6 @@
 
 import           Data.Aeson
 import           Data.DocRecord
-import qualified Data.HashMap.Strict           as HM
 import qualified Data.Text                     as T
 import           GHC.Generics
 import           Porcupine.Run
