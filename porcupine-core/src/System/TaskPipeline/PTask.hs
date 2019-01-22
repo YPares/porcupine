@@ -25,6 +25,8 @@ module System.TaskPipeline.PTask
   , CanRunPTask
   , Properties
   , tryPTask, throwPTask, clockPTask
+  , catchAndLog
+  , ptaskOnJust, ptaskOnRight
   , unsafeLiftToPTask, unsafeLiftToPTask', unsafeRunIOTask
   , ptaskUsedFiles
   , ptaskRequirements
@@ -74,6 +76,18 @@ tryPTask
   :: PTask m a b -> PTask m a (Either SomeException b)
 tryPTask = AF.try
 
+-- | An version of 'tryPTask' that just logs when an error happens
+catchAndLog :: (KatipContext m)
+            => Severity -> PTask m a b -> PTask m a (Maybe b)
+catchAndLog severity task =
+  tryPTask task
+  >>> unsafeLiftToPTask (\i ->
+        case i of
+          Left e -> do
+            logFM severity $ logStr $ displayException (e::SomeException)
+            return Nothing
+          Right x -> return $ Just x)
+
 -- | Fails the whole pipeline if an exception occured, or just continues as
 -- normal
 throwPTask :: (Exception e, LogThrow m) => PTask m (Either e b) b
@@ -81,6 +95,24 @@ throwPTask = unsafeLiftToPTask $ \i ->
   case i of
     Left e  -> throwWithPrefix $ displayException e
     Right r -> return r
+
+-- | Runs a PTask only if its input is Just
+ptaskOnJust :: PTask m a b -> PTask m (Maybe a) (Maybe b)
+ptaskOnJust task = (reqs, run') ^. from splittedPTask
+  where (reqs, run) = task ^. splittedPTask
+        run' = proc input -> do
+          case input of
+            Nothing -> returnA -< Nothing
+            Just x  -> arr Just <<< run -< x
+
+-- | Runs a PTask only if its input is Right
+ptaskOnRight :: PTask m a b -> PTask m (Either e a) (Either e b)
+ptaskOnRight task = (reqs, run') ^. from splittedPTask
+  where (reqs, run) = task ^. splittedPTask
+        run' = proc input -> do
+          case input of
+            Left e  -> returnA -< Left e
+            Right x -> arr Right <<< run -< x
 
 -- | Turn an action into a PTask. BEWARE! The resulting 'PTask' will have NO
 -- requirements, so if the action uses files or resources, they won't appear in
