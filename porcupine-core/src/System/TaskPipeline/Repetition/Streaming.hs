@@ -6,10 +6,6 @@
 module System.TaskPipeline.Repetition.Streaming
   ( STask, ISTask, OSTask
   , mappingOverStream
-  , mappingOverStream_
-  , repeatedlyWriteData
-  , repeatedlyLoadData
-  , repeatedlyLoadData'
   , listToStreamTask, runStreamTask, streamToListTask
   , Typeable
   ) where
@@ -33,22 +29,22 @@ import           System.TaskPipeline.VirtualFileAccess
 
 -- | An PTask mapping a action over a Stream, transforming @a@'s into
 -- @b@'s. Each element in the stream should be associated to an identifier.
-type STask m i a b r =
+type STask m a b r =
   PTask m
-        (Stream (Of (i, a)) m r)
-        (Stream (Of (i, b)) m r)
+        (Stream (Of a) m r)
+        (Stream (Of b) m r)
 
 -- | An 'PTask' that consumes an Input Stream and just returns its result.
-type ISTask m i a r =
+type ISTask m a r =
   PTask m
-        (Stream (Of (i, a)) m r)
+        (Stream (Of a) m r)
         r
 
 -- | An 'PTask' that emits an Output Stream.
-type OSTask m i a b =
+type OSTask m a b =
   PTask m
         a
-        (Stream (Of (i, b)) m ())
+        (Stream (Of b) m ())
 
 -- * Running tasks over streams
 
@@ -61,7 +57,7 @@ type OSTask m i a b =
 -- Calls to 'mappingOverStream' can be nested, this way the underlying VirtualFiles
 -- will have one 'RepetitionKey' per loop (from outermost loop to innermost).
 mappingOverStream
-  :: (CanRunPTask m, Show i)
+  :: (HasTaskRepetitionIndex a, CanRunPTask m)
   => LocVariable       -- ^ A variable name, used as a key to indicate which
                        -- repetition we're at. Used in the logger context and
                        -- exposed in the yaml file for each VirtualFile that
@@ -70,7 +66,7 @@ mappingOverStream
                        -- logger context. (Nothing if we don't want to add
                        -- context)
   -> PTask m a b       -- ^ The base task X to repeat
-  -> STask m i a b r   -- ^ A task that will repeat X it for each input. Each
+  -> STask m a b r   -- ^ A task that will repeat X it for each input. Each
                        -- input is associated to a identifier that will be
                        -- appended to every Loc mapped to every leaf in the
                        -- LocationTree given to X.
@@ -100,52 +96,6 @@ mappingRunnableOverStream runnable =
          -- NOTE: We "cheat" here: we run the funflow layer of the inner
          -- task. We should find a way not to have to do that, but when using
          -- Streaming (which delays effects in a monad) it's really problematic.
-
--- | See 'mappingOverStream'. Just runs the resulting stream and returns its end
--- result.
-mappingOverStream_
-  :: (CanRunPTask m, Show i)
-  => LocVariable
-  -> Maybe Verbosity
-  -> PTask m a b
-  -> ISTask m i a r
-mappingOverStream_ k v t =
-  mappingOverStream k v t >>> runStreamTask
-
--- | Writes to the same virtual file each element in the input stream, but
--- changing each time the value associated to a repetition key (so the physical
--- file will be different each time). Returns the result of the input stream.
-repeatedlyWriteData
-  :: (CanRunPTask m, Typeable a, Typeable b, Show i)
-  => LocVariable
-  -> VirtualFile a b -- ^ Use as a 'DataSink'
-  -> ISTask m i a r
-repeatedlyWriteData rkey vf =
-  mappingOverStream_ rkey (Just V1) $ writeData vf
-
--- | Reads from the same virtual file for each index in the input stream, but
--- changing each time the value associated to a repetition key (so the physical
--- file will be different each time).
-repeatedlyLoadData
-  :: (CanRunPTask m, Typeable a, Typeable b, Show i)
-  => LocVariable
-  -> VirtualFile a b -- ^ Used as a 'DataSource'
-  -> OSTask m i (Stream (Of i) m r) b
-repeatedlyLoadData rkey vf =
-  arr (fmap (const ()) . S.map (,()))
-  >>>
-  mappingOverStream rkey (Just V1) (loadData vf)
-
--- | Like 'repeatedlyLoadData', except the stream of indices to read is obtained
--- from a list whose elements can be Shown.
-repeatedlyLoadData'
-  :: (CanRunPTask m, Typeable a, Typeable b, Show i)
-  => LocVariable
-  -> VirtualFile a b -- ^ Used as a 'DataSource'
-  -> OSTask m i [i] b
-repeatedlyLoadData' rkey vf =
-  arr S.each >>> repeatedlyLoadData rkey vf
-
 
 -- * Helper functions to create and run streams
 

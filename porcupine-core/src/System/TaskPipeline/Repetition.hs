@@ -4,6 +4,7 @@
 module System.TaskPipeline.Repetition
   ( module System.TaskPipeline.Repetition.Streaming
   , RepInfo(..), repIndex
+  , HasTaskRepetitionIndex(..)
   , parMapTask
   , parMapTask_
   , IndexRange(..)
@@ -27,10 +28,10 @@ import           System.TaskPipeline.Repetition.Streaming
 
 -- | Makes a 'PTask' repeatable and maps it in parallel over a list.
 parMapTask
-  :: (Show idx, Monad m)
+  :: (HasTaskRepetitionIndex a, Monad m)
   => RepInfo
   -> PTask m a b
-  -> PTask m [(idx,a)] [(idx,b)]
+  -> PTask m [a] [b]
 parMapTask ri =
   over ptaskRunnable mapA . makeRepeatable ri
 
@@ -43,7 +44,7 @@ parMapTask_
   -> PTask m () b
   -> PTask m [idx] ()
 parMapTask_ ri task =
-   arr (map (, ())) >>> parMapTask ri task >>> arr (const ())
+   arr (map (, ())) >>> parMapTask ri (arr snd >>> task) >>> arr (const ())
 
 
 -- * A simple type to handle index ranges

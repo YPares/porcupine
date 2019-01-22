@@ -6,6 +6,7 @@
 module System.TaskPipeline.Repetition.Fold
   ( module Control.Arrow.FoldA
   , RepInfo(..)
+  , HasTaskRepetitionIndex(..)
   , ptaskFold
   , unsafeGeneralizeM
   , foldlTask
@@ -34,29 +35,39 @@ unsafeGeneralizeM (FoldM step start done) =
         (unsafeLiftToPTask done)
 
 -- | Creates a 'FoldA' from a 'PTask'.
-ptaskFold :: (Show idx, Monad m)
-          => RepInfo  -- ^ How to log the repeated task
-          -> PTask m (acc,input) acc -- ^ The folding task
-          -> FoldA' (PTask m) (idx,input) acc
-ptaskFold ri step =
-  FoldA (arr onInput >>> makeRepeatable ri step >>> arr snd) id id
+ptaskFold :: (Monad m)
+          => PTask m (acc,input) acc -- ^ The folding task
+          -> FoldA' (PTask m) input acc
+ptaskFold step =
+  FoldA (arr onInput >>> step) id id
   where
-    onInput (Pair acc (idx,x)) = (idx,(acc,x))
+    onInput (Pair acc x) = (acc,x)
+
+newtype PairWithRepeatable x a = PWR { unPWR :: Pair x a }
+
+instance (HasTaskRepetitionIndex a)
+      => HasTaskRepetitionIndex (PairWithRepeatable x a) where
+  getTaskRepetitionIndex (PWR (Pair _ a)) = getTaskRepetitionIndex a
+
+-- | Just before running the fold, we have to make the step part repeatable
+makeStepRepeatable :: (HasTaskRepetitionIndex a, Monad m)
+                   => RepInfo
+                   -> PTask m (Pair acc a) b
+                   -> PTask m (Pair acc a) b
+makeStepRepeatable ri step =
+  arr PWR >>> makeRepeatable ri (arr unPWR >>> step)
 
 -- | Consumes a Stream with a 'FoldA' created with 'ptaskFold', 'generalizeA',
 -- 'unsafeGeneralizeM', or a composition of such folds.
---
--- IMPORTANT : If you created the 'FoldA' yourself, this is safe only if the
--- `step` PTask in the fold has been made repeatable, else files might be
--- overwritten. See 'makeRepeatable'.
 foldStreamTask
-  :: (KatipContext m)
-  => FoldA (PTask m) i a b
+  :: (HasTaskRepetitionIndex a, KatipContext m)
+  => RepInfo  -- ^ How to log the repeated task
+  -> FoldA (PTask m) i a b
   -> PTask m (i, Stream (Of a) m r) (b, r)
-foldStreamTask (FoldA step start done) =
+foldStreamTask ri (FoldA step_ start done) =
   (reqs, runnable) ^. from splittedPTask
   where
-    (reqsStep, runnableStep)   = step ^. splittedPTask
+    (reqsStep, runnableStep)   = makeStepRepeatable ri step_ ^. splittedPTask
     (reqsStart, runnableStart) = start ^. splittedPTask
     (reqsDone, runnableDone)   = done ^. splittedPTask
     reqs = reqsStart <> reqsStep <> reqsDone
@@ -72,8 +83,9 @@ foldStreamTask (FoldA step start done) =
 
 -- | Consumes a list with a 'FoldA' over 'PTask'
 foldlTask
-  :: (KatipContext m)
-  => FoldA (PTask m) i a b
+  :: (HasTaskRepetitionIndex a, KatipContext m)
+  => RepInfo  -- ^ How to log the repeated task
+  -> FoldA (PTask m) i a b
   -> PTask m (i,[a]) b
-foldlTask fld = arr (\(i,l) -> (i,S.each l))
-            >>> foldStreamTask fld >>> arr fst
+foldlTask ri fld = arr (\(i,l) -> (i,S.each l))
+            >>> foldStreamTask ri fld >>> arr fst
