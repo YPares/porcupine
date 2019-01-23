@@ -1,4 +1,5 @@
 {-# LANGUAGE Arrows                    #-}
+{-# LANGUAGE BangPatterns              #-}
 {-# LANGUAGE ExistentialQuantification #-}
 
 -- | This module defines the type 'FoldA', which is a generalization of 'Fold'
@@ -10,6 +11,7 @@ module Control.Arrow.FoldA
   , FoldA'
   , Pair(..)
   , generalizeA
+  , generalizeFnA
   , specializeA
   , premapA
   , premapInitA
@@ -72,9 +74,19 @@ data FoldA arr i a b =
 -- | A fold that will directly receive its initial accumulator
 type FoldA' arr a b = FoldA arr b a b
 
+-- | Turns a 'Fold' into a 'FoldA' that just ignores its initializer
 generalizeA :: (Arrow arr) => Fold a b -> FoldA arr i a b
 generalizeA (Fold step start done) =
   FoldA (arr $ uncurryP step) (ret start) (arr done)
+
+-- | Turns a function that returns a 'Fold' into a 'FoldA' that will feed the
+-- initializer
+generalizeFnA :: (Arrow arr) => (i -> Fold a b) -> FoldA arr i a b
+generalizeFnA f =
+  FoldA (arr $ \(Pair (Fold step !acc done) x) ->
+            Fold step (step acc x) done)
+        (arr f)
+        (arr $ \(Fold _ acc done) -> done acc)
 
 specializeA :: FoldA (->) () a b -> Fold a b
 specializeA (FoldA step start done) =
