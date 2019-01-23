@@ -30,7 +30,7 @@ module System.TaskPipeline.PTask
   , unsafeLiftToPTask, unsafeLiftToPTask', unsafeRunIOTask
   , ptaskUsedFiles
   , ptaskRequirements
-  , ptaskRunnable
+  , ptaskRunnablePart
   , ptaskDataAccessTree
   , ptaskInSubtree
   , voidTask
@@ -98,21 +98,17 @@ throwPTask = unsafeLiftToPTask $ \i ->
 
 -- | Runs a PTask only if its input is Just
 ptaskOnJust :: PTask m a b -> PTask m (Maybe a) (Maybe b)
-ptaskOnJust task = (reqs, run') ^. from splittedPTask
-  where (reqs, run) = task ^. splittedPTask
-        run' = proc input -> do
-          case input of
-            Nothing -> returnA -< Nothing
-            Just x  -> arr Just <<< run -< x
+ptaskOnJust = over ptaskRunnablePart $ \run -> proc input -> do
+  case input of
+    Nothing -> returnA -< Nothing
+    Just x  -> arr Just <<< run -< x
 
 -- | Runs a PTask only if its input is Right
 ptaskOnRight :: PTask m a b -> PTask m (Either e a) (Either e b)
-ptaskOnRight task = (reqs, run') ^. from splittedPTask
-  where (reqs, run) = task ^. splittedPTask
-        run' = proc input -> do
-          case input of
-            Left e  -> returnA -< Left e
-            Right x -> arr Right <<< run -< x
+ptaskOnRight = over ptaskRunnablePart $ \run -> proc input -> do
+  case input of
+    Left e  -> returnA -< Left e
+    Right x -> arr Right <<< run -< x
 
 -- | Turn an action into a PTask. BEWARE! The resulting 'PTask' will have NO
 -- requirements, so if the action uses files or resources, they won't appear in
@@ -159,17 +155,21 @@ ptaskRequirements = splittedPTask . _1
 ptaskUsedFiles :: Traversal' (PTask m a b) (VirtualFile Void ())
 ptaskUsedFiles = ptaskRequirements . traversed . vfnodeFileVoided
 
-ptaskRunnable :: Lens (PTask m a b) (PTask m a' b')
-                      (RunnablePTask m a b) (RunnablePTask m a' b')
-ptaskRunnable = splittedPTask . _2
+-- | Permits to access the 'RunnablePTask' inside the PTask. It is the PTask,
+-- devoid of its requirements. It is also and Arrow, and additionally it's an
+-- ArrowChoice, so by using 'over ptaskRunnablePart' you can access a structure
+-- in which you can use /case/ and /if/ statements.
+ptaskRunnablePart :: Lens (PTask m a b) (PTask m a' b')
+                     (RunnablePTask m a b) (RunnablePTask m a' b')
+ptaskRunnablePart = splittedPTask . _2
+
+-- | To transform the state of the PTask when it will run
+ptaskReaderState :: Setter' (PTask m a b) (PTaskState m)
+ptaskReaderState = ptaskRunnablePart . runnablePTaskState
 
 -- | To transform the 'DataAccessTree' of the PTask when it will run
 ptaskDataAccessTree :: Setter' (PTask m a b) (LocationTree (DataAccessNode m))
 ptaskDataAccessTree = ptaskReaderState . ptrsDataAccessTree
-
--- | To transform the state of the PTask when it will run
-ptaskReaderState :: Setter' (PTask m a b) (PTaskState m)
-ptaskReaderState = ptaskRunnable . runnablePTaskState
 
 -- | Adds some context that will be used at logging time. See 'katipAddContext'
 addContextToTask :: (LogItem i) => i -> PTask m a b -> PTask m a b

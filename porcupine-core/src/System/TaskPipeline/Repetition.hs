@@ -33,7 +33,7 @@ parMapTask
   -> PTask m a b
   -> PTask m [a] [b]
 parMapTask ri =
-  over ptaskRunnable mapA . makeRepeatable ri
+  over ptaskRunnablePart mapA . makeRepeatable ri
 
 -- | Simply repeats a task which takes no input over a list of indices, and
 -- ignores the end result. See 'RepInfo' for how these indices are

@@ -57,7 +57,7 @@ class HasTaskRepetitionIndex a where
 
 instance (Show i) => HasTaskRepetitionIndex (i,a) where
   getTaskRepetitionIndex (i,_) = show i
-  
+
 -- | Turns a task into one that can be called several times, each time with a
 -- different index value @i@. This index will be used to alter every path
 -- accessed by the task. The first argument gives a name to that index, that

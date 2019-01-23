@@ -11,10 +11,11 @@ module System.TaskPipeline.Repetition.Fold
   , unsafeGeneralizeM
   , foldlTask
   , foldStreamTask
+  , premapMaybe
   ) where
 
 import           Control.Arrow.FoldA
-import           Control.Lens
+import           Control.Lens                            hiding (Fold)
 import           Data.Locations
 import           Prelude                                 hiding (id, (.))
 import           Streaming                               (Of (..), Stream)
@@ -89,3 +90,16 @@ foldlTask
   -> PTask m (i,[a]) b
 foldlTask ri fld = arr (\(i,l) -> (i,S.each l))
             >>> foldStreamTask ri fld >>> arr fst
+
+-- | Allows to filter out some data before it is taken into account by the FoldA
+-- of PTask
+premapMaybe :: (a -> Maybe a')
+            -> FoldA (PTask m) i a' b
+            -> FoldA (PTask m) i a b
+premapMaybe f (FoldA step start done) = FoldA step' start done
+  where
+    step' = step & over ptaskRunnablePart
+      (\run -> proc (Pair acc input) -> do
+          case f input of
+            Nothing -> returnA -< acc
+            Just input' -> run -< Pair acc input')

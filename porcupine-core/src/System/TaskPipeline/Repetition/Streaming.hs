@@ -71,7 +71,7 @@ mappingOverStream
                        -- appended to every Loc mapped to every leaf in the
                        -- LocationTree given to X.
 mappingOverStream repetitionKey mbVerb =
-    over ptaskRunnable mappingRunnableOverStream
+    over ptaskRunnablePart mappingRunnableOverStream
   . makeRepeatable (RepInfo repetitionKey mbVerb)
 
 -- | IMPORTANT: That requires the RunnablePTask to be repeatable. See
