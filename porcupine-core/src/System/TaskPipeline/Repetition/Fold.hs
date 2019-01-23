@@ -2,6 +2,7 @@
 {-# LANGUAGE FlexibleContexts  #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE TupleSections     #-}
+{-# LANGUAGE ExistentialQuantification #-}
 
 module System.TaskPipeline.Repetition.Fold
   ( module Control.Arrow.FoldA
@@ -9,6 +10,7 @@ module System.TaskPipeline.Repetition.Fold
   , HasTaskRepetitionIndex(..)
   , ptaskFold
   , unsafeGeneralizeM
+  , unsafeGeneralizeFnM
   , foldlTask
   , foldStreamTask
   , premapMaybe
@@ -27,13 +29,31 @@ import           System.TaskPipeline.Repetition.Internal
 
 -- * Folding data with a PTask
 
--- | Turns a fold in some monad to a fold compatible with 'foldTask'
+-- | Turns a 'FoldM' in some monad to a 'FoldA' compatible with 'foldTask'
 unsafeGeneralizeM :: (KatipContext m)
                   => FoldM m a b -> FoldA (PTask m) i a b
 unsafeGeneralizeM (FoldM step start done) =
   FoldA (unsafeLiftToPTask $ \(Pair a x) -> step a x)
         (unsafeLiftToPTask $ const start)
         (unsafeLiftToPTask done)
+
+data RunningFoldM m a b =
+  forall x. RFM (x -> a -> m x) !x (x -> m b)
+
+-- | Turns a function creating a 'FoldM' into a 'FoldA' over 'PTasks'
+unsafeGeneralizeFnM :: (KatipContext m)
+                    => (i -> FoldM m a b)
+                    -> FoldA (PTask m) i a b
+unsafeGeneralizeFnM f =
+  FoldA (unsafeLiftToPTask $ \(Pair (RFM step acc done) x) -> do
+            acc' <- step acc x
+            return $ RFM step acc' done)
+        (unsafeLiftToPTask $ \init ->
+            case f init of
+              FoldM step start done -> do
+                initAcc <- start
+                return $ RFM step initAcc done)
+        (unsafeLiftToPTask $ \(RFM _ acc done) -> done acc)
 
 -- | Creates a 'FoldA' from a 'PTask'.
 ptaskFold :: (Monad m)
