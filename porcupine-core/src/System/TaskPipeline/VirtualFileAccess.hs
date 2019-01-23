@@ -139,8 +139,8 @@ writeDataStream lv vf =
 -- | A very simple fold that will just repeatedly write the data to different
 -- occurences of a 'VirtualFile'.
 writeDataFold :: (LogThrow m, Typeable a, Typeable b)
-              => VirtualFile a b -> F.FoldA' (PTask m) a ()
-writeDataFold vf = F.ptaskFold (arr snd >>> writeData vf)
+              => VirtualFile a b -> F.FoldA (PTask m) i a ()
+writeDataFold vf = F.premapInitA (arr $ const ()) $ F.ptaskFold (arr snd >>> writeData vf)
 
 -- | Gets a DataAccessor for the VirtualFile, ie. doesn't read or write it
 -- immediately but gets a function that will make it possible
