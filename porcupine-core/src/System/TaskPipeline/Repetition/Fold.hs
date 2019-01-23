@@ -1,8 +1,8 @@
-{-# LANGUAGE Arrows            #-}
-{-# LANGUAGE FlexibleContexts  #-}
-{-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE TupleSections     #-}
+{-# LANGUAGE Arrows                    #-}
 {-# LANGUAGE ExistentialQuantification #-}
+{-# LANGUAGE FlexibleContexts          #-}
+{-# LANGUAGE OverloadedStrings         #-}
+{-# LANGUAGE TupleSections             #-}
 
 module System.TaskPipeline.Repetition.Fold
   ( module Control.Arrow.FoldA
@@ -121,5 +121,5 @@ premapMaybe f (FoldA step start done) = FoldA step' start done
     step' = step & over ptaskRunnablePart
       (\run -> proc (Pair acc input) -> do
           case f input of
-            Nothing -> returnA -< acc
+            Nothing     -> returnA -< acc
             Just input' -> run -< Pair acc input')
