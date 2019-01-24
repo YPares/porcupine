@@ -6,8 +6,10 @@ import           Control.Applicative
 import           Data.Text
 
 
--- | A class for small objects that can be turned into a Text which will then be
--- stored in JSON String objects
+-- | A class for small objects that can be printed and read back from Text.
+--
+-- > fromTextRepr . toTextRepr == pure
+--
 class Representable a where
   toTextRepr :: a -> Text
   fromTextRepr :: (Alternative f) => Text -> f a
