@@ -124,12 +124,15 @@ data LocShortcut a
   = DeriveWholeLocFromTree FileExt
     -- ^ Means that this loc path and name should be inherited from locs up the
     -- resource tree.
+    -- TODO: Add example
   | DeriveLocPrefixFromTree (LocFilePath StringWithVars)
     -- ^ Means that this loc path should be inherited from locs up the resource
     -- tree. Its name should be a concatenation of the corresponding name in the
     -- tree and the LocFilePath provided
+    -- TODO: Add example
   | FullySpecifiedLoc a
     -- ^ Means that this shortcut is a full location
+    -- TODO: Add example
   deriving (Show)
 
 -- | A 'LocShorcut' where fully specified locs are aeson Values ready to be
@@ -179,6 +182,7 @@ insertMappings (LocationMappings_ m) tree = foldl' go initTree $ HM.toList m
 
 -- | For each location in the tree, gives it a final list of physical locations,
 -- as /layers/ (which can be empty)
+-- TODO: Explain what layers are, possibly in a more visible place.
 propagateMappings :: forall m a b.
                      ([SomeLocWithVars m] -> a -> Bool -> b)
                   -> LocationTree (a, Maybe [ResolvedLocShortcut m])
