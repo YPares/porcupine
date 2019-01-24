@@ -34,8 +34,8 @@ import qualified System.Directory                as Dir (createDirectoryIfMissin
 import qualified System.FilePath                 as Path
 
 
--- | Each location bit can be a simple chunk of string, or a variable name
--- waiting to be spliced in.
+-- | A string or a variable
+-- TODO: Rename to StringOrVariable
 data StringWithVarsBit
   = SWVB_Chunk FilePath  -- ^ A raw filepath part, to be used as is
   | SWVB_VarRef LocVariable -- ^ A variable name
@@ -49,8 +49,12 @@ locBitContent :: Lens' StringWithVarsBit String
 locBitContent f (SWVB_Chunk p) = SWVB_Chunk <$> f p
 locBitContent f (SWVB_VarRef (LocVariable v)) = SWVB_VarRef . LocVariable <$> f v
 
--- | A newtype so that we can redefine the Show instance
-newtype StringWithVars = StringWithVars [StringWithVarsBit]
+-- | A String with variables
+newtype StringWithVars =
+  -- | invariant: No two strings shall appear consecutively.
+  -- TODO: Either provide smart constructors, or use a representation
+  -- that enforces the invariant.
+  StringWithVars [StringWithVarsBit]
   deriving (Generic, Store)
 
 instance Semigroup StringWithVars where
@@ -75,6 +79,7 @@ concatSWVB_Chunks (SWVB_Chunk p1 : SWVB_Chunk p2 : rest) =
 concatSWVB_Chunks (x : rest) = x : concatSWVB_Chunks rest
 concatSWVB_Chunks [] = []
 
+-- TODO: Rename to FilePathWithExtension
 data LocFilePath a = LocFilePath { _pathWithoutExt :: a, _pathExtension :: String }
   deriving (Eq, Ord, Generic, ToJSON, FromJSON, Functor, Foldable, Traversable, Binary, Store)
 
@@ -112,8 +117,8 @@ instance (IsLocString a) => Show (LocFilePath a) where
   show p = fmap (view locStringAsRawString) p ^. locFilePathAsRawFilePath
 
 
--- | Location's main type. A value of type 'URLLikeLoc' denotes a file or a
--- folder that may be local or hosted remotely
+-- | A local or remote path
+-- TODO: Rename to URL
 data URLLikeLoc a
   = LocalFile { filePath :: LocFilePath a }
   | RemoteFile { rfProtocol    :: String
@@ -133,7 +138,7 @@ locFilePath :: Lens (URLLikeLoc a) (URLLikeLoc b) (LocFilePath a) (LocFilePath b
 locFilePath f (LocalFile fp)      = LocalFile <$> f fp
 locFilePath f (RemoteFile p b fp) = RemoteFile p b <$> f fp
 
--- | A 'URLLikeLoc' that might contain some names holes, called variables, that we
+-- | A 'URLLikeLoc' that might contain some named holes, called variables, that we
 -- have first to replace by a value before we can get a definite physical
 -- location.
 type LocWithVars = URLLikeLoc StringWithVars
@@ -163,6 +168,7 @@ spliceLocVariables vars = fmap $ over locStringVariables $ \v -> case v of
       Nothing  -> v
   _ -> error "spliceLocVariables: Should not happen"
 
+-- | Yields @Left _@ if any of the given StringWithVars contains variables.
 terminateLocWithVars :: (Traversable f) => f StringWithVars -> Either String (f String)
 terminateLocWithVars = traverse terminateStringWithVars
   where
@@ -199,6 +205,8 @@ parseStringWithVars s = (StringWithVars . reverse . map (over locBitContent reve
     isFull (SWVB_Chunk "") = False
     isFull _               = True
 
+-- | @refuseVarRefs p s == Right s@ if `s` contains no variables.
+-- Otherwise, yields an error message.
 refuseVarRefs :: String -> String -> Either String String
 refuseVarRefs place s = do
   l <- parseStringWithVars s
@@ -215,6 +223,7 @@ instance IsLocString StringWithVars where
     where (p, e) = splitExtension' s
 
 -- | The main way to parse an 'URLLikeLoc'.
+-- Variables are not allowed in the protocol and server parts.
 parseURLLikeLoc :: (IsLocString a) => String -> Either String (URLLikeLoc a)
 parseURLLikeLoc "." = Right $ LocalFile $ LocFilePath ("." ^. from locStringAsRawString) ""
 parseURLLikeLoc litteralPath = do
@@ -327,6 +336,9 @@ class (Traversable f
   -- send an error
   --
   -- Note: contrary to 'addSubdirToLoc', the filepath MAY contain slashes
+  -- TODO: Add an example. Probably rewrite the description. What is a
+  -- mapping shortcut? And what means "Integrate"? Is this a @</>@ which
+  -- allows slashes? If so, maybe rename to `addSubpathToLoc`.
   useLocAsPrefix :: (IsLocString a) => f a -> LocFilePath a -> f a
 
 instance TypedLocation URLLikeLoc where
