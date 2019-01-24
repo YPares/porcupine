@@ -22,7 +22,6 @@ import qualified Streaming.Prelude                       as S
 import           System.TaskPipeline.PTask
 import           System.TaskPipeline.PTask.Internal
 import           System.TaskPipeline.Repetition.Internal
-import           System.TaskPipeline.VirtualFileAccess
 
 
 -- * Type aliases for tasks over streams
@@ -73,6 +72,8 @@ mappingOverStream
 mappingOverStream repetitionKey mbVerb =
     over ptaskRunnablePart mappingRunnableOverStream
   . makeRepeatable (RepInfo repetitionKey mbVerb)
+
+{-# DEPRECATED mappingOverStream "Prefer the FoldA API to repeat tasks and consume streams" #-}
 
 -- | IMPORTANT: That requires the RunnablePTask to be repeatable. See
 -- 'makeRepeatable'.

@@ -48,16 +48,15 @@ unsafeGeneralizeFnM f =
   FoldA (unsafeLiftToPTask $ \(Pair (RFM step acc done) x) -> do
             acc' <- step acc x
             return $ RFM step acc' done)
-        (unsafeLiftToPTask $ \init ->
-            case f init of
+        (unsafeLiftToPTask $ \i ->
+            case f i of
               FoldM step start done -> do
                 initAcc <- start
                 return $ RFM step initAcc done)
         (unsafeLiftToPTask $ \(RFM _ acc done) -> done acc)
 
 -- | Creates a 'FoldA' from a 'PTask'.
-ptaskFold :: (Monad m)
-          => PTask m (acc,input) acc -- ^ The folding task
+ptaskFold :: PTask m (acc,input) acc -- ^ The folding task
           -> FoldA' (PTask m) input acc
 ptaskFold step =
   FoldA (arr onInput >>> step) id id
