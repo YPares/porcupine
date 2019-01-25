@@ -24,6 +24,7 @@ module System.TaskPipeline.VirtualFileAccess
   , writeData
   , writeDataStream
   , writeEffData
+  , writeDataFold
 
     -- * Lower-level API
   , EffectSeq(..), EffectSeqFromList(..)
@@ -42,24 +43,25 @@ module System.TaskPipeline.VirtualFileAccess
   , withFolderDataAccessNodes
   ) where
 
-import           Prelude                            hiding (id, (.))
+import           Prelude                             hiding (id, (.))
 
 import           Control.Lens
-import           Control.Monad                      (forM)
+import           Control.Monad                       (forM)
 import           Control.Monad.Trans
-import qualified Data.Foldable                      as F
-import qualified Data.HashMap.Strict                as HM
+import qualified Data.Foldable                       as F
+import qualified Data.HashMap.Strict                 as HM
 import           Data.Locations
 import           Data.Locations.Accessors
 import           Data.Locations.LogAndErrors
 import           Data.Monoid
 import           Data.Representable
-import qualified Data.Text                          as T
+import qualified Data.Text                           as T
 import           Data.Typeable
-import           Streaming                          (Of (..), Stream)
-import qualified Streaming.Prelude                  as S
+import           Streaming                           (Of (..), Stream)
+import qualified Streaming.Prelude                   as S
 import           System.TaskPipeline.PTask
 import           System.TaskPipeline.PTask.Internal
+import qualified System.TaskPipeline.Repetition.Fold as F
 import           System.TaskPipeline.ResourceTree
 
 
@@ -133,6 +135,12 @@ writeDataStream lv vf =
       arr StreamES
   >>> accessVirtualFile' (DoWrite id) lv vf
   >>> unsafeLiftToPTask runES
+
+-- | A very simple fold that will just repeatedly write the data to different
+-- occurences of a 'VirtualFile'.
+writeDataFold :: (LogThrow m, Typeable a, Typeable b)
+              => VirtualFile a b -> F.FoldA (PTask m) i a ()
+writeDataFold vf = F.premapInitA (arr $ const ()) $ F.ptaskFold (arr snd >>> writeData vf)
 
 -- | Gets a DataAccessor for the VirtualFile, ie. doesn't read or write it
 -- immediately but gets a function that will make it possible

@@ -3,6 +3,7 @@
 
 module System.TaskPipeline.Repetition.Internal
   ( RepInfo(..)
+  , HasTaskRepetitionIndex(..)
   , repIndex
   , makeRepeatable
   ) where
@@ -50,23 +51,28 @@ instance LogItem TaskRepetitionContext where
   payloadKeys v (TRC _ _ v') | v >= v' = AllKeys
                              | otherwise = SomeKeys []
 
+-- | The class of every data that can be repeated
+class HasTaskRepetitionIndex a where
+  getTaskRepetitionIndex :: a -> String
+
+instance (Show i) => HasTaskRepetitionIndex (i,a) where
+  getTaskRepetitionIndex (i,_) = show i
+
 -- | Turns a task into one that can be called several times, each time with a
 -- different index value @i@. This index will be used to alter every path
 -- accessed by the task. The first argument gives a name to that index, that
 -- will appear in the configuration file in the default bindings for the
 -- VirtualFiles accessed by this task. The second one controls whether we want
 -- to add to the logging context which repetition is currently running.
---
--- The index is just passed through, to facilitate composition.
 makeRepeatable
-  :: (Show idx, Monad m)
+  :: (HasTaskRepetitionIndex a, Monad m)
   => RepInfo
   -> PTask m a b
-  -> PTask m (idx,a) (idx,b)
+  -> PTask m a b
 makeRepeatable (RepInfo repetitionKey mbVerb) =
   over splittedPTask $ \(reqTree, runnable) ->
     ( fmap addKeyToVirtualFile reqTree
-    , keepingIndex $ modifyingRuntimeState alterState snd runnable )
+    , modifyingRuntimeState alterState id runnable )
   where
     addKeyToVirtualFile (VirtualFileNode{..}) =
       VirtualFileNode
@@ -75,11 +81,11 @@ makeRepeatable (RepInfo repetitionKey mbVerb) =
       ,..}
     addKeyToVirtualFile emptyNode = emptyNode
 
-    alterState (idx,_) =
+    alterState input =
         over ptrsKatipContext alterContext
       . over (ptrsDataAccessTree.traversed) addKeyValToDataAccess
       where
-        idxStr = show idx
+        idxStr = getTaskRepetitionIndex input
         newCtxItem = TRC repetitionKey idxStr <$> mbVerb
         alterContext ctx = case newCtxItem of
           Nothing   -> ctx
@@ -87,6 +93,3 @@ makeRepeatable (RepInfo repetitionKey mbVerb) =
         addKeyValToDataAccess (DataAccessNode l fn) =
           DataAccessNode l $ fn . HM.insert repetitionKey idxStr
         addKeyValToDataAccess emptyNode = emptyNode
-
-    keepingIndex t =
-      id &&& t >>> arr (\((idx,_),o) -> (idx, o))
