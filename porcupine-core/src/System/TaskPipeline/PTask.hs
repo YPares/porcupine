@@ -24,7 +24,7 @@ module System.TaskPipeline.PTask
   , Severity(..)
   , CanRunPTask
   , Properties
-  , tryPTask, throwPTask, clockPTask
+  , tryPTask, throwPTask, throwStringPTask, clockPTask
   , unsafeLiftToPTask, unsafeLiftToPTask', unsafeRunIOTask
   , ptaskUsedFiles
   , ptaskRequirements
@@ -77,9 +77,14 @@ tryPTask = AF.try
 -- | Fails the whole pipeline if an exception occured, or just continues as
 -- normal
 throwPTask :: (Exception e, LogThrow m) => PTask m (Either e b) b
-throwPTask = unsafeLiftToPTask $ \i ->
+throwPTask = arr (over _Left displayException) >>> throwStringPTask
+
+-- | Fails the whole pipeline if an exception occured, or just continues as
+-- normal
+throwStringPTask :: (LogThrow m) => PTask m (Either String b) b
+throwStringPTask = unsafeLiftToPTask $ \i ->
   case i of
-    Left e  -> throwWithPrefix $ displayException e
+    Left e  -> throwWithPrefix e
     Right r -> return r
 
 -- | Turn an action into a PTask. BEWARE! The resulting 'PTask' will have NO
