@@ -98,6 +98,11 @@ instance Show (ReadFromConfigFn a) where
 -- | Here, "serial" is short for "serialization method". 'SerialReaders' is the
 -- **covariant** part of 'SerialsFor'. It describes the different ways a serial
 -- can be used to obtain data.
+--
+-- TODO: Comment whether there is any coherence constraint between the fields.
+-- Should the functions in _serialReadersFromAtomic yield the same values
+-- when given the same inputs that the functions in _serialReadersFromStream
+-- take from a stream.
 data SerialReaders a = SerialReaders
   { -- TODO: Establish whether we should remove readersFromAtomic? It is often
     -- equivalent to reading from a stream of just one element, and therefore
@@ -205,6 +210,15 @@ instance Contravariant SerialWriters where
 class SerializationMethod serial where
   -- | If not nothing, it should correspond to one of the keys in
   -- serialReadersFromInputFile or serialWritersToOutputFile.
+  --
+  -- TODO: This constraint seems to imply that serial needs to
+  -- be a type that instantiates SerializesWith or DeserializesWith.
+  -- The constrain could be made more precise perhaps as:
+  --
+  -- > getSerialDefaultExt s `HM.member` _serialReadersFromAtomic (getSerialReaders s)
+  -- > || getSerialDefaultExt s `HM.member` _serialReadersFromStream (getSerialReaders s)
+  -- > || getSerialDefaultExt s `HM.member` _serialWritersToAtomic (getSerialWriters s)
+  --
   getSerialDefaultExt :: serial -> Maybe FileExt
   getSerialDefaultExt _ = Nothing
 
@@ -400,6 +414,7 @@ instance DeserializesWith (DocRecSerial a) a where
 -- * Combining serializers and deserializers into one structure
 
 -- | Can serialize @a@ and deserialize @b@.
+-- TODO: Explain what are repetition keys.
 data SerialsFor a b = SerialsFor
   { _serialWriters        :: SerialWriters a
   , _serialReaders        :: SerialReaders b

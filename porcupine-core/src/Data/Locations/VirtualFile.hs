@@ -114,13 +114,19 @@ instance HasDefaultMappingRule (VirtualFile a b) where
 
 -- For now, given the requirement of PTask, VirtualFile has to be a Monoid
 -- because a Resource Tree also has to.
+-- TODO: explain the meaning of (<>). From the implementation,
+-- computing the union of serials and ignoring the location seems pretty
+-- arbitrary.
 instance Semigroup (VirtualFile a b) where
   VirtualFile p u m i d b s <> VirtualFile _ _ _ _ _ _ s' =
     VirtualFile p u m i d b (s<>s')
+-- TODO: It doesn't look like this instance satisfies the identity
+-- laws of Monoid. Comment here what's the plan to address this?
 instance Monoid (VirtualFile a b) where
   mempty = VirtualFile [] SingleLayerRead True def Nothing Nothing mempty
 
 instance Profunctor VirtualFile where
+  -- TODO: explain why the LayeredReadScheme of the input is ignored?
   dimap f g (VirtualFile p _ m i d _ s) =
     VirtualFile p SingleLayerRead m i d Nothing $ dimap f g s
 
@@ -181,23 +187,27 @@ showVFileOriginalPath :: VirtualFile a b -> String
 showVFileOriginalPath = T.unpack . toTextRepr .  LTP . _vfileOriginalPath
 
 -- | Indicates that the file uses layered mapping
+-- TODO: put it in imperative form: useLayeredMapping
 usesLayeredMapping :: (Semigroup b) => VirtualFile a b -> VirtualFile a b
 usesLayeredMapping =
   vfileLayeredReadScheme .~ LayeredRead
 
 -- | Indicates that the file uses layered mapping, and additionally can be left
 -- unmapped (ie. mapped to null)
+-- TODO: put it in imperative form: allowToBeUnmapped
 canBeUnmapped :: (Monoid b) => VirtualFile a b -> VirtualFile a b
 canBeUnmapped =
   vfileLayeredReadScheme .~ LayeredReadWithNull
 
 -- | Indicates that the file should be mapped to null by default
+-- TODO: put it in imperative form: unmapByDefault
 unmappedByDefault :: (Monoid b) => VirtualFile a b -> VirtualFile a b
 unmappedByDefault =
     (vfileLayeredReadScheme .~ LayeredReadWithNull)
   . (vfileMappedByDefault .~ False)
 
 -- | Gives a documentation to the 'VirtualFile'
+-- TODO: put it in imperative form: documentFile
 documentedFile :: T.Text -> VirtualFile a b -> VirtualFile a b
 documentedFile doc = vfileDocumentation .~ Just doc
 
@@ -237,6 +247,7 @@ bidirVirtualFile path sers = virtualFile path (Just Refl) sers
 -- | If a file has been transformed via Profunctor methods (dimap, rmap, rmap),
 -- even if it remained bidirectional this proof it is has been lost. Thus we
 -- have to embed it again.
+-- TODO: Get rid of this somehow?
 ensureBidirFile :: VirtualFile a a -> VirtualFile a a
 ensureBidirFile vf = vf{_vfileBidirProof=Just Refl}
 
@@ -269,6 +280,13 @@ vfileAsBidirE f (Right vf) = case _vfileBidirProof vf of
   Nothing   -> pure (Right vf)
 
 -- | If the 'VirtualFile' has an embedded value, traverses to it.
+-- TODO: Explain the relation of VirtualFiles and embedded values.
+-- A VirtualFile might have no embedded value?
+-- Is the embedded value meant to be written?
+-- Is the embedded value to be considered an appendage of VirtualFiles
+-- with no relation to the data that can be read or written to them?
+-- If it is related, it comes after or before the data that can be read with the
+-- serials? Perhaps these questions belong to SerializationMethod.
 vfileEmbeddedValue :: Traversal' (VirtualFile a b) b
 vfileEmbeddedValue = vfileSerials . serialReaders . serialReaderEmbeddedValue . traversed
 
