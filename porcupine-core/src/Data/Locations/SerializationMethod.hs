@@ -222,10 +222,13 @@ class (SerializationMethod serial) => DeserializesWith serial a where
 
 -- | Has 'SerializesWith' & 'DeserializesWith' instances that permits to
 -- store/load JSON files and 'A.Value's.
-data JSONSerial = JSONSerial
+data JSONSerial = JSONSerial  -- ^ For when @.json@ files are just OK
+                | JSONSerialWithExt FileExt -- ^ For when you want a specific
+                                            -- extension. Don't include the dot.
 
 instance SerializationMethod JSONSerial where
-  getSerialDefaultExt _ = Just "json"
+  getSerialDefaultExt JSONSerial            = Just "json"
+  getSerialDefaultExt (JSONSerialWithExt e) = Just e
 
 instance (ToJSON a) => SerializesWith JSONSerial a where
   getSerialWriters srl = mempty
@@ -270,20 +273,22 @@ data Tabular a = Tabular
 
 -- | Can serialize and deserialize any @Tabular a@ where @a@ is an instance of
 -- 'CSV'.
-data CSVSerial = CSVSerial
-  { csvSerialHasHeader :: Bool  -- ^ Used by the reader part
-  , csvSerialDelimiter :: Char  -- ^ Used by both reader and writer
-  }
+data CSVSerial
+  = CSVSerial { csvSerialExt       :: FileExt  -- ^ The extension to use (csv, tsv,
+                                         -- txt, etc.)
+              , csvSerialHasHeader :: Bool  -- ^ Used by the reader part
+              , csvSerialDelimiter :: Char  -- ^ Used by both reader and writer
+              }
 
 instance SerializationMethod CSVSerial where
-  getSerialDefaultExt _ = Just "csv"
+  getSerialDefaultExt = Just . csvSerialExt
 
 -- NOTE: In the end, vectors of records should be intermediate types, much like
 -- Data.Aeson.Value is, so backends specialized in storing tabular data (like
 -- Apache Parquet/Arrow) can directly access it.
 instance (Csv.ToRecord a, Foldable f)
       => SerializesWith CSVSerial (Tabular (f a)) where
-  getSerialWriters srl@(CSVSerial _ delim) = mempty
+  getSerialWriters srl@(CSVSerial _ _ delim) = mempty
     { _serialWritersToAtomic =
       singletonToAtomicFn (getSerialDefaultExt srl) $ -- To lazy bytestring
         \(Tabular mbHeader dat) -> BinBuilder.toLazyByteString $
@@ -309,7 +314,7 @@ instance (Csv.ToRecord a, Foldable f)
 -- return the header when decoding. We should change that
 instance (Csv.FromRecord a)
       => DeserializesWith CSVSerial (V.Vector a) where
-  getSerialReaders srl@(CSVSerial hasHeader delim) = mempty
+  getSerialReaders srl@(CSVSerial _ hasHeader delim) = mempty
     { _serialReadersFromAtomic =
         singletonFromAtomicFn (getSerialDefaultExt srl) $ -- From strict bytestring
         Csv.decodeWith decOpts hh . LBS.fromStrict
