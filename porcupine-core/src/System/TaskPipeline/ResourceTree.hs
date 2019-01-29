@@ -274,6 +274,7 @@ instance ToJSON ResourceTreeAndMappings where
 -- ** Reading virtual resource trees from the input
 
 data LayerOperator = ReplaceLayers | AddLayer
+  deriving (Eq, Show)
 
 type ResourceTreeAndMappingsOverrides =
   ( LocVariableMap
@@ -313,10 +314,10 @@ rscTreeConfigurationReader (ResourceTreeAndMappings{rtamResourceTree=defTree}) =
           p <- fromTextRepr vpath
           l <- parseJSONEither $ String loc
           return (p,locOp,l)
-        locBinding (T.splitOn "=" . T.pack -> [vpath,loc]) =
-          parseLocBinding vpath ReplaceLayers loc
         locBinding (T.splitOn "+=" . T.pack -> [vpath,loc]) =
           parseLocBinding vpath AddLayer loc
+        locBinding (T.splitOn "=" . T.pack -> [vpath,loc]) =
+          parseLocBinding vpath ReplaceLayers loc
         locBinding _ =
           Left "Location mapping must be of the form \"virtual_path(+)=physical_path\""
 
