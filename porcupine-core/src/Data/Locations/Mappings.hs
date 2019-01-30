@@ -239,6 +239,10 @@ resolveLocShortcut (FullySpecifiedLoc value) =
 -- (False), ie. if it was explicitely declared in the config file or if it was
 -- derived from the mapping of a parent folder. @n'@ is often some file type or
 -- metadata that's required in the mapping.
+--
+-- TODO: Maybe change the callback type to
+-- @DerivedOrExplicit [SomeLocWithVars m] -> a -> b@ with
+-- @data DerivedOrExplicit a = Derived a | Explicit a@
 applyMappings :: (LogThrow m)
               => ([SomeLocWithVars m] -> a -> Bool -> b)
                                    -- ^ Add physical locations (if they exist)
