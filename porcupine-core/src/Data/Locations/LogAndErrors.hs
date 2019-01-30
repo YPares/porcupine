@@ -9,6 +9,7 @@ module Data.Locations.LogAndErrors
   , KatipContext
   , LogThrow, LogCatch, LogMask
   , TaskRunError(..)
+  , logAndThrowM
   , throwWithPrefix
   ) where
 
@@ -39,6 +40,12 @@ type LogCatch m = (KatipContext m, MonadCatch m)
 
 -- | Just an alias for monads that can throw,catch,mask errors and log them
 type LogMask m = (KatipContext m, MonadMask m)
+
+-- | A replacement for throwM. Logs an error (using displayException) and throws
+logAndThrowM :: (LogThrow m, Exception e) => e -> m a
+logAndThrowM exc = do
+  logFM ErrorS $ logStr $ displayException exc
+  throwM exc
 
 -- | Logs an error and throws a 'TaskRunError'
 throwWithPrefix :: (LogThrow m) => String -> m a
