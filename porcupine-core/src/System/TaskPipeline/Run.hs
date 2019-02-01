@@ -71,7 +71,7 @@ runPipelineTask
                        -- ^ The pipeline task output and the final LocationTree
 runPipelineTask cliUsage accessors ptask input = do
   let -- cliUsage' = pipelineConfigMethodChangeResult cliUsage
-      tree = ptask ^. splittedPTask . _1
+      tree = ptask ^. ptaskRequirements
   catch
     (bindResourceTreeAndRun cliUsage accessors tree $
       runPipelineCommandOnPTask ptask input)
