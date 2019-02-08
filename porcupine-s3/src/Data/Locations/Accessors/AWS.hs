@@ -44,7 +44,7 @@ import           System.TaskPipeline.Run
 
 -- | Just a compatiblity overlay for code explicitly dealing with S3 URLs
 pattern S3Obj :: String -> LocFilePath a -> URLLikeLoc a
-pattern S3Obj{bucketName,objectName} = RemoteFile "s3" bucketName objectName
+pattern S3Obj{bucketName,objectName} = RemoteFile "s3" bucketName Nothing objectName
 
 -- | Accessing resources on S3
 instance (MonadAWS m, MonadMask m, MonadResource m)

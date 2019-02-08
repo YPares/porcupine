@@ -118,6 +118,7 @@ data URLLikeLoc a
   = LocalFile { filePath :: LocFilePath a }
   | RemoteFile { rfProtocol    :: String
                , rfServerName  :: String
+               , rfPortNumber  :: Maybe Integer
                , rfLocFilePath :: LocFilePath a }
   deriving ( Eq, Ord, Generic
            , Functor, Foldable, Traversable, Binary, Store )
@@ -126,12 +127,16 @@ instance (Monad m, ContentHashable m a) => ContentHashable m (URLLikeLoc a)
 
 instance (IsLocString a) => Show (URLLikeLoc a) where
   show LocalFile{ filePath } = show filePath
-  show RemoteFile{ rfProtocol, rfServerName, rfLocFilePath } =
-    rfProtocol ++ "://" ++ rfServerName ++ "/" ++ show rfLocFilePath
+  show RemoteFile{ rfProtocol, rfServerName, rfLocFilePath, rfPortNumber } =
+    let port = case rfPortNumber of
+          Nothing -> ""
+          Just p  -> ":" <> show p
+    in
+    rfProtocol ++ "://" ++ rfServerName ++ port ++ "/" ++ show rfLocFilePath
 
 locFilePath :: Lens (URLLikeLoc a) (URLLikeLoc b) (LocFilePath a) (LocFilePath b)
-locFilePath f (LocalFile fp)      = LocalFile <$> f fp
-locFilePath f (RemoteFile p b fp) = RemoteFile p b <$> f fp
+locFilePath f (LocalFile fp)           = LocalFile <$> f fp
+locFilePath f (RemoteFile p b port fp) = RemoteFile p b port <$> f fp
 
 -- | A 'URLLikeLoc' that might contain some names holes, called variables, that we
 -- have first to replace by a value before we can get a definite physical
@@ -224,6 +229,7 @@ parseURLLikeLoc litteralPath = do
     URL.Absolute h ->
        RemoteFile <$> (refuseVarRefs "protocol" $ getProtocol $ URL.protocol h)
                   <*> (refuseVarRefs "server" $ URL.host h)
+                  <*> (Right $ URL.port h)
                   <*> (parseLocStringAndExt $ URL.url_path pathUrl)
     URL.HostRelative -> LocalFile <$> (parseLocStringAndExt $ "/" ++ URL.url_path pathUrl)
     URL.PathRelative -> LocalFile <$> (parseLocStringAndExt $ URL.url_path pathUrl)
