@@ -236,7 +236,7 @@ embeddedDataTreeToJSONFields thisPath (LocationTree mbOpts sub) =
   where
     opts' = case mbOpts of
       VirtualFileNode{..} ->
-        case Right vfnodeFile ^? vfileAsBidirE . vfileAesonValue of
+        case (vfnodeFile ^? vfileAsBidir) >>= getVFileAesonValue of
           Just (Object o) -> o
           _               -> mempty
       _ -> mempty
@@ -372,7 +372,7 @@ rscTreeConfigurationReader (ResourceTreeAndMappings{rtamResourceTree=defTree}) =
               return $ rebuildNode $ vfnodeFile & vfileAsBidir . vfileRecOfOptions .~ newOpts
             Nothing ->
               -- YAML: yes, CLI: no
-              rebuildNode <$> (Right vfnodeFile & vfileAsBidirE . vfileAesonValue .~ v)
+              rebuildNode <$> setVFileAesonValue vfnodeFile v
           Left _ -> case mbRecFromCLI of
             Just (RecOfOptions recFromCLI) ->
               -- YAML: no, CLI: yes
@@ -534,7 +534,7 @@ resolveDataAccess (PhysicalFileNode layers vf) = do
                        writeLocs readLocs
   where
     readScheme = vf ^. vfileLayeredReadScheme
-    mbEmbeddedVal = vf ^? vfileEmbeddedValue
+    mbEmbeddedVal = vf ^. vfileEmbeddedValue
 
     vpath = T.unpack $ toTextRepr $ LTP $ vf ^. vfileOriginalPath
 

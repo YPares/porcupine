@@ -16,8 +16,10 @@ module Data.Locations.VirtualFile
   , DocRecOfOptions, RecOfOptions(..)
   , VFileImportance(..)
   , vfileBidirProof, vfileSerials
-  , vfileAsBidir, vfileAsBidirE, vfileImportance
-  , vfileEmbeddedValue, vfileIntermediaryValue, vfileAesonValue
+  , vfileAsBidir, vfileImportance
+  , vfileEmbeddedValue
+  , setVFileIntermediaryValue, setVFileAesonValue
+  , getVFileIntermediaryValue, getVFileAesonValue
   , vfileOriginalPath, showVFileOriginalPath
   , vfileLayeredReadScheme
   , vfileVoided
@@ -35,7 +37,6 @@ import           Data.Aeson                         (Value)
 import           Data.Default
 import           Data.DocRecord
 import           Data.DocRecord.OptParse            (RecordUsableWithCLI)
-import           Data.Functor.Compose
 import qualified Data.HashMap.Strict                as HM
 import qualified Data.HashSet                       as HS
 import           Data.List                          (intersperse)
@@ -254,56 +255,59 @@ makeSource vf = vf{_vfileSerials=eraseSerials $ _vfileSerials vf
 -- value
 
 -- | If we have the internal proof that a VirtualFile is actually bidirectional,
--- we convert it.
+  -- we convert it.
 vfileAsBidir :: Traversal' (VirtualFile a b) (VirtualFile a a)
 vfileAsBidir f vf = case _vfileBidirProof vf of
   Just Refl -> f vf
   Nothing   -> pure vf
 
--- | Like 'vfileAsBidir', but can be composed with other traversals that can
--- fail, like 'vfileIntermediaryValue'
-vfileAsBidirE :: Traversal' (Either s (VirtualFile a b)) (Either s (VirtualFile a a))
-vfileAsBidirE _ (Left s) = pure (Left s)
-vfileAsBidirE f (Right vf) = case _vfileBidirProof vf of
-  Just Refl -> f (Right vf)
-  Nothing   -> pure (Right vf)
-
 -- | If the 'VirtualFile' has an embedded value, traverses to it.
-vfileEmbeddedValue :: Traversal' (VirtualFile a b) b
-vfileEmbeddedValue = vfileSerials . serialReaders . serialReaderEmbeddedValue . traversed
+vfileEmbeddedValue :: Lens' (VirtualFile a b) (Maybe b)
+vfileEmbeddedValue =
+  vfileSerials . serialReaders . serialReaderEmbeddedValue . lens (\(First x) -> x) (\_ x -> First x)
 
--- | If the 'VirtualFile' has an embedded value and converters to and from a
--- type @c@, we traverse to a value of this type. The conversion can fail
-vfileIntermediaryValue
-  :: forall a c. (Typeable c)
-  => Traversal' (Either String (VirtualFile a a)) c
-vfileIntermediaryValue _ (Left s) = pure (Left s)
-vfileIntermediaryValue f (Right vf) = case convertFns of
-  Just (ToAtomicFn toA, FromAtomicFn fromA) ->
-    let processVal v = case cast (toA v) of
-          Nothing -> error $ "vfileIntermediaryValue: Impossible to cast the value to type "
-            ++ show resTypeRep ++ ", however a conversion function was declared in the writers"
-          Just i -> back <$> f i
-        back i' = case cast i' of
-          Nothing -> error $ "vfileIntermediaryValue: Impossible to cast back the value from type "
-            ++ show resTypeRep ++ ", however a conversion function was declared in the readers"
-          Just i'' -> fromA i''
-    in getCompose $ vfileEmbeddedValue (Compose . processVal) vf
-  Nothing -> pure (Right vf)
-  where
-    resTypeRep = typeOf (undefined :: c)
-    serials = _vfileSerials vf
-    convertFns = (,)
-      <$> HM.lookup (resTypeRep,Nothing) (_serialWritersToAtomic (_serialWriters serials))
-      <*> HM.lookup (resTypeRep,Nothing) (_serialReadersFromAtomic (_serialReaders serials))
+-- | If the 'VirtualFile' has an embedded value convertible to type @c@, we get
+-- it.
+getVFileIntermediaryValue :: forall a c. (Typeable c)
+                          => VirtualFile a a
+                          -> Maybe c
+getVFileIntermediaryValue vf = let resTypeRep = typeOf (undefined :: c) in
+  case HM.lookup (resTypeRep,Nothing)
+                 (_serialWritersToAtomic $ _serialWriters $ _vfileSerials vf) of
+    Nothing -> Nothing
+    Just (ToAtomicFn toA) -> case cast (toA <$> vf ^. vfileEmbeddedValue) of
+      Nothing -> error $ "getVFileIntermediaryValue: Impossible to cast the value to type "
+        ++ show resTypeRep ++ ", however a conversion function was declared in the writers"
+      Just i  -> i
 
--- | If the file has a defaut value and a way to convert it to/from aeson Value,
--- we traverse to it. Note that @b@ DOESN'T need to have To/FromJSON
--- instances. because the virtual file serials may contain a way to convert it
--- to and from a type that has these instances. So it isn't the same as calling
--- 'vfileEmbeddedValue' and converting the traversed value.
-vfileAesonValue :: Traversal' (Either String (VirtualFile a a)) Value
-vfileAesonValue = vfileIntermediaryValue
+-- | If the 'VirtualFile' has an embedded value that can be turned into an Aeson
+-- 'Value', we get it.
+getVFileAesonValue :: VirtualFile a a -> Maybe Value
+getVFileAesonValue = getVFileIntermediaryValue
+
+-- | If the 'VirtualFile' can hold a embedded value convertible from type @c@,
+-- we set it (or remove it if Nothing). Note that the conversion may fail, we
+-- return Left if the VirtualFile couldn't be set.
+setVFileIntermediaryValue :: forall a b c. (Typeable c)
+                          => VirtualFile a b
+                          -> c
+                          -> Either String (VirtualFile a b)
+setVFileIntermediaryValue vf i = let inpTypeRep = typeOf (undefined :: c) in
+  case HM.lookup (inpTypeRep,Nothing)
+                 (_serialReadersFromAtomic $ _serialReaders $ _vfileSerials vf) of
+    Nothing -> Left $ "No conversion function is available to turn type " ++ show inpTypeRep
+               ++ "into the type expected by " ++ showVFileOriginalPath vf
+    Just (FromAtomicFn fromA) -> case cast i of
+      Nothing -> error $ "setVFileIntermediaryValue: Impossible to cast back the value from type "
+        ++ show inpTypeRep ++ ", however a conversion function was declared in the readers"
+      Just i' -> case fromA i' of
+        Left s    -> Left s
+        Right i'' -> Right $ vf & vfileEmbeddedValue .~ Just i''
+
+-- | If the file can carry a defaut value convertible from aeson Value, we set
+-- it.
+setVFileAesonValue :: VirtualFile a b -> Value -> Either String (VirtualFile a b)
+setVFileAesonValue = setVFileIntermediaryValue
 
 
 -- * Compatibility layer with the doc records of options used by the
@@ -337,7 +341,7 @@ vfileRecOfOptions f vf = case mbopts of
       let newVal = case cast r of
             Nothing -> error "vfileRecOfOptions: record fields aren't compatible"
             Just r' -> convertBack r'
-      in vf & vfileEmbeddedValue .~ newVal
+      in vf & vfileEmbeddedValue .~ Just newVal
 
 -- | Gives access to a version of the VirtualFile without type params. The
 -- original path isn't settable.
