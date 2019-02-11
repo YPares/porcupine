@@ -25,11 +25,13 @@ import qualified Data.ByteString.Streaming    as BSS
 import           Data.Function                ((&))
 import           Data.Locations.Accessors
 import           Data.Locations.Loc
+import qualified Data.Map.Strict              as Map
 import           Data.Maybe
 import qualified Data.Text                    as T
 import qualified Data.Text.Encoding           as TE
 import           GHC.Generics                 (Generic)
 import           Network.HTTP.Simple
+import qualified Network.Mime                 as Mime
 import           Streaming
 import qualified Streaming.Conduit            as SC
 
@@ -58,7 +60,7 @@ instance (MonadResource m, MonadMask m)
     { url :: URLLikeLoc a
     , writeMethod :: T.Text
     , readMethod :: T.Text
-    , requiredType :: Maybe String
+    , requiredType :: Maybe T.Text
     } deriving (Functor, Foldable, Traversable, Generic, ToJSON)
   locExists _ = return True
   writeBSS l bss = do
@@ -70,8 +72,15 @@ instance (MonadResource m, MonadMask m)
     return r
   readBSS l f = do
     req <- makeReq $ url l
+    let
+      -- XXX We silently ignore if the extension has no default mime type
+      -- associated. Should we warn here?
+      mimeType = flip Map.lookup Mime.defaultMimeMap =<< requiredType l
+      setMimeType = case mimeType of
+        Nothing    -> id
+        Just mtype -> setRequestHeader "Accept" [ mtype ]
     f $ SC.toBStream $
-      httpSource (setRequestMethod (TE.encodeUtf8 $ readMethod l) req)
+      httpSource (setMimeType $ setRequestMethod (TE.encodeUtf8 $ readMethod l) req)
                  getResponseBody
 
 instance (MonadResource m, MonadMask m) => MayProvideLocationAccessors m "http"
@@ -79,11 +88,11 @@ instance (MonadResource m, MonadMask m) => MayProvideLocationAccessors m "http"
 instance (IsLocString a) => Show (GLocOf "http" a) where
   show = show . url
 
-getURLType :: URLLikeLoc a -> Maybe String
+getURLType :: URLLikeLoc a -> Maybe T.Text
 getURLType url = case getLocType url of
   ""  -> Nothing
-  ext -> Just ext  -- TODO: check that the extension is a valid one (from the
-                   -- list in mime-types)
+  ext -> Just $ T.pack ext  -- TODO: check that the extension is a valid one
+                            -- (from the list in mime-types)
 
 instance (IsLocString a) => FromJSON (GLocOf "http" a) where
   parseJSON (Object v) = do
@@ -102,7 +111,7 @@ instance (IsLocString a) => FromJSON (GLocOf "http" a) where
     "Must be an http(s) URL or a JSON object with fields url,writeMethod,readMethod"
 
 instance TypedLocation (GLocOf "http") where
-  getLocType l = fromMaybe "" $ requiredType l
-  setLocType l f = l{requiredType = Just $ f $ getLocType l}
+  getLocType l = T.unpack . fromMaybe "" $ requiredType l
+  setLocType l f = l{requiredType = Just . T.pack . f $ getLocType l}
   addSubdirToLoc l d = l{url = addSubdirToLoc (url l) d}
   useLocAsPrefix l p = l{url = useLocAsPrefix (url l) p}

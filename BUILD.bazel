@@ -142,9 +142,10 @@ jinko_haskell_library(
         [
             "@hackage//:aeson",
             "@hackage//:base",
-	    "@hackage//:transformers",
+            "@hackage//:containers",
+            "@hackage//:transformers",
             "@hackage//:safe-exceptions",
-	    "@hackage//:http-conduit",
+            "@hackage//:http-conduit",
             "@hackage//:resourcet",
             "@hackage//:bytestring",
             "@hackage//:mime-types",
