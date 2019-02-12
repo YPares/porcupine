@@ -12,6 +12,7 @@ ghc-options: -Wall
 dependencies:
   - aeson
   - base
+  - containers
   - transformers
   - safe-exceptions
   - http-conduit
