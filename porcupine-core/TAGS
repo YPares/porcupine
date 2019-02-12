@@ -1,0 +1,928 @@
+
+./examples/Example2/Example2.hs,662
+data Stock Stock22,23
+data Stock = Stock Stock22,23
+data Stock = Stock { stockName stockName22,23
+                 , stockprice stockprice23,24
+data Analysis Analysis27,28
+data Analysis = Analysis Analysis27,28
+data Analysis = Analysis { ave ave27,28
+                            , std std28,29
+userFile userFile33,34
+userFile userFile34,35
+analysisFile analysisFile38,39
+analysisFile analysisFile39,40
+computeAnalysis computeAnalysis43,44
+computeAnalysis computeAnalysis44,45
+analyseOneUser analyseOneUser60,61
+analyseOneUser analyseOneUser61,62
+mainTask mainTask64,65
+mainTask mainTask65,66
+main main75,76
+main main76,77
+
+./examples/Example1.hs,675
+data User User17,18
+data User = User User17,18
+data User = User { userName userName17,18
+                 , userSurname userSurname18,19
+                 , userAge userAge19,20
+newtype Analysis Analysis23,24
+newtype Analysis = Analysis Analysis23,24
+newtype Analysis = Analysis { numLetters numLetters23,24
+userFile userFile28,29
+userFile userFile29,30
+analysisFile analysisFile33,34
+analysisFile analysisFile34,35
+computeAnalysis computeAnalysis38,39
+computeAnalysis computeAnalysis39,40
+analyseOneUser analyseOneUser48,49
+analyseOneUser analyseOneUser49,50
+mainTask mainTask52,53
+mainTask mainTask53,54
+main main63,64
+main main64,65
+
+./src/System/TaskPipeline/VirtualFileAccess.hs,2095
+module System.TaskPipeline.VirtualFileAccessSystem.TaskPipeline.VirtualFileAccess15,16
+loadData loadData74,75
+loadDataStream loadDataStream82,83
+loadDataStream loadDataStream87,88
+tryLoadDataStream tryLoadDataStream93,94
+tryLoadDataStream tryLoadDataStream97,98
+writeData writeData108,109
+writeEffData writeEffData117,118
+writeDataStream writeDataStream129,130
+writeDataStream writeDataStream133,134
+writeDataFold writeDataFold140,141
+writeDataFold writeDataFold142,143
+getVFileDataAccessor getVFileDataAccessor151,152
+data AccessToPerform AccessToPerform157,158
+  = DoWrite DoWrite158,159
+  | DoRead DoRead159,160
+  | DoWriteAndRead DoWriteAndRead160,161
+newtype SingletonES SingletonES163,164
+newtype SingletonES m a = SingletonES SingletonES163,164
+newtype SingletonES m a = SingletonES { getSingletonFromES getSingletonFromES163,164
+newtype ListES ListES166,167
+newtype ListES m a = ListES ListES166,167
+newtype ListES m a = ListES { getListFromES getListFromES166,167
+newtype StreamES StreamES169,170
+newtype StreamES r m a = StreamES StreamES169,170
+newtype StreamES r m a = StreamES { getStreamFromES getStreamFromES169,170
+class (Monoid (ESResult seq)) => EffectSeq EffectSeq172,173
+  emptyES :: (Monad m) => seq seq178,179
+  type ESResult ESResult173,174
+  type ESResult seq seq173,174
+  mapES mapES174,175
+  mapESM mapESM175,176
+  streamFromES streamFromES176,177
+  runES runES177,178
+  emptyES emptyES178,179
+instance instance180,181
+class (EffectSeq seq) => EffectSeqFromList EffectSeqFromList204,205
+  esFromList :: (Monad m) => [a] [a]205,206
+  esFromList esFromList205,206
+accessVirtualFile' accessVirtualFile'214,215
+accessVirtualFile' accessVirtualFile'221,222
+toAccessTypes toAccessTypes226,227
+toAccessTypes toAccessTypes227,228
+accessVirtualFile accessVirtualFile247,248
+withVFileInternalAccessFunction withVFileInternalAccessFunction282,283
+withFolderDataAccessNodes withFolderDataAccessNodes305,306
+getLocsMappedTo getLocsMappedTo327,328
+getLocsMappedTo getLocsMappedTo329,330
+
+./src/System/TaskPipeline/Repetition/Fold.hs,784
+module System.TaskPipeline.Repetition.FoldSystem.TaskPipeline.Repetition.Fold6,7
+unsafeGeneralizeM unsafeGeneralizeM32,33
+unsafeGeneralizeM unsafeGeneralizeM34,35
+data RunningFoldM RunningFoldM39,40
+  forall forall40,41
+unsafeGeneralizeFnM unsafeGeneralizeFnM43,44
+unsafeGeneralizeFnM unsafeGeneralizeFnM46,47
+ptaskFold ptaskFold58,59
+ptaskFold ptaskFold60,61
+newtype PairWithRepeatable PairWithRepeatable65,66
+newtype PairWithRepeatable x a = PWR PWR65,66
+newtype PairWithRepeatable x a = PWR { unPWR unPWR65,66
+instance instance67,68
+makeStepRepeatable makeStepRepeatable72,73
+makeStepRepeatable makeStepRepeatable76,77
+foldStreamTask foldStreamTask86,87
+foldlTask foldlTask109,110
+premapMaybe premapMaybe114,115
+premapMaybe premapMaybe117,118
+
+./src/System/TaskPipeline/Repetition/Streaming.hs,560
+module System.TaskPipeline.Repetition.StreamingSystem.TaskPipeline.Repetition.Streaming5,6
+import import14,15
+type STask STask30,31
+type STask m m30,31
+type ISTask ISTask36,37
+type OSTask OSTask42,43
+mappingOverStream mappingOverStream71,72
+mappingRunnableOverStream mappingRunnableOverStream85,86
+runStreamTask runStreamTask103,104
+runStreamTask runStreamTask107,108
+listToStreamTask listToStreamTask110,111
+listToStreamTask listToStreamTask114,115
+streamToListTask streamToListTask121,122
+streamToListTask streamToListTask125,126
+
+./src/System/TaskPipeline/Repetition/Internal.hs,776
+module System.TaskPipeline.Repetition.InternalSystem.TaskPipeline.Repetition.Internal3,4
+import import11,12
+data RepInfo RepInfo24,25
+data RepInfo = RepInfoRepInfo24,25
+  { repInfoIndex repInfoIndex25,26
+  , repInfoLogging repInfoLogging29,30
+repIndex repIndex37,38
+repIndex repIndex38,39
+data TaskRepetitionContext TaskRepetitionContext41,42
+data TaskRepetitionContext = TRCTRC41,42
+  { _repetitionKey _repetitionKey42,43
+  , _repetitionKeyVal _repetitionKeyVal43,44
+  , _repetitionKeyVerb _repetitionKeyVerb44,45
+instance instance46,47
+class HasTaskRepetitionIndex HasTaskRepetitionIndex54,55
+class HasTaskRepetitionIndex HasTaskRepetitionIndex54,55
+  getTaskRepetitionIndex getTaskRepetitionIndex55,56
+makeRepeatable makeRepeatable71,72
+
+./src/System/TaskPipeline/Run.hs,544
+module System.TaskPipeline.RunSystem.TaskPipeline.Run11,12
+type AcceptableArgsAndContexts AcceptableArgsAndContexts46,47
+type AcceptableArgsAndContexts args args46,47
+type RunsKatipOver RunsKatipOver53,54
+runPipelineTask runPipelineTask71,72
+runPipelineTask_ runPipelineTask_88,89
+runPipelineCommandOnPTask runPipelineCommandOnPTask107,108
+getFunflowPaths getFunflowPaths125,126
+getFunflowPaths getFunflowPaths126,127
+getPhysTreeAndFFPaths getPhysTreeAndFFPaths142,143
+bindResourceTreeAndRun bindResourceTreeAndRun160,161
+
+./src/System/TaskPipeline/Repetition.hs,683
+module System.TaskPipeline.RepetitionSystem.TaskPipeline.Repetition3,4
+import import17,18
+parMapTask parMapTask34,35
+parMapTask_ parMapTask_45,46
+data OneRange OneRange51,52
+data OneRange i = OneIndex OneIndex51,52
+data OneRange i = OneIndex i | OneRange OneRange51,52
+toJSONStr toJSONStr53,54
+toJSONStr toJSONStr54,55
+parseJSONStr parseJSONStr59,60
+parseJSONStr parseJSONStr60,61
+instance instance66,67
+newtype IndexRange IndexRange85,86
+newtype IndexRange i = IndexRange IndexRange85,86
+oneIndex oneIndex88,89
+oneIndex oneIndex89,90
+oneRange oneRange92,93
+oneRange oneRange93,94
+enumIndices enumIndices104,105
+enumIndices enumIndices105,106
+
+./src/System/TaskPipeline/PTask/Internal.hs,2162
+module System.TaskPipeline.PTask.InternalSystem.TaskPipeline.PTask.Internal14,15
+type ReqTree ReqTree66,67
+type DataAccessTree DataAccessTree67,68
+type DataAccessTree m m67,68
+data FunflowRunConfig FunflowRunConfig73,74
+data FunflowRunConfig m = forall forall73,74
+  { _ffrcCoordinator _ffrcCoordinator74,75
+  , _ffrcCoordinatorConfig _ffrcCoordinatorConfig75,76
+  , _ffrcContentStore _ffrcContentStore76,77
+  , _ffrcFlowIdentity _ffrcFlowIdentity77,78
+  , _ffrcRemoteCache _ffrcRemoteCache78,79
+data PTaskState PTaskState83,84
+data PTaskState m = PTaskStatePTaskState83,84
+  { _ptrsKatipContext _ptrsKatipContext84,85
+  , _ptrsKatipNamespace _ptrsKatipNamespace85,86
+  , _ptrsFunflowRunConfig _ptrsFunflowRunConfig86,87
+  , _ptrsDataAccessTree _ptrsDataAccessTree87,88
+type RunnablePTask RunnablePTask95,96
+type CanRunPTask CanRunPTask103,104
+execRunnablePTaskexecRunnablePTask109,110
+newtype PTask PTask126,127
+newtype PTask m a b = PTaskPTask126,127
+flowToPTask flowToPTask145,146
+flowToPTask flowToPTask146,147
+type OuterEffect OuterEffect150,151
+type InnerEffect InnerEffect156,157
+instance instance159,160
+withOuterState withOuterState178,179
+modifyingRuntimeState modifyingRuntimeState191,192
+withRunnableState' withRunnableState'206,207
+withRunnableState' withRunnableState'208,209
+withRunnableState withRunnableState217,218
+withRunnableState withRunnableState219,220
+runnableWithoutReqs runnableWithoutReqs222,223
+runnableWithoutReqs runnableWithoutReqs223,224
+splittedPTask splittedPTask226,227
+splittedPTask splittedPTask229,230
+runnablePTaskState runnablePTaskState236,237
+runnablePTaskState runnablePTaskState237,238
+makePTask' makePTask'241,242
+makePTask' makePTask'246,247
+makePTask makePTask251,252
+makePTask makePTask255,256
+data FunflowPaths FunflowPaths257,258
+data FunflowPaths m = FunflowPathsFunflowPaths257,258
+  { storePath storePath258,259
+  , coordPath coordPath259,260
+  , remoteCacheLoc remoteCacheLoc260,261
+withFunflowRunConfig withFunflowRunConfig267,268
+withPTaskState withPTaskState276,277
+withPTaskState withPTaskState280,281
+
+./src/System/TaskPipeline/Logger.hs,852
+module System.TaskPipeline.LoggerSystem.TaskPipeline.Logger4,5
+data LoggerFormatLoggerFormat29,30
+  = PrettyLog PrettyLog30,31
+  | CompactLog CompactLog32,33
+  | JSONLog JSONLog33,34
+  | BracketLog BracketLog34,35
+data LoggerScribeParams LoggerScribeParams38,39
+data LoggerScribeParams = LoggerScribeParamsLoggerScribeParams38,39
+  { loggerSeverityThreshold loggerSeverityThreshold39,40
+  , loggerVerbosity loggerVerbosity40,41
+  , loggerFormat loggerFormat41,42
+maxVerbosityLoggerScribeParams maxVerbosityLoggerScribeParams46,47
+maxVerbosityLoggerScribeParams maxVerbosityLoggerScribeParams47,48
+runLogger runLogger56,57
+prettyFormat prettyFormat73,74
+prettyFormat prettyFormat74,75
+colorBySeverity' colorBySeverity'93,94
+colorBySeverity' colorBySeverity'94,95
+colorize colorize109,110
+colorize colorize110,111
+
+./src/System/TaskPipeline/PTask.hs,1509
+module System.TaskPipeline.PTaskSystem.TaskPipeline.PTask18,19
+voidTask voidTask61,62
+voidTask voidTask62,63
+unsafeRunIOTask unsafeRunIOTask69,70
+tryPTask tryPTask76,77
+catchAndLog catchAndLog79,80
+catchAndLog catchAndLog81,82
+throwPTask throwPTask92,93
+throwPTask throwPTask93,94
+throwStringPTask throwStringPTask97,98
+throwStringPTask throwStringPTask98,99
+ptaskOnJust ptaskOnJust104,105
+ptaskOnJust ptaskOnJust105,106
+ptaskOnRight ptaskOnRight111,112
+ptaskOnRight ptaskOnRight112,113
+unsafeLiftToPTask unsafeLiftToPTask120,121
+unsafeLiftToPTask unsafeLiftToPTask122,123
+unsafeLiftToPTask' unsafeLiftToPTask'127,128
+unsafeLiftToPTask' unsafeLiftToPTask'129,130
+instance instance133,134
+clockPTask clockPTask139,140
+logTask logTask149,150
+logTask logTask150,151
+ptaskRequirements ptaskRequirements153,154
+ptaskRequirements ptaskRequirements154,155
+ptaskUsedFiles ptaskUsedFiles159,160
+ptaskUsedFiles ptaskUsedFiles160,161
+ptaskRunnablePart ptaskRunnablePart166,167
+ptaskRunnablePart ptaskRunnablePart168,169
+ptaskReaderState ptaskReaderState171,172
+ptaskReaderState ptaskReaderState172,173
+ptaskDataAccessTree ptaskDataAccessTree175,176
+ptaskDataAccessTree ptaskDataAccessTree176,177
+addContextToTask addContextToTask179,180
+addContextToTask addContextToTask180,181
+addNamespaceToTask addNamespaceToTask184,185
+addNamespaceToTask addNamespaceToTask185,186
+ptaskInSubtree ptaskInSubtree193,194
+ptaskInSubtree ptaskInSubtree194,195
+
+./src/System/TaskPipeline/Options.hs,123
+module System.TaskPipeline.OptionsSystem.TaskPipeline.Options7,8
+getOptions getOptions39,40
+getOption getOption50,51
+
+./src/System/TaskPipeline/CLI.hs,1678
+module System.TaskPipeline.CLISystem.TaskPipeline.CLI8,9
+data LocTreeLayout LocTreeLayout47,48
+data LocTreeLayout = NoMappings NoMappings47,48
+data LocTreeLayout = NoMappings | FullMappingsFullMappings47,48
+data PipelineCommand PipelineCommand49,50
+  RunPipeline RunPipeline50,51
+  ShowLocTree ShowLocTree51,52
+data PipelineConfigMethod PipelineConfigMethod65,66
+  NoConfig NoConfig66,67
+  FullConfig FullConfig67,68
+pipelineConfigMethodProgName pipelineConfigMethodProgName74,75
+pipelineConfigMethodProgName pipelineConfigMethodProgName75,76
+pipelineConfigMethodDefRoot pipelineConfigMethodDefRoot79,80
+pipelineConfigMethodDefRoot pipelineConfigMethodDefRoot80,81
+withCliParser withCliParser93,94
+cliYamlParser cliYamlParser129,130
+execCliParser execCliParser151,152
+pureCliParser pureCliParser170,171
+severityShortcuts severityShortcuts197,198
+severityShortcuts severityShortcuts198,199
+parseScribeParams parseScribeParams223,224
+parseScribeParams parseScribeParams224,225
+addScribeParamsParsing addScribeParamsParsing261,262
+addScribeParamsParsing addScribeParamsParsing262,263
+data PostParsingActionPostParsingAction272,273
+  = PostParsingLog PostParsingLog273,274
+  | forall forall274,275
+newtype PreRun PreRun278,279
+newtype PreRun = PreRun PreRun278,279
+newtype PreRun = PreRun {unPreRun unPreRun278,279
+handleOptions handleOptions294,295
+mergeWithDefault mergeWithDefault329,330
+mergeWithDefault mergeWithDefault330,331
+tryGetConfigFileOnCLI tryGetConfigFileOnCLI350,351
+parseShowLocTree parseShowLocTree362,363
+parseShowLocTree parseShowLocTree363,364
+pipelineCliParser pipelineCliParser377,378
+
+./src/System/TaskPipeline/Caching.hs,141
+module System.TaskPipeline.CachingSystem.TaskPipeline.Caching3,4
+cacheWithVFile cacheWithVFile31,32
+cacheWithVFile cacheWithVFile38,39
+
+./src/System/TaskPipeline/ResourceTree.hs,3096
+module System.TaskPipeline.ResourceTree System.TaskPipeline.ResourceTree55,56
+data SomeVirtualFile SomeVirtualFile88,89
+  SomeVirtualFile SomeVirtualFile89,90
+  SomeVirtualFile SomeVirtualFile89,90
+instance instance93,94
+data DataAccessor DataAccessor99,100
+data DataAccessor m a b = DataAccessorDataAccessor99,100
+  { daPerformWrite daPerformWrite100,101
+  , daPerformRead daPerformRead101,102
+  , daLocsAccessed daLocsAccessed102,103
+data SomeDataAccess SomeDataAccess106,107
+  SomeDataAccess SomeDataAccess107,108
+data VFNodeAccessType VFNodeAccessType112,113
+data VFNodeAccessType = ATWrite ATWrite112,113
+data VFNodeAccessType = ATWrite | ATReadATRead112,113
+data VirtualFileNode VirtualFileNode117,118
+data VirtualFileNode = MbVirtualFileNode MbVirtualFileNode117,118
+pattern pattern119,120
+vfnodeFileVoided vfnodeFileVoided124,125
+vfnodeFileVoided vfnodeFileVoided125,126
+data PhysicalFileNode PhysicalFileNode131,132
+data PhysicalFileNode m = MbPhysicalFileNode MbPhysicalFileNode131,132
+data DataAccessNode DataAccessNode137,138
+data DataAccessNode m = MbDataAccessNode MbDataAccessNode137,138
+toJSONTxt toJSONTxt164,165
+toJSONTxt toJSONTxt165,166
+type VirtualResourceTree VirtualResourceTree183,184
+type PhysicalResourceTree PhysicalResourceTree187,188
+type PhysicalResourceTree m m187,188
+type DataResourceTree DataResourceTree190,191
+rscTreeToMappings rscTreeToMappings201,202
+rscTreeToEmbeddedDataTree rscTreeToEmbeddedDataTree214,215
+variablesSection variablesSection222,223
+variablesSection variablesSection223,224
+embeddedDataSection embeddedDataSection225,226
+embeddedDataSection embeddedDataSection226,227
+mappingsSection mappingsSection228,229
+mappingsSection mappingsSection229,230
+embeddedDataTreeToJSONFields embeddedDataTreeToJSONFields233,234
+data ResourceTreeAndMappings ResourceTreeAndMappings251,252
+data ResourceTreeAndMappings = ResourceTreeAndMappingsResourceTreeAndMappings251,252
+  { rtamResourceTree rtamResourceTree252,253
+  , rtamMappings rtamMappings253,254
+  , rtamVariables rtamVariables254,255
+data LayerOperator LayerOperator275,276
+data LayerOperator = ReplaceLayers ReplaceLayers275,276
+data LayerOperator = ReplaceLayers | AddLayerAddLayer275,276
+type ResourceTreeAndMappingsOverrides ResourceTreeAndMappingsOverrides277,278
+rscTreeConfigurationReader rscTreeConfigurationReader292,293
+applyOneRscMapping applyOneRscMapping396,397
+applyOneRscMapping applyOneRscMapping397,398
+getPhysicalResourceTreeFromMappings getPhysicalResourceTreeFromMappings416,417
+data TaskConstructionError TaskConstructionError426,427
+  TaskConstructionError TaskConstructionError427,428
+data DataAccessContext DataAccessContext431,432
+data DataAccessContext = DACDAC431,432
+  { locationAccessed locationAccessed432,433
+  , requiredLocVariables requiredLocVariables433,434
+  , providedLocVariables providedLocVariables434,435
+  , splicedLocation splicedLocation435,436
+makeDataAccessor makeDataAccessor457,458
+resolveDataAccess resolveDataAccess512,513
+
+./src/System/TaskPipeline/ConfigurationReader.hs,794
+module System.TaskPipeline.ConfigurationReaderSystem.TaskPipeline.ConfigurationReader7,8
+data ConfigurationReader ConfigurationReader31,32
+data ConfigurationReader cfg overrides = ConfigurationReaderConfigurationReader31,32
+  { overridesParser overridesParser32,33
+  , nullOverrides nullOverrides34,35
+  , overrideCfgFromYamlFileoverrideCfgFromYamlFile36,37
+docRecBasedConfigurationReader docRecBasedConfigurationReader47,48
+genericAesonBasedConfigurationReader genericAesonBasedConfigurationReader72,73
+overrideConfigFromKeyValues overrideConfigFromKeyValues91,92
+overrideConfigFromKeyValues overrideConfigFromKeyValues92,93
+jsonType jsonType125,126
+jsonType jsonType126,127
+checkTypeAndInsert checkTypeAndInsert134,135
+checkTypeAndInsert checkTypeAndInsert141,142
+
+./src/System/TaskPipeline.hs,51
+module System.TaskPipelineSystem.TaskPipeline0,1
+
+./src/Porcupine/Run.hs,39
+module Porcupine.RunPorcupine.Run0,1
+
+./src/Porcupine/Tasks.hs,43
+module Porcupine.TasksPorcupine.Tasks0,1
+
+./src/Porcupine/Serials.hs,47
+module Porcupine.SerialsPorcupine.Serials0,1
+
+./src/Data/Locations/LocVariable.hs,158
+module Data.Locations.LocVariable Data.Locations.LocVariable2,3
+newtype LocVariable LocVariable11,12
+newtype LocVariable = LocVariable LocVariable11,12
+
+./src/Data/Locations/LocationTree.hs,1930
+module Data.Locations.LocationTreeData.Locations.LocationTree19,20
+data LocationTree LocationTree72,73
+data LocationTree a = LocationTreeLocationTree72,73
+  { _locTreeNodeTag _locTreeNodeTag73,74
+  , _locTreeSubfolders _locTreeSubfolders80,81
+instance instance85,86
+apLocationTree apLocationTree96,97
+apLocationTree apLocationTree97,98
+data LocationTreePathItemLocationTreePathItem102,103
+  = LTPI LTPI103,104
+  = LTPI { _ltpiName _ltpiName103,104
+showLTPIName showLTPIName113,114
+showLTPIName showLTPIName114,115
+singleFolder singleFolder116,117
+singleFolder singleFolder117,118
+newtype LocationTreePath LocationTreePath123,124
+newtype LocationTreePath = LTP LTP123,124
+singLTP singLTP146,147
+singLTP singLTP147,148
+filteredLocsInTree filteredLocsInTree152,153
+inLocTree inLocTree159,160
+inLocTree inLocTree160,161
+allSubLocTrees allSubLocTrees175,176
+traversedTreeWithPath traversedTreeWithPath184,185
+subtractPathFromTree subtractPathFromTree190,191
+subtractPathFromTree subtractPathFromTree191,192
+data LTPIAndSubtree LTPIAndSubtree195,196
+data LTPIAndSubtree a = LocationTreePathItem LocationTreePathItem195,196
+locNode locNode200,201
+locNode locNode201,202
+folderNode folderNode204,205
+folderNode folderNode205,206
+fileEmpty fileEmpty207,208
+fileEmpty fileEmpty210,211
+file file211,212
+file file214,215
+data a a220,221
+data a :|| b = Unprioritized Unprioritized220,221
+data a :|| b = Unprioritized a | Prioritized Prioritized220,221
+joinLocTrees joinLocTrees236,237
+splitLocTree splitLocTree240,241
+splitLocTree splitLocTree241,242
+atSubfolder atSubfolder258,259
+atSubfolder atSubfolder259,260
+atSubfolderRec atSubfolderRec261,262
+atSubfolderRec atSubfolderRec262,263
+locTreeToDataTree locTreeToDataTree265,266
+locTreeToDataTree locTreeToDataTree266,267
+prettyLocTree prettyLocTree271,272
+prettyLocTree prettyLocTree272,273
+
+./src/Data/Locations/Accessors.hs,1836
+module Data.Locations.AccessorsData.Locations.Accessors23,24
+type LocOf LocOf71,72
+type LocOf l l71,72
+type LocWithVarsOf LocWithVarsOf74,75
+   => LocationAccessor LocationAccessor81,82
+                          => (FilePath FilePath106,107
+  data GLocOf GLocOf92,93
+  locExists locExists94,95
+  writeBSS writeBSS96,97
+  readBSS readBSS98,99
+  copy copy100,101
+  copy copy101,102
+  withLocalBuffer withLocalBuffer103,104
+  withLocalBuffer withLocalBuffer107,108
+data SomeLocationAccessor SomeLocationAccessor117,118
+  SomeLocationAccessor SomeLocationAccessor118,119
+class MayProvideLocationAccessors MayProvideLocationAccessors124,125
+                               => Label Label127,128
+  getLocationAccessors getLocationAccessors125,126
+  getLocationAccessors getLocationAccessors128,129
+instance instance131,132
+type FieldWithAccessors FieldWithAccessors136,137
+type FieldWithAccessors m m136,137
+(<--)<--141,142
+lbl lbl143,144
+newtype AvailableAccessors AvailableAccessors148,149
+newtype AvailableAccessors m = AvailableAccessors AvailableAccessors148,149
+splitAccessorsFromArgRec splitAccessorsFromArgRec159,160
+checkLocal checkLocal165,166
+checkLocal checkLocal166,167
+data SomeGLoc SomeGLoc208,209
+data SomeGLoc m a = forall forall208,209
+type SomeLoc SomeLoc217,218
+type SomeLocWithVars SomeLocWithVars218,219
+writeLazyByte writeLazyByte238,239
+readLazyByte readLazyByte247,248
+readText readText253,254
+writeText writeText261,262
+type BasePorcupineContexts BasePorcupineContexts266,267
+baseContexts baseContexts272,273
+type LocResolutionM LocResolutionM281,282
+withParsedLocsWithVars withParsedLocsWithVars291,292
+withParsedLocs withParsedLocs310,311
+withParsedLocs withParsedLocs315,316
+resolvePathToSomeLoc resolvePathToSomeLoc338,339
+
+./src/Data/Locations/Loc.hs,3291
+module Data.Locations.Loc Data.Locations.Loc15,16
+data StringWithVarsBitStringWithVarsBit38,39
+  = SWVB_Chunk SWVB_Chunk39,40
+  | SWVB_VarRef SWVB_VarRef40,41
+instance instance43,44
+locBitContent locBitContent47,48
+locBitContent locBitContent48,49
+newtype StringWithVars StringWithVars52,53
+newtype StringWithVars = StringWithVars StringWithVars52,53
+locStringVariables locStringVariables65,66
+locStringVariables locStringVariables66,67
+concatSWVB_Chunks concatSWVB_Chunks71,72
+concatSWVB_Chunks concatSWVB_Chunks72,73
+data LocFilePath LocFilePath77,78
+data LocFilePath a = LocFilePath LocFilePath77,78
+data LocFilePath a = LocFilePath { _pathWithoutExt _pathWithoutExt77,78
+data LocFilePath a = LocFilePath { _pathWithoutExt :: a, _pathExtension _pathExtension77,78
+firstNonEmptyExt firstNonEmptyExt84,85
+firstNonEmptyExt firstNonEmptyExt85,86
+locFilePathAsRawFilePath locFilePathAsRawFilePath97,98
+locFilePathAsRawFilePath locFilePathAsRawFilePath98,99
+data URLLikeLoc URLLikeLoc116,117
+  = LocalFile LocalFile117,118
+  = LocalFile { filePath filePath117,118
+  | RemoteFile RemoteFile118,119
+  | RemoteFile { rfProtocol rfProtocol118,119
+               , rfServerName rfServerName119,120
+               , rfLocFilePath rfLocFilePath120,121
+locFilePath locFilePath131,132
+locFilePath locFilePath132,133
+type LocWithVars LocWithVars138,139
+type Loc Loc141,142
+type LocalFilePath LocalFilePath143,144
+localFile localFile146,147
+localFile localFile147,148
+locWithVarsFromLoc locWithVarsFromLoc150,151
+locWithVarsFromLoc locWithVarsFromLoc151,152
+type LocVariableMap LocVariableMap154,155
+spliceLocVariables spliceLocVariables157,158
+spliceLocVariables spliceLocVariables158,159
+terminateLocWithVars terminateLocWithVars165,166
+terminateLocWithVars terminateLocWithVars166,167
+class (Monoid a) => IsLocString IsLocString174,175
+class (Monoid a) => IsLocString IsLocString174,175
+  locStringAsRawString locStringAsRawString175,176
+  parseLocStringAndExt parseLocStringAndExt176,177
+splitExtension' splitExtension'178,179
+splitExtension' splitExtension'179,180
+parseStringWithVars parseStringWithVars187,188
+parseStringWithVars parseStringWithVars188,189
+refuseVarRefs refuseVarRefs201,202
+refuseVarRefs refuseVarRefs202,203
+parseURLLikeLoc parseURLLikeLoc217,218
+parseURLLikeLoc parseURLLikeLoc218,219
+appendToLocFilePathAsSubdir appendToLocFilePathAsSubdir260,261
+fp `appendToLocFilePathAsSubdir`appendToLocFilePathAsSubdir261,262
+(</>)</>265,266
+f f266,267
+(<//>)<//>270,271
+(<(271,272
+(-<.>)-<.>275,276
+initDir initDir281,282
+initDir initDir282,283
+takeDirectory takeDirectory287,288
+takeDirectory takeDirectory288,289
+dropExtension dropExtension291,292
+dropExtension dropExtension292,293
+      ,Show (f String), Show (f StringWithVars)) => TypedLocation TypedLocation302,303
+  useLocAsPrefix :: (IsLocString a) => f f329,330
+  getLocType getLocType307,308
+  setLocType setLocType315,316
+  addSubdirToLoc addSubdirToLoc322,323
+  useLocAsPrefix useLocAsPrefix329,330
+overrideLocType overrideLocType338,339
+overrideLocType overrideLocType339,340
+setLocTypeIfMissing setLocTypeIfMissing342,343
+setLocTypeIfMissing setLocTypeIfMissing343,344
+
+./src/Data/Locations/VirtualFile.hs,3518
+module Data.Locations.VirtualFileData.Locations.VirtualFile7,8
+data LayeredReadScheme LayeredReadScheme60,61
+  SingleLayerRead SingleLayerRead61,62
+  LayeredRead LayeredRead63,64
+  LayeredReadWithNull LayeredReadWithNull65,66
+data VFileImportance VFileImportance69,70
+data VFileImportance = VFileImportanceVFileImportance69,70
+  { _vfiReadSuccess _vfiReadSuccess70,71
+  , _vfiWriteSuccess _vfiWriteSuccess71,72
+  , _vfiError _vfiError72,73
+instance instance76,77
+data VirtualFile VirtualFile81,82
+data VirtualFile a b = VirtualFileVirtualFile81,82
+  { _vfileOriginalPath _vfileOriginalPath82,83
+  , _vfileLayeredReadScheme _vfileLayeredReadScheme83,84
+  , _vfileMappedByDefault _vfileMappedByDefault84,85
+  , _vfileImportance _vfileImportance85,86
+  , _vfileDocumentation _vfileDocumentation86,87
+  , _vfileBidirProof _vfileBidirProof87,88
+  , _vfileSerials _vfileSerials90,91
+data VirtualFileIntent VirtualFileIntent130,131
+  VFForWriting VFForWriting131,132
+  VFForWriting | VFForReading VFForReading131,132
+  VFForWriting | VFForReading | VFForRW VFForRW131,132
+  VFForWriting | VFForReading | VFForRW | VFForCaching VFForCaching131,132
+  VFForWriting | VFForReading | VFForRW | VFForCaching | VFForCLIOptionsVFForCLIOptions131,132
+data VirtualFileDescription VirtualFileDescription136,137
+data VirtualFileDescription = VirtualFileDescriptionVirtualFileDescription136,137
+  { vfileDescIntent vfileDescIntent137,138
+  , vfileDescEmbeddableInConfig vfileDescEmbeddableInConfig139,140
+  , vfileDescEmbeddableInOutput vfileDescEmbeddableInOutput142,143
+  , vfileDescPossibleExtensions vfileDescPossibleExtensions145,146
+getVirtualFileDescription getVirtualFileDescription153,154
+getVirtualFileDescription getVirtualFileDescription154,155
+showVFileOriginalPath showVFileOriginalPath179,180
+showVFileOriginalPath showVFileOriginalPath180,181
+usesLayeredMapping usesLayeredMapping183,184
+usesLayeredMapping usesLayeredMapping184,185
+canBeUnmapped canBeUnmapped189,190
+canBeUnmapped canBeUnmapped190,191
+unmappedByDefault unmappedByDefault194,195
+unmappedByDefault unmappedByDefault195,196
+documentedFile documentedFile200,201
+documentedFile documentedFile201,202
+type BidirVirtualFile BidirVirtualFile208,209
+type BidirVirtualFile a a208,209
+type DataSource DataSource211,212
+type DataSink DataSink214,215
+virtualFile virtualFile219,220
+virtualFile virtualFile220,221
+dataSource dataSource224,225
+dataSource dataSource225,226
+dataSink dataSink229,230
+dataSink dataSink230,231
+bidirVirtualFile bidirVirtualFile233,234
+bidirVirtualFile bidirVirtualFile234,235
+ensureBidirFile ensureBidirFile239,240
+ensureBidirFile ensureBidirFile240,241
+makeSink makeSink242,243
+makeSink makeSink243,244
+makeSource makeSource247,248
+makeSource makeSource248,249
+vfileAsBidir vfileAsBidir257,258
+vfileAsBidir vfileAsBidir258,259
+vfileAsBidirE vfileAsBidirE264,265
+vfileAsBidirE vfileAsBidirE265,266
+vfileEmbeddedValue vfileEmbeddedValue271,272
+vfileEmbeddedValue vfileEmbeddedValue272,273
+vfileIntermediaryValue vfileIntermediaryValue279,280
+vfileAesonValue vfileAesonValue304,305
+vfileAesonValue vfileAesonValue305,306
+data RecOfOptions RecOfOptions312,313
+  RecOfOptions RecOfOptions313,314
+type DocRecOfOptions DocRecOfOptions315,316
+vfileRecOfOptions vfileRecOfOptions322,323
+vfileRecOfOptions vfileRecOfOptions323,324
+vfileVoided vfileVoided343,344
+vfileVoided vfileVoided344,345
+
+./src/Data/Locations/FunflowRemoteCache.hs,489
+module Data.Locations.FunflowRemoteCacheData.Locations.FunflowRemoteCache5,6
+hashToFilePath hashToFilePath23,24
+hashToFilePath hashToFilePath24,25
+newtype LocationCacher LocationCacher26,27
+newtype LocationCacher m = LocationCacher LocationCacher26,27
+tryS tryS28,29
+tryS tryS29,30
+instance instance31,32
+locationCacher locationCacher53,54
+locationCacher locationCacher54,55
+newtype LiftCacher LiftCacher56,57
+newtype LiftCacher cacher = LiftCacher LiftCacher56,57
+
+./src/Data/Locations/LogAndErrors.hs,470
+module Data.Locations.LogAndErrorsData.Locations.LogAndErrors6,7
+newtype TaskRunError TaskRunError20,21
+newtype TaskRunError = TaskRunError TaskRunError20,21
+instance instance23,24
+getTaskErrorPrefix getTaskErrorPrefix26,27
+getTaskErrorPrefix getTaskErrorPrefix27,28
+type LogThrow LogThrow34,35
+type LogThrow m m34,35
+type LogCatch LogCatch37,38
+type LogMask LogMask40,41
+throwWithPrefix throwWithPrefix43,44
+throwWithPrefix throwWithPrefix44,45
+
+./src/Data/Locations/Mappings.hs,1329
+module Data.Locations.MappingsData.Locations.Mappings17,18
+newtype LocationMappings_ LocationMappings_45,46
+newtype LocationMappings_ n = LocationMappings_LocationMappings_45,46
+type LocationMappings LocationMappings52,53
+instance instance54,55
+class HasDefaultMappingRule HasDefaultMappingRule89,90
+class HasDefaultMappingRule HasDefaultMappingRule89,90
+  getDefaultLocShortcut getDefaultLocShortcut90,91
+mappingsFromLocTree mappingsFromLocTree95,96
+mappingsFromLocTree mappingsFromLocTree96,97
+mappingRootOnly mappingRootOnly113,114
+mappingRootOnly mappingRootOnly114,115
+data LocShortcut LocShortcut122,123
+  = DeriveWholeLocFromTree DeriveWholeLocFromTree123,124
+  | DeriveLocPrefixFromTree DeriveLocPrefixFromTree126,127
+  | FullySpecifiedLoc FullySpecifiedLoc130,131
+type SerializableLocShortcut SerializableLocShortcut137,138
+type ResolvedLocShortcut ResolvedLocShortcut142,143
+type ResolvedLocShortcut m m142,143
+insertMappings insertMappings170,171
+propagateMappings propagateMappings181,182
+propagateMappings propagateMappings185,186
+applyInheritedLayersToShortcuts applyInheritedLayersToShortcuts212,213
+resolveLocShortcut resolveLocShortcut227,228
+resolveLocShortcut resolveLocShortcut228,229
+applyMappings applyMappings241,242
+applyMappings applyMappings248,249
+
+./src/Data/Locations/SerializationMethod.hs,3800
+module Data.Locations.SerializationMethod Data.Locations.SerializationMethod18,19
+type FileExt FileExt49,50
+data FromAtomicFn FromAtomicFn53,54
+  forall forall54,55
+instance instance57,58
+singletonFromAtomicFn singletonFromAtomicFn65,66
+data FromStreamFn FromStreamFn69,70
+  forall forall70,71
+singletonFromStreamFn singletonFromStreamFn87,88
+data ReadFromConfigFn ReadFromConfigFn91,92
+data ReadFromConfigFn a = forall forall91,92
+data SerialReaders SerialReaders100,101
+data SerialReaders a = SerialReadersSerialReaders100,101
+    _serialReadersFromAtomic _serialReadersFromAtomic104,105
+  , _serialReadersFromStream _serialReadersFromStream109,110
+  , _serialReaderFromConfig _serialReaderFromConfig114,115
+  , _serialReaderEmbeddedValue _serialReaderEmbeddedValue117,118
+data ToAtomicFn ToAtomicFn134,135
+  forall forall135,136
+singletonToAtomicFn singletonToAtomicFn140,141
+singletonToAtomicFn singletonToAtomicFn144,145
+data WriteToConfigFn WriteToConfigFn165,166
+data WriteToConfigFn a = forall forall165,166
+data SerialWriters SerialWriters173,174
+data SerialWriters a = SerialWritersSerialWriters173,174
+  { _serialWritersToAtomic _serialWritersToAtomic174,175
+  , _serialWriterToConfig _serialWriterToConfig180,181
+class SerializationMethod SerializationMethod204,205
+class SerializationMethod SerializationMethod204,205
+  getSerialDefaultExt getSerialDefaultExt207,208
+  getSerialDefaultExt getSerialDefaultExt208,209
+class (SerializationMethod serial) => SerializesWith SerializesWith212,213
+class (SerializationMethod serial) => SerializesWith SerializesWith212,213
+  getSerialWriters getSerialWriters213,214
+class (SerializationMethod serial) => DeserializesWith DeserializesWith217,218
+class (SerializationMethod serial) => DeserializesWith DeserializesWith217,218
+  getSerialReaders getSerialReaders218,219
+data JSONSerial JSONSerial224,225
+data JSONSerial = JSONSerialJSONSerial224,225
+parseJSONEither parseJSONEither236,237
+parseJSONEither parseJSONEither237,238
+data Tabular Tabular265,266
+data Tabular a = TabularTabular265,266
+  { tabularHeader tabularHeader266,267
+  , tabularData tabularData267,268
+data CSVSerial CSVSerial272,273
+data CSVSerial = CSVSerialCSVSerial272,273
+  { csvSerialHasHeader csvSerialHasHeader273,274
+  , csvSerialDelimiter csvSerialDelimiter274,275
+newtype ByteStringSerial ByteStringSerial330,331
+newtype ByteStringSerial = ByteStringSerial ByteStringSerial330,331
+newtype ByteStringSerial = ByteStringSerial { bsSerialSpecificExt bsSerialSpecificExt330,331
+newtype PlainTextSerial PlainTextSerial357,358
+newtype PlainTextSerial = PlainTextSerial PlainTextSerial357,358
+newtype PlainTextSerial = PlainTextSerial { plainTextSerialSpecificExt plainTextSerialSpecificExt357,358
+data DocRecSerial DocRecSerial387,388
+data DocRecSerial a = forall forall387,388
+data SerialsFor SerialsFor402,403
+data SerialsFor a b = SerialsForSerialsFor402,403
+  { _serialWriters _serialWriters403,404
+  , _serialReaders _serialReaders404,405
+  , _serialDefaultExt _serialDefaultExt405,406
+  , _serialRepetitionKeys _serialRepetitionKeys406,407
+type BidirSerials BidirSerials412,413
+type BidirSerials a a412,413
+type PureSerials PureSerials415,416
+type PureDeserials PureDeserials418,419
+someBidirSerial someBidirSerial431,432
+someBidirSerial someBidirSerial432,433
+makeBidir makeBidir435,436
+makeBidir makeBidir436,437
+somePureSerial somePureSerial440,441
+somePureSerial somePureSerial441,442
+somePureDeserial somePureDeserial445,446
+somePureDeserial somePureDeserial446,447
+eraseSerials eraseSerials449,450
+eraseSerials eraseSerials450,451
+eraseDeserials eraseDeserials452,453
+eraseDeserials eraseDeserials453,454
+
+./src/Data/Locations.hs,41
+module Data.LocationsData.Locations0,1
+
+./src/Data/Representable.hs,236
+module Data.Representable Data.Representable2,3
+class Representable Representable10,11
+  fromTextRepr :: (Alternative f) => Text Text12,13
+  toTextRepr toTextRepr11,12
+  fromTextRepr fromTextRepr12,13
+instance instance14,15
+
+./src/Control/Arrow/FoldA.hs,958
+module Control.Arrow.FoldAControl.Arrow.FoldA7,8
+ret ret34,35
+ret ret35,36
+data Pair Pair38,39
+data Pair a b = Pair Pair38,39
+toTup toTup40,41
+toTup toTup41,42
+fromTup fromTup44,45
+fromTup fromTup45,46
+applyP applyP48,49
+applyP applyP49,50
+uncurryP uncurryP52,53
+uncurryP uncurryP53,54
+(****)****56,57
+a1 a157,58
+(&&&&)&&&&61,62
+secondP secondP65,66
+secondP secondP66,67
+data FoldA FoldA70,71
+  forall forall71,72
+type FoldA' FoldA'74,75
+type FoldA' arr arr74,75
+generalizeA generalizeA77,78
+generalizeA generalizeA78,79
+generalizeFnA generalizeFnA83,84
+generalizeFnA generalizeFnA84,85
+specializeA specializeA90,91
+specializeA specializeA91,92
+instance instance94,95
+premapInitA premapInitA122,123
+premapInitA premapInitA124,125
+premapA premapA128,129
+premapA premapA130,131
+postmapA postmapA135,136
+postmapA postmapA137,138
+prefilterA prefilterA141,142
+prefilterA prefilterA143,144
+
+./src/Streaming/TaskPipelineUtils.hs,997
+module Streaming.TaskPipelineUtilsStreaming.TaskPipelineUtils8,9
+intoSink intoSink44,45
+intoSink intoSink45,46
+streamFolder streamFolder47,48
+streamFolder streamFolder48,49
+streamFolderRel streamFolderRel50,51
+streamFolderRel streamFolderRel51,52
+class StreamFilter StreamFilter66,67
+  filters :: (Monad m) => s s69,70
+  type Wanted Wanted67,68
+  type Wanted s s67,68
+  type Split Split68,69
+  filters filters69,70
+instance instance71,72
+data Copy Copy104,105
+data Copy = CopyCopy104,105
+mapCopy mapCopy116,117
+hoistCopy hoistCopy126,127
+data t t131,132
+data t `With` ann = With With131,132
+data t `With` ann = With { _ann _ann131,132
+data t `With` ann = With { _ann :: !ann, _elt _elt131,132
+instance (ToJSON t, ToJSON ann) => ToJSON (t `With`With136,137
+type StreamWith StreamWith139,140
+type StreamWith id id139,140
+mapStreamW mapStreamW141,142
+mapStreamW mapStreamW142,143
+mapStreamWM mapStreamWM145,146
+mapStreamWM mapStreamWM146,147
+
+./Setup.hs,15
+main main2,3
