@@ -5,6 +5,4 @@ data:
   Inputs: {}
   Outputs: {}
 locations:
-  /Inputs/User: _-{id}.json
   /: ../porcupine-core/examples/example2/data/
-  /Outputs/Analysis: _-{id}.json
