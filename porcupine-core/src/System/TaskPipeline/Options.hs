@@ -39,7 +39,7 @@ getOptions
                              -- overriden by the user
 getOptions path defOpts = loadData $
   bidirVirtualFile path $
-    someBidirSerial (DocRecSerial defOpts id id) <> someBidirSerial JSONSerial
+    someBidirSerial (DocRecSerial defOpts id id) <> someBidirSerial YAMLSerial
 
 -- | Just like 'getOptions', but for a single field.
 getOption
