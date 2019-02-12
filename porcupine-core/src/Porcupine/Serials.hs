@@ -7,7 +7,7 @@ module Porcupine.Serials
   , documentedFile
   , usesLayeredMapping, canBeUnmapped, unmappedByDefault
   , bidirVirtualFile, dataSource, dataSink
-  , ensureBidirFile, makeSource, makeSink )
+  , makeSource, makeSink )
 where
 
 import           Data.Locations.Loc

@@ -15,7 +15,7 @@ module Data.Locations.VirtualFile
   , VirtualFileIntent(..), VirtualFileDescription(..)
   , DocRecOfOptions, RecOfOptions(..)
   , VFileImportance(..)
-  , vfileBidirProof, vfileSerials
+  , vfileSerials
   , vfileAsBidir, vfileImportance
   , vfileEmbeddedValue
   , setVFileIntermediaryValue, setVFileAesonValue
@@ -24,7 +24,7 @@ module Data.Locations.VirtualFile
   , vfileLayeredReadScheme
   , vfileVoided
   , vfiReadSuccess, vfiWriteSuccess, vfiError
-  , dataSource, dataSink, bidirVirtualFile, ensureBidirFile
+  , dataSource, dataSink, bidirVirtualFile
   , makeSink, makeSource
   , documentedFile
   , usesLayeredMapping, canBeUnmapped, unmappedByDefault
@@ -86,9 +86,6 @@ data VirtualFile a b = VirtualFile
   , _vfileMappedByDefault   :: Bool
   , _vfileImportance        :: VFileImportance
   , _vfileDocumentation     :: Maybe T.Text
-  , _vfileBidirProof        :: Maybe (a :~: b)
-                    -- Temporary, necessary until we can do away with docrec
-                    -- conversion in the writer part of SerialsFor
   , _vfileSerials           :: SerialsFor a b }
 
 makeLenses ''VirtualFile
@@ -116,21 +113,21 @@ instance HasDefaultMappingRule (VirtualFile a b) where
 -- For now, given the requirement of PTask, VirtualFile has to be a Monoid
 -- because a Resource Tree also has to.
 instance Semigroup (VirtualFile a b) where
-  VirtualFile p u m i d b s <> VirtualFile _ _ _ _ _ _ s' =
-    VirtualFile p u m i d b (s<>s')
+  VirtualFile p u m i d s <> VirtualFile _ _ _ _ _ s' =
+    VirtualFile p u m i d (s<>s')
 instance Monoid (VirtualFile a b) where
-  mempty = VirtualFile [] SingleLayerRead True def Nothing Nothing mempty
+  mempty = VirtualFile [] SingleLayerRead True def Nothing mempty
 
 instance Profunctor VirtualFile where
-  dimap f g (VirtualFile p _ m i d _ s) =
-    VirtualFile p SingleLayerRead m i d Nothing $ dimap f g s
+  dimap f g (VirtualFile p _ m i d s) =
+    VirtualFile p SingleLayerRead m i d $ dimap f g s
 
 
 -- * Obtaining a description of how the 'VirtualFile' should be used
 
 -- | Describes how a virtual file is meant to be used
 data VirtualFileIntent =
-  VFForWriting | VFForReading | VFForRW | VFForCaching | VFForCLIOptions
+  VFForWriting | VFForReading | VFForRW | VFForCLIOptions
   deriving (Show, Eq)
 
 -- | Gives the purpose of the 'VirtualFile'. Used to document the pipeline and check
@@ -166,7 +163,6 @@ getVirtualFileDescription vf =
       | HM.null fromA && HM.null fromS && HM.null toA = Nothing
       | HM.null fromA && HM.null fromS = Just VFForWriting
       | HM.null toA = Just VFForReading
-      | (Just _) <- _vfileBidirProof vf = Just VFForCaching
       | otherwise = Just VFForRW
     extSet = HS.fromList . catMaybes . map snd . HM.keys
     otherExts = extSet toA <> extSet fromA <> extSet fromS
@@ -218,37 +214,31 @@ type DataSink a = VirtualFile a ()
 -- | Creates a virtuel file from its virtual path and ways serialize/deserialize
 -- the data. You should prefer 'dataSink' and 'dataSource' for clarity when the
 -- file is meant to be readonly or writeonly.
-virtualFile :: [LocationTreePathItem] -> Maybe (a :~: b) -> SerialsFor a b -> VirtualFile a b
-virtualFile path refl sers = VirtualFile path SingleLayerRead True def Nothing refl sers
+virtualFile :: [LocationTreePathItem] -> SerialsFor a b -> VirtualFile a b
+virtualFile path sers = VirtualFile path SingleLayerRead True def Nothing sers
 
 -- | Creates a virtual file from its virtual path and ways to deserialize the
 -- data.
 dataSource :: [LocationTreePathItem] -> SerialsFor a b -> DataSource b
-dataSource path = makeSource . virtualFile path Nothing
+dataSource path = makeSource . virtualFile path
 
 -- | Creates a virtual file from its virtual path and ways to serialize the
 -- data.
 dataSink :: [LocationTreePathItem] -> SerialsFor a b -> DataSink a
-dataSink path = makeSink . virtualFile path Nothing
+dataSink path = makeSink . virtualFile path
 
--- | Like VirtualFile, except we will embed the proof that @a@ and @b@ are the same
+-- | Like 'virtualFile', but constrained to bidirectional serials, for clarity
 bidirVirtualFile :: [LocationTreePathItem] -> BidirSerials a -> BidirVirtualFile a
-bidirVirtualFile path sers = virtualFile path (Just Refl) sers
+bidirVirtualFile = virtualFile
 
--- | If a file has been transformed via Profunctor methods (dimap, rmap, rmap),
--- even if it remained bidirectional this proof it is has been lost. Thus we
--- have to embed it again.
-ensureBidirFile :: VirtualFile a a -> VirtualFile a a
-ensureBidirFile vf = vf{_vfileBidirProof=Just Refl}
-
+-- | Turns the 'VirtualFile' into a pure sink
 makeSink :: VirtualFile a b -> DataSink a
 makeSink vf = vf{_vfileSerials=eraseDeserials $ _vfileSerials vf
-                ,_vfileBidirProof=Nothing
                 ,_vfileLayeredReadScheme=LayeredReadWithNull}
 
+-- | Turns the 'VirtualFile' into a pure source
 makeSource :: VirtualFile a b -> DataSource b
-makeSource vf = vf{_vfileSerials=eraseSerials $ _vfileSerials vf
-                  ,_vfileBidirProof=Nothing}
+makeSource vf = vf{_vfileSerials=eraseSerials $ _vfileSerials vf}
 
 
 -- * Traversals to the content of the VirtualFile, when it already embeds some
@@ -256,8 +246,9 @@ makeSource vf = vf{_vfileSerials=eraseSerials $ _vfileSerials vf
 
 -- | If we have the internal proof that a VirtualFile is actually bidirectional,
   -- we convert it.
-vfileAsBidir :: Traversal' (VirtualFile a b) (VirtualFile a a)
-vfileAsBidir f vf = case _vfileBidirProof vf of
+vfileAsBidir :: forall a b. (Typeable a, Typeable b)
+             => Traversal' (VirtualFile a b) (BidirVirtualFile a)
+vfileAsBidir f vf = case eqT :: Maybe (a :~: b) of
   Just Refl -> f vf
   Nothing   -> pure vf
 
@@ -346,8 +337,8 @@ vfileRecOfOptions f vf = case mbopts of
 -- | Gives access to a version of the VirtualFile without type params. The
 -- original path isn't settable.
 vfileVoided :: Lens' (VirtualFile a b) (VirtualFile Void ())
-vfileVoided f (VirtualFile p l m i d b s) =
-  rebuild <$> f (VirtualFile p SingleLayerRead m i d Nothing mempty)
+vfileVoided f (VirtualFile p l m i d s) =
+  rebuild <$> f (VirtualFile p SingleLayerRead m i d mempty)
   where
-    rebuild (VirtualFile _ _ m' i' d' _ _) =
-      VirtualFile p l m' i' d' b s
+    rebuild (VirtualFile _ _ m' i' d' _) =
+      VirtualFile p l m' i' d' s
