@@ -42,6 +42,7 @@ import qualified Data.Text.Lazy.Encoding     as LTE
 import           Data.Typeable
 import qualified Data.Vector                 as V
 import           Data.Void
+import qualified Data.Yaml                   as Y
 import           Streaming
 import qualified Streaming.Prelude           as S
 
@@ -58,13 +59,14 @@ deriving instance Functor FromAtomicFn
 instance Show (FromAtomicFn a) where
   show _ = "<FromAtomicFn>"
 
-singletonFromAtomicFn
+fromAtomicFn
   :: forall i a. (Typeable i)
-  => Maybe FileExt
+  => [Maybe FileExt]
   -> (i -> Either String a)
   -> HM.HashMap (TypeRep,Maybe FileExt) (FromAtomicFn a)
-singletonFromAtomicFn ext f = HM.singleton (argTypeRep,ext) (FromAtomicFn f)
-  where argTypeRep = typeOf (undefined :: i)
+fromAtomicFn exts f = HM.fromList $ map (\ext -> ((argTypeRep,ext), FromAtomicFn f)) exts
+  where
+    argTypeRep = typeOf (undefined :: i)
 
 -- | How to read an @a@ from some @Stream (Of i) m r@
 data FromStreamFn a =
@@ -80,13 +82,14 @@ instance Functor FromStreamFn where
 instance Show (FromStreamFn a) where
   show _ = "<FromStreamFn>"
 
-singletonFromStreamFn
+fromStreamFn
   :: forall i a. (Typeable i)
-  => Maybe FileExt
+  => [Maybe FileExt]
   -> (forall m r. (LogMask m) => Stream (Of i) m r -> m (Of a r))
   -> HM.HashMap (TypeRep,Maybe FileExt) (FromStreamFn a)
-singletonFromStreamFn ext f = HM.singleton (argTypeRep,ext) (FromStreamFn f)
-  where argTypeRep = typeOf (undefined :: i)
+fromStreamFn exts f = HM.fromList $ map (\ext -> ((argTypeRep,ext), FromStreamFn f)) exts
+  where
+    argTypeRep = typeOf (undefined :: i)
 
 -- | A function to read @a@ from a 'DocRec'
 data ReadFromConfigFn a = forall rs. (Typeable rs) => ReadFromConfigFn (DocRec rs -> a)
@@ -138,11 +141,13 @@ data ToAtomicFn a =
 instance Show (ToAtomicFn a) where
   show _ = "<ToAtomicFn>"
 
-singletonToAtomicFn :: (Typeable i)
-                    => Maybe FileExt
-                    -> (a -> i)
-                    -> HM.HashMap (TypeRep,Maybe FileExt) (ToAtomicFn a)
-singletonToAtomicFn ext f = HM.singleton (typeOf $ f undefined,ext) (ToAtomicFn f)
+toAtomicFn :: forall i a. (Typeable i)
+           => [Maybe FileExt]
+           -> (a -> i)
+           -> HM.HashMap (TypeRep,Maybe FileExt) (ToAtomicFn a)
+toAtomicFn exts f = HM.fromList $ map (\ext -> ((argTypeRep,ext), ToAtomicFn f)) exts
+  where
+    argTypeRep = typeOf (undefined :: i)
 
 -- -- | How to turn an @a@ into some @Stream (Of i) m ()@
 -- data ToStreamFn a =
@@ -218,23 +223,34 @@ class (SerializationMethod serial) => SerializesWith serial a where
 class (SerializationMethod serial) => DeserializesWith serial a where
   getSerialReaders :: serial -> SerialReaders a
 
--- * Serialization to/from JSON
+-- * Serialization to/from JSON and YAML, which both use the same intermediary
+-- type, Data.Aeson.Value
 
 -- | Has 'SerializesWith' & 'DeserializesWith' instances that permits to
--- store/load JSON files and 'A.Value's.
-data JSONSerial = JSONSerial  -- ^ For when @.json@ files are just OK
-                | JSONSerialWithExt FileExt -- ^ For when you want a specific
+-- store/load JSON and YAML files and 'A.Value's.
+data JSONSerial = JSONSerial  -- ^ Expects @.json@ files by default, but support @.yaml@/@.yml@ too
+                | YAMLSerial  -- ^ Expects @.yaml@/@.yml@ files by default, but
+                              -- support @.json@ too
+                | JSONSerialWithExt FileExt -- ^ For when you want json only
+                                            -- serialization, with a specific
+                                            -- extension. Don't include the dot.
+                | YAMLSerialWithExt FileExt -- ^ For when you want yaml only
+                                            -- serialization, with a specific
                                             -- extension. Don't include the dot.
 
 instance SerializationMethod JSONSerial where
   getSerialDefaultExt JSONSerial            = Just "json"
+  getSerialDefaultExt YAMLSerial            = Just "yaml"
   getSerialDefaultExt (JSONSerialWithExt e) = Just e
+  getSerialDefaultExt (YAMLSerialWithExt e) = Just e
 
 instance (ToJSON a) => SerializesWith JSONSerial a where
-  getSerialWriters srl = mempty
+  getSerialWriters _srl = mempty
     { _serialWritersToAtomic =
-        singletonToAtomicFn Nothing A.toJSON  -- To A.Value
-        <> singletonToAtomicFn (getSerialDefaultExt srl) A.encode  -- To lazy bytestring
+        toAtomicFn [Nothing] A.toJSON  -- To A.Value
+        <> toAtomicFn [Just "json"] A.encode   -- To lazy bytestring of JSON
+        <> toAtomicFn [Just "yaml",Just "yml"]
+             (LBS.fromStrict . Y.encode) -- To lazy bytestring of YAML
     }
 
 parseJSONEither :: (A.FromJSON t) => A.Value -> Either String t
@@ -244,24 +260,33 @@ parseJSONEither x = case A.fromJSON x of
 {-# INLINE parseJSONEither #-}
 
 instance (FromJSON a) => DeserializesWith JSONSerial a where
-  getSerialReaders srl = mempty
+  getSerialReaders _srl = mempty
     { _serialReadersFromAtomic =
-        singletonFromAtomicFn Nothing parseJSONEither  -- From A.Value
-        <> singletonFromAtomicFn (getSerialDefaultExt srl) A.eitherDecodeStrict -- From strict bytestring
+        fromAtomicFn [Nothing] parseJSONEither  -- From A.Value
+        <> fromAtomicFn [Just "json"] A.eitherDecodeStrict -- From strict bytestring of JSON
+        <> fromAtomicFn [Just "yaml",Just "yml"]
+            (over _Left displayException . Y.decodeEither') -- From strict bytestring of YAML
     , _serialReadersFromStream =
         -- Decoding from a stream of bytestrings _only if it originates from a
         -- json source_
-        singletonFromStreamFn (getSerialDefaultExt srl) $ \strm -> do
+        fromStreamFn [Just "json"] (\strm -> do
           (bs :> r) <- BSS.toStrict $ BSS.fromChunks strm
             -- TODO: Enhance this so we don't have to accumulate the whole
             -- stream
-          (:> r) <$> decode_ bs
+          (:> r) <$> decodeJ bs)
         -- TODO: Add reading from a stream of JSON objects (which would
         -- therefore be considered a JSON array of objects?)
+        <> fromStreamFn [Just "yaml", Just "yml"] (\strm -> do
+          (bs :> r) <- BSS.toStrict $ BSS.fromChunks strm -- TODO: same than
+                                                          -- above
+          (:> r) <$> decodeY bs)
     } where
-    decode_ x = case A.eitherDecodeStrict x of
+    decodeJ x = case A.eitherDecodeStrict x of
       Right y  -> return y
       Left msg -> throwWithPrefix msg
+    decodeY x = case Y.decodeEither' x of
+      Right y  -> return y
+      Left exc -> logAndThrowM exc
 
 -- * Serialization to/from CSV
 
@@ -290,7 +315,7 @@ instance (Csv.ToRecord a, Foldable f)
       => SerializesWith CSVSerial (Tabular (f a)) where
   getSerialWriters srl@(CSVSerial _ _ delim) = mempty
     { _serialWritersToAtomic =
-      singletonToAtomicFn (getSerialDefaultExt srl) $ -- To lazy bytestring
+      toAtomicFn [getSerialDefaultExt srl] $ -- To lazy bytestring
         \(Tabular mbHeader dat) -> BinBuilder.toLazyByteString $
            maybe id (<>) (enc <$> mbHeader) $ foldMap enc dat
     }
@@ -316,10 +341,10 @@ instance (Csv.FromRecord a)
       => DeserializesWith CSVSerial (V.Vector a) where
   getSerialReaders srl@(CSVSerial _ hasHeader delim) = mempty
     { _serialReadersFromAtomic =
-        singletonFromAtomicFn (getSerialDefaultExt srl) $ -- From strict bytestring
+        fromAtomicFn [getSerialDefaultExt srl] $ -- From strict bytestring
         Csv.decodeWith decOpts hh . LBS.fromStrict
     , _serialReadersFromStream =
-        singletonFromStreamFn (getSerialDefaultExt srl) $ \strm -> do
+        fromStreamFn [getSerialDefaultExt srl] $ \strm -> do
           (bs :> r) <- BSS.toLazy $ BSS.fromChunks strm
           vec <- case Csv.decodeWith decOpts hh bs of
             Right y  -> return y
@@ -340,7 +365,7 @@ instance SerializationMethod ByteStringSerial where
 
 instance SerializesWith ByteStringSerial LBS.ByteString where
   getSerialWriters (ByteStringSerial ext) = mempty
-    { _serialWritersToAtomic = singletonToAtomicFn ext id }
+    { _serialWritersToAtomic = toAtomicFn [ext] id }
     -- TODO: Add base64 encoding so it can be read/written from/to JSON strings
     -- too
 
@@ -351,9 +376,9 @@ instance SerializesWith ByteStringSerial LBS.ByteString where
 instance DeserializesWith ByteStringSerial BS.ByteString where
   getSerialReaders (ByteStringSerial ext) = mempty
     { _serialReadersFromAtomic =
-        singletonFromAtomicFn ext Right
+        fromAtomicFn [ext] Right
     , _serialReadersFromStream =
-        singletonFromStreamFn ext S.mconcat }
+        fromStreamFn [ext] S.mconcat }
 
 -- * Serialization to/from plain text
 
@@ -368,22 +393,21 @@ instance SerializationMethod PlainTextSerial where
 instance SerializesWith PlainTextSerial T.Text where
   getSerialWriters (PlainTextSerial ext) = mempty
     { _serialWritersToAtomic =
-      singletonToAtomicFn Nothing (\t -> LT.fromChunks [t]) -- To lazy text
-      <> singletonToAtomicFn ext (\t -> LTE.encodeUtf8 $ LT.fromChunks [t]) -- To lazy bytestring
-      <> singletonToAtomicFn ext toJSON  -- To A.Value
+      toAtomicFn [Nothing] (\t -> LT.fromChunks [t]) -- To lazy text
+      <> toAtomicFn [ext] (\t -> LTE.encodeUtf8 $ LT.fromChunks [t]) -- To lazy bytestring
+      <> toAtomicFn [ext] toJSON  -- To A.Value
     }
 
 instance DeserializesWith PlainTextSerial T.Text where
   getSerialReaders (PlainTextSerial ext) = mempty
     { _serialReadersFromAtomic =
-        singletonFromAtomicFn Nothing Right
-        <> singletonFromAtomicFn ext parseJSONEither
-        <> singletonFromAtomicFn ext (Right . TE.decodeUtf8)
+        fromAtomicFn [Nothing] Right
+        <> fromAtomicFn [ext] parseJSONEither
+        <> fromAtomicFn [ext] (Right . TE.decodeUtf8)
     , _serialReadersFromStream =
-        singletonFromStreamFn ext S.mconcat
+        fromStreamFn [ext] S.mconcat
         <>
-        singletonFromStreamFn ext
-          (fmap (S.mapOf TE.decodeUtf8) . S.mconcat)
+        fromStreamFn [ext] (fmap (S.mapOf TE.decodeUtf8) . S.mconcat)
     }
 
 -- * Serialization of options
