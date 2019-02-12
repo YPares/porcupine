@@ -69,19 +69,34 @@ instance (MonadResource m, MonadMask m)
     _ <- httpNoBody $
       req & setRequestMethod (TE.encodeUtf8 $ writeMethod l)
           & setRequestBodyLBS bs
+          & maybeUpdate
+            (setRequestHeader "Content-type" . (:[]))
+            (getMimeType l)
     return r
   readBSS l f = do
     req <- makeReq $ url l
     let
-      -- XXX We silently ignore if the extension has no default mime type
-      -- associated. Should we warn here?
-      mimeType = flip Map.lookup Mime.defaultMimeMap =<< requiredType l
-      setMimeType = case mimeType of
-        Nothing    -> id
-        Just mtype -> setRequestHeader "Accept" [ mtype ]
+      setMimeType = maybeUpdate
+        (setRequestHeader "Accept" . (:[]))
+        (getMimeType l)
     f $ SC.toBStream $
       httpSource (setMimeType $ setRequestMethod (TE.encodeUtf8 $ readMethod l) req)
                  getResponseBody
+
+-- |
+-- Extract the mime type out of a network location
+getMimeType :: GLocOf "http" a -> Maybe Mime.MimeType
+getMimeType l =
+  -- XXX We silently ignore if the extension has no default mime type
+  -- associated. Should we warn here?
+  flip Map.lookup Mime.defaultMimeMap =<< requiredType l
+
+-- |
+-- @maybeUpdate f mY x@ will apply @f Y@ to @x@ if @mY@ is not nothing or @id@.
+--
+-- This is useful for optionally overriding a field in a record
+maybeUpdate :: (b -> a -> a) -> Maybe b -> a -> a
+maybeUpdate f = flip (foldr f)
 
 instance (MonadResource m, MonadMask m) => MayProvideLocationAccessors m "http"
 
