@@ -60,7 +60,8 @@ instance (MonadResource m, MonadMask m)
     { url :: URLLikeLoc a
     , writeMethod :: T.Text
     , readMethod :: T.Text
-    , requiredType :: Maybe T.Text
+    , expectedExtension :: Maybe T.Text
+    , acceptContentType :: Maybe T.Text
     } deriving (Functor, Foldable, Traversable, Generic, ToJSON)
   locExists _ = return True
   writeBSS l bss = do
@@ -71,25 +72,25 @@ instance (MonadResource m, MonadMask m)
           & setRequestBodyLBS bs
           & maybeUpdate
             (setRequestHeader "Content-type" . (:[]))
-            (getMimeType l)
+            (TE.encodeUtf8 <$> acceptContentType l)
     return r
   readBSS l f = do
     req <- makeReq $ url l
     let
       setMimeType = maybeUpdate
         (setRequestHeader "Accept" . (:[]))
-        (getMimeType l)
+        (TE.encodeUtf8 <$> acceptContentType l)
     f $ SC.toBStream $
       httpSource (setMimeType $ setRequestMethod (TE.encodeUtf8 $ readMethod l) req)
                  getResponseBody
 
 -- |
--- Extract the mime type out of a network location
-getMimeType :: GLocOf "http" a -> Maybe Mime.MimeType
-getMimeType l =
+-- Extract the mime type out of a file extension
+getMimeType :: T.Text -> Maybe T.Text
+getMimeType ext =
   -- XXX We silently ignore if the extension has no default mime type
   -- associated. Should we warn here?
-  flip Map.lookup Mime.defaultMimeMap =<< requiredType l
+  TE.decodeUtf8 <$> flip Map.lookup Mime.defaultMimeMap ext
 
 -- |
 -- @maybeUpdate f mY x@ will apply @f Y@ to @x@ if @mY@ is not nothing or @id@.
@@ -112,21 +113,24 @@ getURLType url = case getLocType url of
 instance (IsLocString a) => FromJSON (GLocOf "http" a) where
   parseJSON (Object v) = do
     url <- v .: "url"
+    extension <- (Just <$> v .: "expectedExtension") <|> pure (getURLType url)
     HTTPLoc url <$> (v .: "writeMethod" <|> pure "POST")
                 <*> (v .: "readMethod" <|> pure "GET")
-                <*> ((Just <$> v .: "requiredType") <|> pure (getURLType url))
+                <*> pure extension
+                <*> ((Just <$> v .: "acceptContentType") <|> pure (getMimeType =<< extension))
   parseJSON v@(String _) = do
     url <- parseJSON v
     case url of
       RemoteFile{rfProtocol=p}
         | p == "http" || p == "https" ->
-          return $ HTTPLoc url "POST" "GET" $ getURLType url
+          let extension = getURLType url in
+          return $ HTTPLoc url "POST" "GET" extension (getMimeType =<< extension)
       _ -> fail "Doesn't use http(s) protocol"
   parseJSON _ = fail
     "Must be an http(s) URL or a JSON object with fields url,writeMethod,readMethod"
 
 instance TypedLocation (GLocOf "http") where
-  getLocType l = T.unpack . fromMaybe "" $ requiredType l
-  setLocType l f = l{requiredType = Just . T.pack . f $ getLocType l}
+  getLocType l = T.unpack . fromMaybe "" $ expectedExtension l
+  setLocType l f = l{expectedExtension = Just . T.pack . f $ getLocType l}
   addSubdirToLoc l d = l{url = addSubdirToLoc (url l) d}
   useLocAsPrefix l p = l{url = useLocAsPrefix (url l) p}
