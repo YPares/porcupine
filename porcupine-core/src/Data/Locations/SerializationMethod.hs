@@ -203,8 +203,8 @@ instance Contravariant SerialWriters where
 -- | Links a serialization method to a prefered file extension, if this is
 -- relevant.
 class SerializationMethod serial where
-  -- | If not nothing, it should correspond to one of the keys in
-  -- serialReadersFromInputFile or serialWritersToOutputFile.
+  -- | If @Just x@, @x@ should correspond to one of the keys in
+  -- _serialReadersFromStream or _serialWritersToAtomic.
   getSerialDefaultExt :: serial -> Maybe FileExt
   getSerialDefaultExt _ = Nothing
 
