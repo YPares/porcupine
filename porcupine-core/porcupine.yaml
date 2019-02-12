@@ -1,0 +1,10 @@
+variables: {}
+data:
+  Settings:
+    users: 0
+  Inputs: {}
+  Outputs: {}
+locations:
+  /Inputs/User: _-{userId}.json
+  /: ../porcupine-core/examples/example2/data/
+  /Outputs/Analysis: _-{userId}.json

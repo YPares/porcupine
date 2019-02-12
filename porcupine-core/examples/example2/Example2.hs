@@ -47,7 +47,6 @@ computeAnalysis (Stock name price) = Analysis ave std where
      let s = sum price
          n = fromIntegral (length price)
      in s/n
-  --std = (sum $ map ((- ave) . (^2)) price) / length price
   std =
     let s = sum [ (c- ave)^2 | c <- price]
         n = fromIntegral (length price)
@@ -67,14 +66,14 @@ mainTask =
   -- First we get the ids of the users that we want to analyse. We need only one
   -- field that will contain a range of values, see IndexRange. By default, this
   -- range contains just one value, zero.
-  getOption ["Settings"] (docField @"users" (oneIndex (0::Int)) "The user ids to load")
+  getOption ["Settings"] (docField @"stocks" (oneIndex (0::Int)) "The stock ids to load")
   -- We turn the range we read into a full lazy list:
   >>> arr enumIndices
   -- Then we just map over these ids and call analyseOneUser each time:
   >>> parMapTask_ (repIndex "userId") analyseOneUser
 
 main :: IO ()
-main = runPipelineTask (FullConfig "example2" "porcupine.yaml" "porcupine-core/examples/data")
+main = runPipelineTask (FullConfig "example2" "porcupine.yaml" "porcupine-core/examples/example2/data")
                           -- The CLI/Yaml configuration to use (prog name,
                           -- default config file to create, and default root to
                           -- use for the resource tree)
