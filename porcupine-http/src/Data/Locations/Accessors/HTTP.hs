@@ -60,7 +60,7 @@ instance (MonadResource m, MonadMask m)
     { url :: URLLikeLoc a
     , writeMethod :: T.Text
     , readMethod :: T.Text
-    , expectedExtension :: Maybe T.Text
+    , serial :: Maybe T.Text
     , acceptContentType :: Maybe T.Text
     } deriving (Functor, Foldable, Traversable, Generic, ToJSON)
   locExists _ = return True
@@ -88,8 +88,6 @@ instance (MonadResource m, MonadMask m)
 -- Extract the mime type out of a file extension
 getMimeType :: T.Text -> Maybe T.Text
 getMimeType ext =
-  -- XXX We silently ignore if the extension has no default mime type
-  -- associated. Should we warn here?
   TE.decodeUtf8 <$> flip Map.lookup Mime.defaultMimeMap ext
 
 -- |
@@ -113,11 +111,19 @@ getURLType url = case getLocType url of
 instance (IsLocString a) => FromJSON (GLocOf "http" a) where
   parseJSON (Object v) = do
     url <- v .: "url"
-    extension <- (Just <$> v .: "expectedExtension") <|> pure (getURLType url)
+    extension <- (Just <$> v .: "serial") <|> pure (getURLType url)
+    let fallbackMimeType = case extension of
+          Nothing -> pure Nothing
+          Just ext -> case getMimeType ext of
+            Nothing ->
+              fail $ "The extension " <> T.unpack ext <>
+                  " has no default mime-type associated to it and you didn't" <>
+                  " explicitely supply one via \"acceptContentType\""
+            Just typ -> pure (Just typ)
     HTTPLoc url <$> (v .: "writeMethod" <|> pure "POST")
                 <*> (v .: "readMethod" <|> pure "GET")
                 <*> pure extension
-                <*> ((Just <$> v .: "acceptContentType") <|> pure (getMimeType =<< extension))
+                <*> ((Just <$> v .: "acceptContentType") <|> fallbackMimeType)
   parseJSON v@(String _) = do
     url <- parseJSON v
     case url of
@@ -130,7 +136,7 @@ instance (IsLocString a) => FromJSON (GLocOf "http" a) where
     "Must be an http(s) URL or a JSON object with fields url,writeMethod,readMethod"
 
 instance TypedLocation (GLocOf "http") where
-  getLocType l = T.unpack . fromMaybe "" $ expectedExtension l
-  setLocType l f = l{expectedExtension = Just . T.pack . f $ getLocType l}
+  getLocType l = T.unpack . fromMaybe "" $ serial l
+  setLocType l f = l{serial = Just . T.pack . f $ getLocType l}
   addSubdirToLoc l d = l{url = addSubdirToLoc (url l) d}
   useLocAsPrefix l p = l{url = useLocAsPrefix (url l) p}
