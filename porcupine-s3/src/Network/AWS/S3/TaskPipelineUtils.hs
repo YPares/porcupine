@@ -33,11 +33,9 @@ import           Data.String
 import           Data.Text                    (Text)
 import qualified Data.Text                    as T
 import           Network.AWS
-import           Network.AWS                  (MonadAWS, liftAWS, send)
 import           Network.AWS.Auth             (AuthError)
 import           Network.AWS.Env              (Env, HasEnv, environment)
 import           Network.AWS.S3
-import           Network.AWS.S3               (BucketName, ObjectKey (..), oKey)
 import qualified Network.AWS.S3.ListObjects   as LO
 import qualified Streaming.Prelude            as S
 import           Streaming.TaskPipelineUtils  as S

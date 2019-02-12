@@ -1,8 +1,7 @@
 {-# LANGUAGE Arrows                    #-}
 {-# LANGUAGE ExistentialQuantification #-}
 {-# LANGUAGE FlexibleContexts          #-}
-{-# LANGUAGE OverloadedStrings         #-}
-{-# LANGUAGE TupleSections             #-}
+
 
 module System.TaskPipeline.Repetition.Fold
   ( module Control.Arrow.FoldA
@@ -107,7 +106,7 @@ foldlTask
   => RepInfo  -- ^ How to log the repeated task
   -> FoldA (PTask m) i a b
   -> PTask m (i,[a]) b
-foldlTask ri fld = arr (\(i,l) -> (i,S.each l))
+foldlTask ri fld = arr (second S.each)
             >>> foldStreamTask ri fld >>> arr fst
 
 -- | Allows to filter out some data before it is taken into account by the FoldA
@@ -118,7 +117,7 @@ premapMaybe :: (a -> Maybe a')
 premapMaybe f (FoldA step start done) = FoldA step' start done
   where
     step' = step & over ptaskRunnablePart
-      (\run -> proc (Pair acc input) -> do
+      (\run -> proc (Pair acc input) ->
           case f input of
             Nothing     -> returnA -< acc
             Just input' -> run -< Pair acc input')

@@ -164,7 +164,7 @@ getVirtualFileDescription vf =
       | HM.null fromA && HM.null fromS = Just VFForWriting
       | HM.null toA = Just VFForReading
       | otherwise = Just VFForRW
-    extSet = HS.fromList . catMaybes . map snd . HM.keys
+    extSet = HS.fromList . mapMaybe snd . HM.keys
     otherExts = extSet toA <> extSet fromA <> extSet fromS
     exts = case prefExt of
              First (Just e) -> e:(HS.toList $ HS.delete e otherExts)

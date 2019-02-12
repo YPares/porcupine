@@ -61,7 +61,7 @@ cacheWithVFile props inputHashablePart vf action = proc input -> do
           return $ Right outputForStore
         Left err -> return $ Left (err::SomeException)
 
-    afterCached (output,accessor) = do
+    afterCached (output,accessor) =
       case output of
         Right o  -> (o,) <$> daPerformRead accessor
         Left err -> throwWithPrefix $ displayException err

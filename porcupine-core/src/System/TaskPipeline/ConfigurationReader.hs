@@ -2,7 +2,6 @@
 {-# LANGUAGE GADTs             #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RecordWildCards   #-}
-{-# LANGUAGE TupleSections     #-}
 {-# OPTIONS_GHC -Wall          #-}
 
 module System.TaskPipeline.ConfigurationReader
@@ -138,7 +137,7 @@ checkTypeAndInsert :: [String]
                    -> T.Text
                    -> A.Value
                    -> HashMap.HashMap T.Text A.Value
-                   -> ([[Char]], A.Value)
+                   -> ([String], A.Value)
 checkTypeAndInsert w fullPath v' k v m =
   let i = A.Object $ HashMap.insert k v m
       t = jsonType v

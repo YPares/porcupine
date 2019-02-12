@@ -1,17 +1,13 @@
-{-# LANGUAGE Arrows                     #-}
-{-# LANGUAGE ConstraintKinds            #-}
-{-# LANGUAGE DataKinds                  #-}
-{-# LANGUAGE DeriveFunctor              #-}
-{-# LANGUAGE FlexibleContexts           #-}
-{-# LANGUAGE GADTs                      #-}
-{-# LANGUAGE GeneralizedNewtypeDeriving #-}
-{-# LANGUAGE InstanceSigs               #-}
-{-# LANGUAGE OverloadedStrings          #-}
-{-# LANGUAGE TemplateHaskell            #-}
-{-# LANGUAGE TupleSections              #-}
-{-# LANGUAGE TypeFamilies               #-}
-{-# LANGUAGE TypeOperators              #-}
-{-# LANGUAGE UndecidableInstances       #-}
+{-# LANGUAGE Arrows               #-}
+{-# LANGUAGE ConstraintKinds      #-}
+{-# LANGUAGE DataKinds            #-}
+{-# LANGUAGE FlexibleContexts     #-}
+{-# LANGUAGE GADTs                #-}
+{-# LANGUAGE InstanceSigs         #-}
+{-# LANGUAGE TupleSections        #-}
+{-# LANGUAGE TypeFamilies         #-}
+{-# LANGUAGE TypeOperators        #-}
+{-# LANGUAGE UndecidableInstances #-}
 {-# OPTIONS_GHC -Wall #-}
 {-# OPTIONS_GHC -fno-warn-orphans       #-}
 
@@ -103,14 +99,14 @@ throwStringPTask = unsafeLiftToPTask $ \i ->
 
 -- | Runs a PTask only if its input is Just
 ptaskOnJust :: PTask m a b -> PTask m (Maybe a) (Maybe b)
-ptaskOnJust = over ptaskRunnablePart $ \run -> proc input -> do
+ptaskOnJust = over ptaskRunnablePart $ \run -> proc input ->
   case input of
     Nothing -> returnA -< Nothing
     Just x  -> arr Just <<< run -< x
 
 -- | Runs a PTask only if its input is Right
 ptaskOnRight :: PTask m a b -> PTask m (Either e a) (Either e b)
-ptaskOnRight = over ptaskRunnablePart $ \run -> proc input -> do
+ptaskOnRight = over ptaskRunnablePart $ \run -> proc input ->
   case input of
     Left e  -> returnA -< Left e
     Right x -> arr Right <<< run -< x

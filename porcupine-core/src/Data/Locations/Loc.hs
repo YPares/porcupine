@@ -65,8 +65,8 @@ instance Show StringWithVars where
 -- them.
 locStringVariables :: Traversal' StringWithVars StringWithVarsBit
 locStringVariables f (StringWithVars bits) = StringWithVars . concatSWVB_Chunks <$> traverse f' bits
-  where f' c@(SWVB_Chunk{})  = pure c
-        f' c@(SWVB_VarRef{}) = f c
+  where f' c@SWVB_Chunk{}  = pure c
+        f' c@SWVB_VarRef{} = f c
 
 -- | Ensures 2 consecutive chunks are concatenated together
 concatSWVB_Chunks :: [StringWithVarsBit] -> [StringWithVarsBit]
@@ -286,7 +286,7 @@ infixl 3 -<.>
 -- | Initialises a directory from a Loc to it, so that we can safely write in it
 -- afterwards. For a local filesystem, this means creating it.
 initDir :: Loc -> IO ()
-initDir f@(LocalFile{}) =
+initDir f@LocalFile{} =
   Dir.createDirectoryIfMissing True $ f ^. locFilePath . pathWithoutExt
 initDir _ = pure ()
 

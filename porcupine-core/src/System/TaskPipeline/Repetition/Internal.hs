@@ -74,7 +74,7 @@ makeRepeatable (RepInfo repetitionKey mbVerb) =
     ( fmap addKeyToVirtualFile reqTree
     , modifyingRuntimeState alterState id runnable )
   where
-    addKeyToVirtualFile (VirtualFileNode{..}) =
+    addKeyToVirtualFile VirtualFileNode{..} =
       VirtualFileNode
       {vfnodeFile = vfnodeFile &
         over (vfileSerials.serialRepetitionKeys) (repetitionKey:)

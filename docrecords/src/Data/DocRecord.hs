@@ -14,7 +14,6 @@
 {-# LANGUAGE RankNTypes                 #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
 {-# LANGUAGE StandaloneDeriving         #-}
-{-# LANGUAGE TupleSections              #-}
 {-# LANGUAGE TypeApplications           #-}
 {-# LANGUAGE TypeFamilies               #-}
 {-# LANGUAGE TypeOperators              #-}
@@ -314,7 +313,7 @@ instance (FromJSON t, FromJSON (Rec PossiblyEmptyField rs), ShowPath s)
                            then parsing <|> pure (Left MissingValueInJSON)
                            else parsing  -- But not values with a bad type
             where parsing = Right <$> parseJSON x
-                  x = maybe Null id mbX
+                  x = fromMaybe Null mbX
 
 -- | Just sets the docstrings to empty
 instance (RMap rs, FromJSON (Rec PossiblyEmptyField rs)) => FromJSON (Rec DocField rs) where
@@ -886,7 +885,7 @@ instance ( BuildRecFrom f rs (acc ++ '[s:|:a]) (FirstFieldSkipped rs)
       => BuildRecFrom f ((s:|:a) : rs) acc 'False where
   type RecCtor f ((s:|:a) : rs) acc 'False =
          a -> RecCtor f rs (acc ++ '[s:|:a]) (FirstFieldSkipped rs)
-  buildRecFrom_ acc (r :& rs) = \a -> buildRecFrom_ (acc <+> r =: a) rs
+  buildRecFrom_ acc (r :& rs) a = buildRecFrom_ (acc <+> r =: a) rs
    -- The append at the of the record makes it quadratic in comlexity. It's not
    -- great, it could me made to be linear.
   {-# INLINE buildRecFrom_ #-}

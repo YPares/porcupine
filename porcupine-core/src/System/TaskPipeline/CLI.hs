@@ -107,9 +107,9 @@ withCliParser progName progDesc_ cliParser f = do
      case configFile of
        LocFilePath "-" _ ->
          error "Config was read from stdin, cannot overwrite it"
-       LocFilePath _ "yaml" -> do
+       LocFilePath _ "yaml" ->
          liftIO $ Y.encodeFile rawFile cfg
-       LocFilePath _ "json" -> do
+       LocFilePath _ "json" ->
          liftIO $ LBS.writeFile rawFile $ A.encodePretty cfg
        _ -> error $ "Config file has unknown format"
      logFM NoticeS $ logStr $ "Wrote file '" ++ rawFile ++ "'"

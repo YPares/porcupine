@@ -1,14 +1,10 @@
-{-# LANGUAGE Arrows                     #-}
-{-# LANGUAGE ExistentialQuantification  #-}
-{-# LANGUAGE FlexibleContexts           #-}
-{-# LANGUAGE GeneralizedNewtypeDeriving #-}
-{-# LANGUAGE OverloadedStrings          #-}
-{-# LANGUAGE PartialTypeSignatures      #-}
-{-# LANGUAGE ScopedTypeVariables        #-}
-{-# LANGUAGE TupleSections              #-}
-{-# LANGUAGE TypeApplications           #-}
-{-# LANGUAGE TypeFamilies               #-}
-{-# LANGUAGE TypeOperators              #-}
+{-# LANGUAGE ExistentialQuantification #-}
+{-# LANGUAGE FlexibleContexts          #-}
+{-# LANGUAGE PartialTypeSignatures     #-}
+{-# LANGUAGE ScopedTypeVariables       #-}
+{-# LANGUAGE TupleSections             #-}
+{-# LANGUAGE TypeFamilies              #-}
+{-# LANGUAGE TypeOperators             #-}
 {-# OPTIONS_GHC -Wall #-}
 
 -- | This module provides some utilities for when the pipeline needs to access
@@ -222,7 +218,7 @@ accessVirtualFile' :: forall seq idx m a b b'.
 accessVirtualFile' access repIndex vf =
       arr (mapES $ \(i, a) -> ([i], a))
   >>> accessVirtualFile access [repIndex] vf
-  >>> arr (mapES $ \(i, r) -> (head i, r))
+  >>> arr (mapES $ first head)
 
 toAccessTypes :: AccessToPerform m b b' -> [VFNodeAccessType]
 toAccessTypes ac = case ac of
@@ -255,7 +251,7 @@ accessVirtualFile accessToDo repIndices vfile =
         _                  -> return $ mapESM (runOnce accessFn) inputEffSeq
   where
     runOnce :: (LocVariableMap -> DataAccessor m a b) -> ([idx], a) -> m ([idx], b')
-    runOnce accessFn (ixVals, input) = do
+    runOnce accessFn (ixVals, input) =
       (ixVals,) <$> case accessToDo of
         DoWrite wrap        -> wrap $ daPerformWrite da input
         DoRead wrap         -> wrap $ daPerformRead da
@@ -314,7 +310,7 @@ withFolderDataAccessNodes path filesToAccess accessFn =
         Just s -> return s
         Nothing -> throwWithPrefix $
           "path '" ++ show path ++ "' not found in the LocationTree"
-      nodeTags <- forM filesToAccess $ \(filePathItem :/ _) -> do
+      nodeTags <- forM filesToAccess $ \(filePathItem :/ _) ->
         case subtree ^? atSubfolder filePathItem . locTreeNodeTag of
           Nothing -> throwWithPrefix $
             "path '" ++ show filePathItem ++ "' not found in the LocationTree"

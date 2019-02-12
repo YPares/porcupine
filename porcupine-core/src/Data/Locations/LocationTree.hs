@@ -100,7 +100,7 @@ apLocationTree (LocationTree f sub) (LocationTree x sub') = LocationTree (f x) s
     sub'' = HM.intersectionWith apLocationTree sub sub'
 
 -- | Identifies a folder or file-like object in the 'LocationTree'.
-data LocationTreePathItem
+newtype LocationTreePathItem
   = LTPI { _ltpiName         :: T.Text -- ^ Name of the file or folder
          -- , _ltpiIsRepeatable :: Bool  -- ^ If true, then will correspond to
          --                             -- several files or folders, where _ltpiName
@@ -273,4 +273,4 @@ prettyLocTree :: (Show a) => LocationTree a -> String
 prettyLocTree t = DT.drawTree t'
   where
     str (p,n) = T.unpack (_ltpiName p) ++ ": " ++ show n
-    t' = fmap str $ locTreeToDataTree t
+    t' = str <$> locTreeToDataTree t

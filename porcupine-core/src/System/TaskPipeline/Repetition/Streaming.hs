@@ -1,7 +1,5 @@
-{-# LANGUAGE Arrows            #-}
-{-# LANGUAGE FlexibleContexts  #-}
-{-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE TupleSections     #-}
+{-# LANGUAGE FlexibleContexts #-}
+
 
 module System.TaskPipeline.Repetition.Streaming
   ( STask, ISTask, OSTask
@@ -123,4 +121,4 @@ streamToListTask :: (KatipContext m)
                  => PTask m
                           (Stream (Of t) m r)
                           [t]
-streamToListTask = unsafeLiftToPTask (S.toList_ . fmap (const ()))
+streamToListTask = unsafeLiftToPTask (S.toList_ . void)

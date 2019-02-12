@@ -109,7 +109,7 @@ execRunnablePTask
   => RunnablePTask m a b -> PTaskState m -> a -> m b
 execRunnablePTask
   (AppArrow act)
-  st@(PTaskState{_ptrsFunflowRunConfig=FunflowRunConfig{..}})
+  st@PTaskState{_ptrsFunflowRunConfig=FunflowRunConfig{..}}
   input =
   flip evalStateT [] $
     runFlowEx _ffrcCoordinator _ffrcCoordinatorConfig
@@ -269,7 +269,7 @@ withFunflowRunConfig ffPaths f = do
   storePath' <- parseAbsDir $ storePath ffPaths
   coordPath' <- parseAbsDir $ coordPath ffPaths
   let cacher = locationCacher $ remoteCacheLoc ffPaths
-  CS.withStore storePath' (\store -> do
+  CS.withStore storePath' (\store ->
     f $ FunflowRunConfig SQLite coordPath' store 23090341 cacher)
 
 -- | Given a 'KatipContext' and a 'DataAccessTree', gets the initial state to
