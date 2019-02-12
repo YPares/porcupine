@@ -68,3 +68,8 @@ executables:
     main: Example1.hs
     dependencies:
       - porcupine-core
+  example2:
+    source-dirs: examples/Example2
+    main: Example2.hs
+    dependencies:
+      - porcupine-core
