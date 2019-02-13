@@ -228,30 +228,54 @@ class (SerializationMethod serial) => DeserializesWith serial a where
 
 -- | Has 'SerializesWith' & 'DeserializesWith' instances that permits to
 -- store/load JSON and YAML files and 'A.Value's.
-data JSONSerial = JSONSerial  -- ^ Expects @.json@ files by default, but support @.yaml@/@.yml@ too
+data JSONSerial = JSONSerial  -- ^ Expects @.json@ files by default, but supports
+                              -- @.yaml@/@.yml@ files too "for free"
                 | YAMLSerial  -- ^ Expects @.yaml@/@.yml@ files by default, but
-                              -- support @.json@ too
-                | JSONSerialWithExt FileExt -- ^ For when you want json only
-                                            -- serialization, with a specific
-                                            -- extension. Don't include the dot.
-                | YAMLSerialWithExt FileExt -- ^ For when you want yaml only
-                                            -- serialization, with a specific
-                                            -- extension. Don't include the dot.
+                              -- supports @.json@ files too "for free"
+
+-- | For when you want a JSON **only** or YAML **only** serialization, but tied to a
+-- specific extension. It's more restrictive than 'JSONSerial' in the sense that
+-- JSONSerialWithExt cannot read from values from the configuration (because in
+-- the config we only have an Aeson Value, without an associated extension, so
+-- we cannot know for sure this Value corresponds to the expected extension)
+data JSONSerialWithExt = JSONSerialWithExt FileExt
+                            -- ^ Expects files of a given extension, ONLY
+                            -- formatted in JSON (YAML not provided "for free")
+                       | YAMLSerialWithExt FileExt
+                            -- ^ Expects files of a given extension, ONLY
+                            -- formatted in YAML (JSON not provided "for free")
 
 instance SerializationMethod JSONSerial where
-  getSerialDefaultExt JSONSerial            = Just "json"
-  getSerialDefaultExt YAMLSerial            = Just "yaml"
+  getSerialDefaultExt JSONSerial = Just "json"
+  getSerialDefaultExt YAMLSerial = Just "yaml"
+
+instance SerializationMethod JSONSerialWithExt where
   getSerialDefaultExt (JSONSerialWithExt e) = Just e
   getSerialDefaultExt (YAMLSerialWithExt e) = Just e
+
+-- | To lazy bytestring of JSON
+toAtomicJSON, toAtomicYAML
+  :: ToJSON a
+  => [FileExt] -> HM.HashMap (TypeRep, Maybe FileExt) (ToAtomicFn a)
+toAtomicJSON exts =
+  toAtomicFn (map Just exts) A.encode
+
+-- | To lazy bytestring of YAML
+toAtomicYAML exts =
+  toAtomicFn (map Just exts) $ LBS.fromStrict . Y.encode
 
 instance (ToJSON a) => SerializesWith JSONSerial a where
   getSerialWriters _srl = mempty
     { _serialWritersToAtomic =
-        toAtomicFn [Nothing] A.toJSON  -- To A.Value
-        <> toAtomicFn [Just "json"] A.encode   -- To lazy bytestring of JSON
-        <> toAtomicFn [Just "yaml",Just "yml"]
-             (LBS.fromStrict . Y.encode) -- To lazy bytestring of YAML
-    }
+        toAtomicFn [Nothing] A.toJSON  -- To A.Value, doesn't need an extension
+        <> toAtomicJSON ["json"]
+        <> toAtomicYAML ["yaml","yml"] }
+
+instance (ToJSON a) => SerializesWith JSONSerialWithExt a where
+  getSerialWriters (JSONSerialWithExt ext) = mempty
+    { _serialWritersToAtomic = toAtomicJSON [ext] }
+  getSerialWriters (YAMLSerialWithExt ext) = mempty
+    { _serialWritersToAtomic = toAtomicYAML [ext] }
 
 parseJSONEither :: (A.FromJSON t) => A.Value -> Either String t
 parseJSONEither x = case A.fromJSON x of
@@ -259,35 +283,63 @@ parseJSONEither x = case A.fromJSON x of
   A.Error r   -> Left r
 {-# INLINE parseJSONEither #-}
 
-instance (FromJSON a) => DeserializesWith JSONSerial a where
-  getSerialReaders _srl = mempty
-    { _serialReadersFromAtomic =
-        fromAtomicFn [Nothing] parseJSONEither  -- From A.Value
-        <> fromAtomicFn [Just "json"] A.eitherDecodeStrict -- From strict bytestring of JSON
-        <> fromAtomicFn [Just "yaml",Just "yml"]
-            (over _Left displayException . Y.decodeEither') -- From strict bytestring of YAML
-    , _serialReadersFromStream =
-        -- Decoding from a stream of bytestrings _only if it originates from a
-        -- json source_
-        fromStreamFn [Just "json"] (\strm -> do
-          (bs :> r) <- BSS.toStrict $ BSS.fromChunks strm
-            -- TODO: Enhance this so we don't have to accumulate the whole
-            -- stream
-          (:> r) <$> decodeJ bs)
-        -- TODO: Add reading from a stream of JSON objects (which would
-        -- therefore be considered a JSON array of objects?)
-        <> fromStreamFn [Just "yaml", Just "yml"] (\strm -> do
-          (bs :> r) <- BSS.toStrict $ BSS.fromChunks strm -- TODO: same than
-                                                          -- above
-          (:> r) <$> decodeY bs)
-    } where
+-- | From strict bytestring of JSON
+fromAtomicJSON, fromAtomicYAML
+  :: FromJSON a
+  => [FileExt] -> HM.HashMap (TypeRep, Maybe FileExt) (FromAtomicFn a)
+fromAtomicJSON exts =
+  fromAtomicFn (map Just exts) A.eitherDecodeStrict
+
+-- | From strict bytestring of YAML
+fromAtomicYAML exts =
+  fromAtomicFn (map Just exts) $
+    over _Left displayException . Y.decodeEither'
+
+-- | From a stream of strict bytestrings of JSON
+fromJSONStream, fromYAMLStream
+  :: FromJSON a
+  => [FileExt] -> HM.HashMap (TypeRep, Maybe FileExt) (FromStreamFn a)
+fromJSONStream exts = fromStreamFn (map Just exts) $ \strm -> do
+  (bs :> r) <- BSS.toStrict $ BSS.fromChunks strm
+    -- TODO: Enhance this so we don't have to accumulate the whole
+    -- stream
+  (:> r) <$> decodeJ bs
+  where
     decodeJ x = case A.eitherDecodeStrict x of
       Right y  -> return y
-      Left msg -> throwWithPrefix msg
+      Left msg -> throwWithPrefix msg    
+
+-- | From a stream of strict bytestrings of YAML
+fromYAMLStream exts = fromStreamFn (map Just exts) $ \strm -> do
+  (bs :> r) <- BSS.toStrict $ BSS.fromChunks strm -- TODO: same than above
+  (:> r) <$> decodeY bs
+  where
     decodeY x = case Y.decodeEither' x of
       Right y  -> return y
       Left exc -> logAndThrowM exc
 
+instance (FromJSON a) => DeserializesWith JSONSerial a where
+  getSerialReaders _srl = mempty
+    { _serialReadersFromAtomic =
+        fromAtomicFn [Nothing] parseJSONEither -- From A.Value, doesn't need an
+                                               -- extension
+        <> fromAtomicJSON ["json"]                                               
+        <> fromAtomicYAML ["yaml","yml"]
+    , _serialReadersFromStream =
+        fromJSONStream ["json"]
+        -- TODO: Add reading from a stream of JSON objects (which would
+        -- therefore be considered a JSON array of objects?)
+        <>
+        fromYAMLStream ["yaml","yml"] }
+
+instance (FromJSON a) => DeserializesWith JSONSerialWithExt a where
+  getSerialReaders (JSONSerialWithExt ext) = mempty
+    { _serialReadersFromAtomic = fromAtomicJSON [ext]
+    , _serialReadersFromStream = fromJSONStream [ext] }
+  getSerialReaders (YAMLSerialWithExt ext) = mempty
+    { _serialReadersFromAtomic = fromAtomicYAML [ext]
+    , _serialReadersFromStream = fromYAMLStream [ext] }
+    
 -- * Serialization to/from CSV
 
 -- | Just packs data that can be converted to CSV with a header
