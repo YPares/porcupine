@@ -60,6 +60,8 @@ extra-deps:
   commit: 8089be47b5a075d6092c0dd4e0e0fc50b79c7d44
   subdirs:
     - funflow
+- kqueue-0.2@sha256:47d6c1083e60d55a64511c944629a507bda70906e5317bb6f906d64b2cb78a9f
+
 
 # Override default flag values for local packages and extra-deps
 # flags: {}

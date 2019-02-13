@@ -1,7 +1,7 @@
 variables: {}
 data:
   Settings:
-    users: 0..1
+    stocks: 0..1
   Inputs: {}
   Outputs: {}
 locations:
