@@ -74,7 +74,7 @@ genericAesonBasedConfigurationReader configFile shortcuts =
     (\origCfg overrides ->
        let (warnings, result) =
              overrideConfigFromKeyValues origCfg overrides
-       in (warnings, join $ parseJSONEither <$> result))
+       in (warnings, parseJSONEither =<< result))
   where
     genParser = foldr1 (liftA2 (++)) overrideArgs
     mkOption (l,s,h,f) = f <$>
