@@ -69,6 +69,7 @@ instance (MonadResource m, MonadMask m)
     _ <- httpNoBody $
       req & setRequestMethod (TE.encodeUtf8 $ writeMethod l)
           & setRequestBodyLBS bs
+          & setRequestCheckStatus
           & maybeUpdate
             (setRequestHeader "Content-type" . (:[]))
             (TE.encodeUtf8 <$> acceptContentType l)
