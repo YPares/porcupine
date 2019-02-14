@@ -1,0 +1,10 @@
+variables: {}
+data:
+  Settings:
+    stocks: 0..1
+  Inputs: {}
+  Outputs: {}
+locations:
+  /Inputs/Stock: _-{id}.json
+  /: porcupine-core/examples/example2/data
+  /Outputs/Analysis: _-{id}.json

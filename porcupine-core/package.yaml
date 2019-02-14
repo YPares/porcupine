@@ -64,7 +64,12 @@ library:
 
 executables:
   example1:
-    source-dirs: examples
+    source-dirs: examples/example1
     main: Example1.hs
+    dependencies:
+      - porcupine-core
+  example2:
+    source-dirs: examples/example2
+    main: Example2.hs
     dependencies:
       - porcupine-core
