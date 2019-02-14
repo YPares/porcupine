@@ -307,7 +307,7 @@ fromJSONStream exts = fromStreamFn (map Just exts) $ \strm -> do
   where
     decodeJ x = case A.eitherDecodeStrict x of
       Right y  -> return y
-      Left msg -> throwWithPrefix msg    
+      Left msg -> throwWithPrefix msg
 
 -- | From a stream of strict bytestrings of YAML
 fromYAMLStream exts = fromStreamFn (map Just exts) $ \strm -> do
@@ -323,7 +323,7 @@ instance (FromJSON a) => DeserializesWith JSONSerial a where
     { _serialReadersFromAtomic =
         fromAtomicFn [Nothing] parseJSONEither -- From A.Value, doesn't need an
                                                -- extension
-        <> fromAtomicJSON ["json"]                                               
+        <> fromAtomicJSON ["json"]
         <> fromAtomicYAML ["yaml","yml"]
     , _serialReadersFromStream =
         fromJSONStream ["json"]
@@ -339,7 +339,7 @@ instance (FromJSON a) => DeserializesWith JSONSerialWithExt a where
   getSerialReaders (YAMLSerialWithExt ext) = mempty
     { _serialReadersFromAtomic = fromAtomicYAML [ext]
     , _serialReadersFromStream = fromYAMLStream [ext] }
-    
+
 -- * Serialization to/from CSV
 
 -- | Just packs data that can be converted to CSV with a header
