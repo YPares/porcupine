@@ -8,6 +8,7 @@ module System.TaskPipeline.Repetition.Fold
   , RepInfo(..)
   , HasTaskRepetitionIndex(..)
   , ptaskFold
+  , ptaskFold_
   , unsafeGeneralizeM
   , unsafeGeneralizeFnM
   , foldlTask
@@ -61,6 +62,16 @@ ptaskFold step =
   FoldA (arr onInput >>> step) id id
   where
     onInput (Pair acc x) = (acc,x)
+
+-- | Creates a 'FoldA' that will never alter its accumulator's initial value,
+-- just pass it around
+ptaskFold_ :: PTask m (acc,input) ()
+           -> FoldA (PTask m) acc input ()
+ptaskFold_ task =
+  rmap (const ()) $
+  ptaskFold $ proc (acc,input) -> do
+    task -< (acc,input)
+    returnA -< acc
 
 newtype PairWithRepeatable x a = PWR { unPWR :: Pair x a }
 
@@ -121,3 +132,8 @@ premapMaybe f (FoldA step start done) = FoldA step' start done
           case f input of
             Nothing     -> returnA -< acc
             Just input' -> run -< Pair acc input')
+
+data DelayedFoldAcc accT accF b
+  = DFA { dfaTaskAcc     :: !accT
+        , dfaFoldAcc     :: !accF
+        , dfaLastTaskRes :: !(Maybe b) }
