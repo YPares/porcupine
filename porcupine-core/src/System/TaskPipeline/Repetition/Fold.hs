@@ -132,8 +132,3 @@ premapMaybe f (FoldA step start done) = FoldA step' start done
           case f input of
             Nothing     -> returnA -< acc
             Just input' -> run -< Pair acc input')
-
-data DelayedFoldAcc accT accF b
-  = DFA { dfaTaskAcc     :: !accT
-        , dfaFoldAcc     :: !accF
-        , dfaLastTaskRes :: !(Maybe b) }

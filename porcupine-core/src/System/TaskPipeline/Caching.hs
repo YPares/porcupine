@@ -67,8 +67,7 @@ unsafeLiftToPTaskAndWrite
 unsafeLiftToPTaskAndWrite props inputHashablePart vf action = proc input -> do
   accessor <- getVFileDataAccessor [ATWrite] vf -< ()
   locs <- throwStringPTask -< daLocsAccessed accessor
-  output <- unsafeLiftToPTask' props' cached -< (input,map locToJ locs,accessor)
-  unsafeLiftToPTask afterCached -< (output,accessor)
+  throwPTask <<< unsafeLiftToPTask' props' cached -< (input,map locToJ locs,accessor)
   where
     locToJ :: SomeLoc m -> Value
     locToJ (SomeGLoc l) = toJSON l
@@ -80,11 +79,6 @@ unsafeLiftToPTaskAndWrite props inputHashablePart vf action = proc input -> do
           daPerformWrite accessor outputForVFile
           return $ Right outputForStore
         Left err -> return $ Left (err::SomeException)
-
-    afterCached (output,accessor) =
-      case output of
-        Right o  -> return o
-        Left err -> throwWithPrefix $ displayException err
 
     props' = props { cache = cache'
                    , mdpolicy = updMdw <$> mdpolicy props }
