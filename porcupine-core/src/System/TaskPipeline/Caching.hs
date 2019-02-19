@@ -23,7 +23,7 @@ import           System.TaskPipeline.PTask
 import           System.TaskPipeline.ResourceTree
 import           System.TaskPipeline.VirtualFileAccess
 
-import           Prelude                               hiding ((.))
+import           Prelude                               hiding (id, (.))
 
 
 -- | For when the result of the lifted function just needs to be written, not
@@ -41,7 +41,7 @@ unsafeLiftToPTaskAndWrite_ props vf f =
   unsafeLiftToPTaskAndWrite props id vf $ fmap (,()) . f
 {-# INLINE unsafeLiftToPTaskAndWrite_ #-}
 
-    
+
 -- | Similar to unsafeLiftToPTask', but caches a write action of the result
 -- too. In this case we use the filepath bound to the VirtualFile to compute the
 -- hash. That means that if the VirtualFile is bound to something else, the step
