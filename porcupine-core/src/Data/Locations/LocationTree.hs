@@ -43,7 +43,7 @@ module Data.Locations.LocationTree
 where
 
 import           Control.Applicative
-import           Control.Lens        hiding ((<.>))
+import           Control.Lens
 import           Data.Aeson
 import           Data.Binary
 import           Data.Hashable

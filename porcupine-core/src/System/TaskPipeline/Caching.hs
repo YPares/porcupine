@@ -22,7 +22,7 @@ import           System.TaskPipeline.PTask
 import           System.TaskPipeline.ResourceTree
 import           System.TaskPipeline.VirtualFileAccess
 
-import           Prelude                               hiding (id, (.))
+import           Prelude                               hiding ((.))
 
 
 -- | Similar to 'wrap' from 'ArrowFlow', but caches a part of the result

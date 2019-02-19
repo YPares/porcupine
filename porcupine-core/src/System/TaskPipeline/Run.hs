@@ -31,7 +31,7 @@ import           Data.Locations.Accessors
 import           Data.Maybe
 import           Data.Vinyl.Derived                 (HasField, rlensf)
 import           Katip
-import           Prelude                            hiding (id, (.))
+import           Prelude                            hiding ((.))
 import           System.Environment                 (lookupEnv)
 import           System.Exit
 import           System.FilePath                    ((</>))

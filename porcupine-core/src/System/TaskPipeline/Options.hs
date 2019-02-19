@@ -25,7 +25,7 @@ import           GHC.TypeLits                          (KnownSymbol)
 import           System.TaskPipeline.PTask
 import           System.TaskPipeline.VirtualFileAccess
 
-import           Prelude                               hiding (id, (.))
+import           Prelude                               hiding (id)
 
 
 -- | Add a set of options (as a DocRec) to the 'LocationTree', in order to

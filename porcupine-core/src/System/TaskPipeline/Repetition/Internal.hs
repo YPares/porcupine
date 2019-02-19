@@ -9,7 +9,7 @@ module System.TaskPipeline.Repetition.Internal
   ) where
 
 import           Control.Category
-import           Control.Lens                       hiding ((:>), (.=))
+import           Control.Lens                       hiding ((:>))
 import           Control.Monad
 import           Data.Aeson
 import qualified Data.HashMap.Strict                as HM

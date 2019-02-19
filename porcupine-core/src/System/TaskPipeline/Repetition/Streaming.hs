@@ -10,11 +10,11 @@ module System.TaskPipeline.Repetition.Streaming
 
 import           Control.Arrow
 import           Control.Category
-import           Control.Lens                            hiding ((:>), (.=))
+import           Control.Lens                            hiding ((:>))
 import           Control.Monad
 import           Data.Locations
 import           Katip
-import           Prelude                                 hiding (id, (.))
+import           Prelude                                 hiding ((.))
 import           Streaming                               (Of (..), Stream)
 import qualified Streaming.Prelude                       as S
 import           System.TaskPipeline.PTask

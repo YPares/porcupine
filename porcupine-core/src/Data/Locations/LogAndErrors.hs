@@ -15,7 +15,7 @@ module Data.Locations.LogAndErrors
 
 import           Control.Exception.Safe
 import qualified Data.Text              as T
-import           Katip                  hiding (logMsg)
+import           Katip
 
 
 -- | An error when running a pipeline of tasks

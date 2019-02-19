@@ -23,7 +23,7 @@ import           GHC.Generics
 import           Porcupine.Run
 import           Porcupine.Serials
 import           Porcupine.Tasks
-import           Prelude                       hiding (id, (.))
+import           Prelude                       hiding ((.))
 
 import           Data.Locations.Accessors.HTTP
 

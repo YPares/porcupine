@@ -18,7 +18,7 @@ module System.TaskPipeline.Repetition.Fold
 import           Control.Arrow.FoldA
 import           Control.Lens                            hiding (Fold)
 import           Data.Locations
-import           Prelude                                 hiding (id, (.))
+import           Prelude                                 hiding (id)
 import           Streaming                               (Of (..), Stream)
 import qualified Streaming.Prelude                       as S
 import           System.TaskPipeline.PTask

@@ -54,7 +54,7 @@
 module System.TaskPipeline.ResourceTree where
 
 import           Control.Exception.Safe
-import           Control.Lens                            hiding ((:>), (<.>))
+import           Control.Lens                            hiding ((:>))
 import           Control.Monad
 import           Data.Aeson
 import qualified Data.ByteString                         as Strict
