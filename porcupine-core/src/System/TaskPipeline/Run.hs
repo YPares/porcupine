@@ -165,16 +165,18 @@ bindResourceTreeAndRun (NoConfig _ root) accessorsRec tree f =
   where
     rtam = ResourceTreeAndMappings tree (Left root) mempty
     (accessors, argsRec) = splitAccessorsFromArgRec accessorsRec
-bindResourceTreeAndRun (FullConfig progName defConfigFile defRoot) accessorsRec tree f =
-  withCliParser progName "Run a task pipeline" getParser run
+bindResourceTreeAndRun (FullConfig progName defConfigFileURL defRoot) accessorsRec tree f =
+  tryGetConfigFileOnCLI $ \mbConfigFileURL -> do
+    let configFileURL = fromMaybe defConfigFileURL mbConfigFileURL
+    mbConfig <- tryReadConfigFile configFileURL
+    parser <- pipelineCliParser rscTreeConfigurationReader progName $
+              BaseInputConfig (Just configFileURL) mbConfig
+                              (ResourceTreeAndMappings tree (Left defRoot) mempty)
+    withCliParser progName "Run a task pipeline" parser run
   where
-    getParser mbConfigFile =
-      pipelineCliParser rscTreeConfigurationReader progName
-        (fromMaybe defConfigFile mbConfigFile)
-        (ResourceTreeAndMappings tree (Left defRoot) mempty)
+    (accessors, argsRec) = splitAccessorsFromArgRec accessorsRec
     run rtam cmd lsp performConfigWrites =
-      let (accessors, argsRec) = splitAccessorsFromArgRec accessorsRec
-          -- We change the katip runner, from the options we got from CLI:
+      let -- We change the katip runner, from the options we got from CLI:
           argsRec' = argsRec & set (rlensf #katip)
             (ContextRunner (runLogger progName lsp))
       in
