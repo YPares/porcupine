@@ -22,7 +22,6 @@ module System.TaskPipeline.Run
   , runPipelineCommandOnPTask
   ) where
 
-import qualified Control.Exception.Safe             as SE
 import           Control.Lens
 import           Control.Monad.IO.Class
 import           Control.Monad.ReaderSoup
@@ -181,8 +180,8 @@ bindResourceTreeAndRun (FullConfig progName defConfigFileURL defRoot) accessorsR
                     readBSS loc decodeYAMLStream_
     parser <- pipelineCliParser rscTreeConfigurationReader progName $
               BaseInputConfig (case configFileSource of
-                                 ConfigFileURL (LocalFile f) -> Just f
-                                 _ -> Nothing)
+                                 ConfigFileURL (LocalFile filep) -> Just filep
+                                 _                               -> Nothing)
                               mbConfig
                               (ResourceTreeAndMappings tree (Left defRoot) mempty)
     withCliParser progName "Run a task pipeline" parser run

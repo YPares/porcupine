@@ -230,7 +230,7 @@ pureCliParser progName baseInputConfig cfgCLIParsing cmds defCmd =
          pure (Just (defCmd, "")))
     <*> (case bicSourceFile baseInputConfig of
            Nothing -> pure False
-           Just f  -> 
+           Just f  ->
              switch ( long "save"
                    <> short 's'
                    <> help ("Save overrides in the " <> (f^.locFilePathAsRawFilePath) <> " before running.") ))

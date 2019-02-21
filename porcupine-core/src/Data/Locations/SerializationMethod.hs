@@ -325,7 +325,7 @@ decodeYAMLStream_ :: (LogThrow m, FromJSON a) => BSS.ByteString m () -> m a
 decodeYAMLStream_ strm = do
   (v :> _) <- decodeYAMLStream strm
   return v
-      
+
 instance (FromJSON a) => DeserializesWith JSONSerial a where
   getSerialReaders _srl = mempty
     { _serialReadersFromAtomic =
