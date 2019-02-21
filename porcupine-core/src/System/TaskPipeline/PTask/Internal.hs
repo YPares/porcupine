@@ -64,9 +64,6 @@ import           Path
 import           System.TaskPipeline.ResourceTree
 
 
-type ReqTree = LocationTree VirtualFileNode
-type DataAccessTree m = LocationTree (DataAccessNode m)
-
 -- | PTask functions like mappingOverStream make necessary to recursively run
 -- some flows. Until we find a better solution than to run flows in flows, this
 -- is how we do it. These are the arguments to
@@ -126,7 +123,7 @@ execRunnablePTask
 -- complete requirements of the pipeline.
 newtype PTask m a b = PTask
   (AppArrow
-    (Writer ReqTree)  -- The writer layer accumulates the requirements. It will
+    (Writer VirtualResourceTree)  -- The writer layer accumulates the requirements. It will
                       -- be used only as an applicative.
     (RunnablePTask m)
     a b)
@@ -225,8 +222,8 @@ runnableWithoutReqs = PTask . appArrow
 
 -- | An Iso to the requirements and the runnable part of a 'PTask'
 splittedPTask :: Iso (PTask m a b) (PTask m a' b')
-                     (ReqTree, RunnablePTask m a b)
-                     (ReqTree, RunnablePTask m a' b')
+                     (VirtualResourceTree, RunnablePTask m a b)
+                     (VirtualResourceTree, RunnablePTask m a' b')
 splittedPTask = iso to_ from_
   where
     to_ (PTask (AppArrow wrtrAct)) = swap $ runWriter wrtrAct

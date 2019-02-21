@@ -186,7 +186,7 @@ type VirtualResourceTree = LocationTree VirtualFileNode
 type PhysicalResourceTree m = LocationTree (PhysicalFileNode m)
 
 -- | The tree manipulated by tasks when they actually run
-type DataResourceTree m = LocationTree (DataAccessNode m)
+type DataAccessTree m = LocationTree (DataAccessNode m)
 
 instance HasDefaultMappingRule VirtualFileNode where
   getDefaultLocShortcut VirtualFileNode{..} = getDefaultLocShortcut vfnodeFile
