@@ -14,7 +14,8 @@ module System.TaskPipeline.CLI
   , BaseInputConfig(..)
   , PostParsingAction(..)
   , PreRun(..)
-  , tryReadConfigFile
+  , ConfigFileSource(..)
+  , tryReadConfigFileSource
   , cliYamlParser
   , execCliParser
   , withCliParser
@@ -22,7 +23,7 @@ module System.TaskPipeline.CLI
 
   , pipelineConfigMethodProgName
   , pipelineConfigMethodDefRoot
-  , tryGetConfigFileOnCLI
+  , withConfigFileSourceFromCLI
   ) where
 
 import           Control.Lens
@@ -115,29 +116,57 @@ withCliParser progName progDesc_ cliParser f = do
        _ -> error $ "Config file has unknown format"
      logFM NoticeS $ logStr $ "Wrote file '" ++ rawFile ++ "'"
 
+data ConfigFileSource = YAMLStdin | JSONStdin | ConfigFileURL Loc
+
+-- | Tries to read a yaml filepath on CLI, then a JSON path, then command line
+-- args as expected by the @callParser@ argument.
+withConfigFileSourceFromCLI
+  :: (Maybe ConfigFileSource -> IO b)  -- If a filepath has been read as first argument
+  -> IO b
+withConfigFileSourceFromCLI f = do
+  cliArgs <- liftIO getArgs
+  case cliArgs of
+    [] -> f Nothing
+    filename : rest -> do
+      case parseURLLikeLoc filename of
+        Left _ -> f Nothing
+        Right (LocalFile (LocFilePath "-" ext)) -> withArgs rest $ case map toLower ext of
+          ""     -> f $ Just JSONStdin
+          "json" -> f $ Just JSONStdin
+          "yaml" -> f $ Just YAMLStdin
+          "yml"  -> f $ Just YAMLStdin
+          _ -> error $ filename ++ ": Only JSON or YAML config can be read from stdin"
+        Right loc | getLocType loc == "" -> f Nothing
+                        -- No extension, therefore probably not a filepath
+                  | allowedExt (getLocType loc) -> withArgs rest $ f $ Just $ ConfigFileURL loc
+                  | otherwise -> error $ filename ++ ": Only JSON or YAML cofiles allowed"
+  where
+    allowedExt = (`elem` ["yaml","yml","json"]) . map toLower
+
+tryReadConfigFileSource :: (FromJSON cfg)
+                        => ConfigFileSource -> IO (Maybe cfg)
+tryReadConfigFileSource configFileSource =
+  case configFileSource of
+    JSONStdin ->
+      Just <$> (LBS.hGetContents stdin >>= failLeft . A.eitherDecode)
+    YAMLStdin ->
+      Just <$> (BS.hGetContents stdin >>= Y.decodeThrow)
+    (ConfigFileURL (LocalFile lfp)) -> do
+      let p = lfp ^. locFilePathAsRawFilePath
+      yamlFound <- doesFileExist p
+      if yamlFound
+        then Just <$> Y.decodeFileThrow p
+        else return Nothing
+    _ -> error "tryReadConfigFileSource: Only stdin or local files supported"
+  where
+    failLeft (Left s)  = error s
+    failLeft (Right x) = return x
+
 data BaseInputConfig cfg = BaseInputConfig
   { bicSourceFile    :: Maybe LocalFilePath
   , bicLoadedConfig  :: Maybe Y.Value
   , bicDefaultConfig :: cfg
   }
-
-tryReadConfigFile :: (FromJSON cfg)
-                  => LocalFilePath -> IO (Maybe cfg)
-tryReadConfigFile configFile =
-  case configFile of
-    LocFilePath "-" ext | ext == "" || map toLower ext == "json" ->
-      Just <$> (LBS.hGetContents stdin >>= failLeft . A.eitherDecode)
-    LocFilePath "-" ext | map toLower ext == "yaml" || map toLower ext == "yml" ->
-      Just <$> (BS.hGetContents stdin >>= Y.decodeThrow)
-    _ -> do
-      yamlFound <- doesFileExist p
-      if yamlFound
-        then Just <$> Y.decodeFileThrow p
-        else return Nothing
-  where
-    p = configFile ^. locFilePathAsRawFilePath
-    failLeft (Left s)  = error s
-    failLeft (Right x) = return x
 
 -- | Creates a command line parser that will return an action returning the
 -- configuration and the chosen subcommand or Nothing if the user simply asked
@@ -188,21 +217,22 @@ pureCliParser progName baseInputConfig cfgCLIParsing cmds defCmd =
          (progDesc $ "Write a default configuration file in " <> (f^.locFilePathAsRawFilePath))))
   <|>
   handleOptions progName baseInputConfig cliOverriding
-    <$> ((case bicSourceFile baseInputConfig of
-           Nothing -> empty
-           Just f -> subparser $ 
-             command "save"
-              (info (pure Nothing)
-               (progDesc $ "Just save the command line overrides in " <> (f^.locFilePathAsRawFilePath)))
-             <>
-             foldMap
-              (\(cmdParser, cmdShown, cmdInfo) ->
-                 command cmdShown
-                   (info (Just . (,cmdShown) <$> cmdParser)
-                     (progDesc cmdInfo)))
-              cmds)
-          <|>
-          pure (Just (defCmd, "")))
+    <$> ((subparser $
+           (case bicSourceFile baseInputConfig of
+              Nothing -> mempty
+              Just f ->
+                command "save" $
+                  info (pure Nothing) $
+                       progDesc $ "Just save the command line overrides in " <> (f^.locFilePathAsRawFilePath))
+           <>
+           foldMap
+             (\(cmdParser, cmdShown, cmdInfo) ->
+                 command cmdShown $
+                   info (Just . (,cmdShown) <$> cmdParser) $
+                        progDesc cmdInfo)
+             cmds)
+         <|>
+         pure (Just (defCmd, "")))
     <*> (case bicSourceFile baseInputConfig of
            Nothing -> pure False
            Just f  -> 
@@ -360,23 +390,6 @@ mergeWithDefault path (Object o1) (Object o2) =
                       (fmap pure o2)
   in (warnings ++ subWarnings, Object merged)
 mergeWithDefault _ _ v = pure v
-
--- | Tries to read a yaml filepath on CLI, then a JSON path, then command line
--- args as expected by the @callParser@ argument.
-tryGetConfigFileOnCLI
-  :: (Maybe LocalFilePath -> IO b)  -- If a filepath has been read as first argument
-  -> IO b
-tryGetConfigFileOnCLI callParser = do
-  cliArgs <- liftIO getArgs
-  case cliArgs of
-    filename : rest
-      | let localFilePath = filename ^. from locFilePathAsRawFilePath
-            name = localFilePath ^. pathWithoutExt
-            ext = map toLower $ localFilePath ^. pathExtension,
-        ext == "yaml" || ext == "json" || (name == "-" && ext == "")
-      -> withArgs rest $
-           callParser $ Just localFilePath
-    _ -> callParser Nothing
 
 parseShowLocTree :: (Monoid r) => Parser (PipelineCommand r)
 parseShowLocTree = ShowLocTree <$>

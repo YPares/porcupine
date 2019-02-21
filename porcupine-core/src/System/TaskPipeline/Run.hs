@@ -166,11 +166,14 @@ bindResourceTreeAndRun (NoConfig _ root) accessorsRec tree f =
     rtam = ResourceTreeAndMappings tree (Left root) mempty
     (accessors, argsRec) = splitAccessorsFromArgRec accessorsRec
 bindResourceTreeAndRun (FullConfig progName defConfigFileURL defRoot) accessorsRec tree f =
-  tryGetConfigFileOnCLI $ \mbConfigFileURL -> do
-    let configFileURL = fromMaybe defConfigFileURL mbConfigFileURL
-    mbConfig <- tryReadConfigFile configFileURL
+  withConfigFileSourceFromCLI $ \mbConfigFileSource -> do
+    let configFileSource = fromMaybe (ConfigFileURL (LocalFile defConfigFileURL)) mbConfigFileSource
+    mbConfig <- tryReadConfigFileSource configFileSource
     parser <- pipelineCliParser rscTreeConfigurationReader progName $
-              BaseInputConfig (Just configFileURL) mbConfig
+              BaseInputConfig (case configFileSource of
+                                 ConfigFileURL (LocalFile f) -> Just f
+                                 _ -> Nothing)
+                              mbConfig
                               (ResourceTreeAndMappings tree (Left defRoot) mempty)
     withCliParser progName "Run a task pipeline" parser run
   where
