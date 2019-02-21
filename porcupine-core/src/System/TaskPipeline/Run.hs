@@ -168,7 +168,7 @@ bindResourceTreeAndRun (NoConfig _ root) accessorsRec tree f =
 bindResourceTreeAndRun (FullConfig progName defConfigFileURL defRoot) accessorsRec tree f =
   withConfigFileSourceFromCLI $ \mbConfigFileSource -> do
     let configFileSource = fromMaybe (ConfigFileURL (LocalFile defConfigFileURL)) mbConfigFileSource
-    mbConfig <- tryReadConfigFileSource configFileSource
+    mbConfig <- tryReadConfigFileSource configFileSource (const $ error "No remote files")
     parser <- pipelineCliParser rscTreeConfigurationReader progName $
               BaseInputConfig (case configFileSource of
                                  ConfigFileURL (LocalFile f) -> Just f

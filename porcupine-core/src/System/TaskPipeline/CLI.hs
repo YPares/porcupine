@@ -109,14 +109,14 @@ withCliParser progName progDesc_ cliParser f = do
      case configFile of
        LocFilePath "-" _ ->
          error "Config was read from stdin, cannot overwrite it"
-       LocFilePath _ "yaml" ->
+       LocFilePath _ e | e `elem` ["yaml","yml"] ->
          liftIO $ Y.encodeFile rawFile cfg
        LocFilePath _ "json" ->
          liftIO $ LBS.writeFile rawFile $ A.encodePretty cfg
        _ -> error $ "Config file has unknown format"
      logFM NoticeS $ logStr $ "Wrote file '" ++ rawFile ++ "'"
 
-data ConfigFileSource = YAMLStdin | JSONStdin | ConfigFileURL Loc
+data ConfigFileSource = YAMLStdin | ConfigFileURL Loc
 
 -- | Tries to read a yaml filepath on CLI, then a JSON path, then command line
 -- args as expected by the @callParser@ argument.
@@ -130,12 +130,10 @@ withConfigFileSourceFromCLI f = do
     filename : rest -> do
       case parseURLLikeLoc filename of
         Left _ -> f Nothing
-        Right (LocalFile (LocFilePath "-" ext)) -> withArgs rest $ case map toLower ext of
-          ""     -> f $ Just JSONStdin
-          "json" -> f $ Just JSONStdin
-          "yaml" -> f $ Just YAMLStdin
-          "yml"  -> f $ Just YAMLStdin
-          _ -> error $ filename ++ ": Only JSON or YAML config can be read from stdin"
+        Right (LocalFile (LocFilePath "-" ext)) ->
+          if ext == "" || allowedExt ext
+          then withArgs rest $ f $ Just YAMLStdin
+          else error $ filename ++ ": Only JSON or YAML config can be read from stdin"
         Right loc | getLocType loc == "" -> f Nothing
                         -- No extension, therefore probably not a filepath
                   | allowedExt (getLocType loc) -> withArgs rest $ f $ Just $ ConfigFileURL loc
@@ -144,23 +142,18 @@ withConfigFileSourceFromCLI f = do
     allowedExt = (`elem` ["yaml","yml","json"]) . map toLower
 
 tryReadConfigFileSource :: (FromJSON cfg)
-                        => ConfigFileSource -> IO (Maybe cfg)
-tryReadConfigFileSource configFileSource =
+                        => ConfigFileSource -> (Loc -> IO (Maybe cfg)) -> IO (Maybe cfg)
+tryReadConfigFileSource configFileSource ifRemote =
   case configFileSource of
-    JSONStdin ->
-      Just <$> (LBS.hGetContents stdin >>= failLeft . A.eitherDecode)
     YAMLStdin ->
       Just <$> (BS.hGetContents stdin >>= Y.decodeThrow)
-    (ConfigFileURL (LocalFile lfp)) -> do
+    ConfigFileURL (LocalFile lfp) -> do
       let p = lfp ^. locFilePathAsRawFilePath
       yamlFound <- doesFileExist p
       if yamlFound
         then Just <$> Y.decodeFileThrow p
         else return Nothing
-    _ -> error "tryReadConfigFileSource: Only stdin or local files supported"
-  where
-    failLeft (Left s)  = error s
-    failLeft (Right x) = return x
+    ConfigFileURL remoteLoc -> ifRemote remoteLoc
 
 data BaseInputConfig cfg = BaseInputConfig
   { bicSourceFile    :: Maybe LocalFilePath
