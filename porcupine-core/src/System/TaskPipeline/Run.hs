@@ -22,6 +22,7 @@ module System.TaskPipeline.Run
   , runPipelineCommandOnPTask
   ) where
 
+import qualified Control.Exception.Safe             as SE
 import           Control.Lens
 import           Control.Monad.IO.Class
 import           Control.Monad.ReaderSoup
@@ -168,9 +169,16 @@ bindResourceTreeAndRun (NoConfig _ root) accessorsRec tree f =
 bindResourceTreeAndRun (FullConfig progName defConfigFileURL defRoot) accessorsRec tree f =
   withConfigFileSourceFromCLI $ \mbConfigFileSource -> do
     let configFileSource = fromMaybe (ConfigFileURL (LocalFile defConfigFileURL)) mbConfigFileSource
-    mbConfig <- tryReadConfigFileSource configFileSource $ \remoteLoc ->
-      -- If the file is remote, we open a temporary pipeline:
-      error "No remote files"
+    mbConfig <- tryReadConfigFileSource configFileSource $ \remoteURL ->
+                  consumeSoup argsRec $ do
+                    -- If config file is remote, we use the accessors and run
+                    -- the readerSoup with the defaut katip params
+                    SomeGLoc loc <- flip runReaderT accessors $
+                                    resolvePathToSomeLoc $ show remoteURL
+                      -- TODO: Implement locExists in each accessor and use it
+                      -- here. For now we fail if given a remote config that
+                      -- doesn't exist.
+                    readBSS loc decodeYAMLStream_
     parser <- pipelineCliParser rscTreeConfigurationReader progName $
               BaseInputConfig (case configFileSource of
                                  ConfigFileURL (LocalFile f) -> Just f

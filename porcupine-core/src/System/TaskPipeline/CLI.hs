@@ -142,7 +142,7 @@ withConfigFileSourceFromCLI f = do
     allowedExt = (`elem` ["yaml","yml","json"]) . map toLower
 
 tryReadConfigFileSource :: (FromJSON cfg)
-                        => ConfigFileSource -> (Loc -> IO (Maybe cfg)) -> IO (Maybe cfg)
+                        => ConfigFileSource -> (Loc -> IO cfg) -> IO (Maybe cfg)
 tryReadConfigFileSource configFileSource ifRemote =
   case configFileSource of
     YAMLStdin ->
@@ -153,7 +153,9 @@ tryReadConfigFileSource configFileSource ifRemote =
       if yamlFound
         then Just <$> Y.decodeFileThrow p
         else return Nothing
-    ConfigFileURL remoteLoc -> ifRemote remoteLoc
+    ConfigFileURL remoteLoc -> -- If config is remote, it must always be present
+                               -- for now
+      Just <$> ifRemote remoteLoc
 
 data BaseInputConfig cfg = BaseInputConfig
   { bicSourceFile    :: Maybe LocalFilePath
