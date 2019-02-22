@@ -83,9 +83,11 @@ dataSource :: [LocationTreePathItem] -> SerialsFor a b -> DataSource b
 ## Tasks
 
 A `PTask` is an arrow, that is to say a computation with an input and an
-output. Here we just call these computation "tasks". PTasks run in a base monad
+output. Here we just call these computations "tasks". PTasks run in a base monad
 `m` that can depend on the application but that should always implement
 `KatipContext` (for logging), `MonadCatch`, `MonadResource` and `MonadUnliftIO`.
+However you usually don't have to worry about that, as porcupine takes care of these
+dependencies for you.
 
 This is how we create a task that reads the `myInput` VirtualFile we defined
 previously:
