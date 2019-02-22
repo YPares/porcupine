@@ -13,8 +13,8 @@
 {-# LANGUAGE ScopedTypeVariables       #-}
 {-# LANGUAGE StandaloneDeriving        #-}
 {-# LANGUAGE TemplateHaskell           #-}
-{-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE TupleSections             #-}
+{-# LANGUAGE TypeOperators             #-}
 {-# OPTIONS_GHC -Wall #-}
 
 module Data.Locations.SerializationMethod where
@@ -30,12 +30,13 @@ import           Data.Char                   (ord)
 import qualified Data.Csv                    as Csv
 import qualified Data.Csv.Builder            as CsvBuilder
 -- import qualified Data.Csv.Parser             as CsvParser
+import           Codec.Compression.Zlib      as Zlib
 import           Data.DocRecord
 import           Data.DocRecord.OptParse     (RecordUsableWithCLI)
 import qualified Data.HashMap.Strict         as HM
-import           Data.Maybe
 import           Data.Locations.LocVariable
 import           Data.Locations.LogAndErrors
+import           Data.Maybe
 import           Data.Monoid                 (First (..))
 import qualified Data.Text                   as T
 import qualified Data.Text.Encoding          as TE
@@ -48,7 +49,6 @@ import qualified Data.Yaml                   as Y
 import           Streaming
 import qualified Streaming.Prelude           as S
 import qualified Streaming.Zip               as SZip
-import           Codec.Compression.Zlib      as Zlib
 
 
 -- | A file extension
@@ -591,21 +591,21 @@ eraseDeserials (SerialsFor sers _ ext rk) = SerialsFor sers mempty ext rk
 
 -- | Wraps all the functions in the serial so for each extension .xxx supported,
 -- we know also support .xxxzip. Doesn't change the default extension
-addZipSerials :: SerialsFor a b -> SerialsFor a b
-addZipSerials = over serialWriters (over serialWritersToAtomic editTA)
+addZlibSerials :: SerialsFor a b -> SerialsFor a b
+addZlibSerials = over serialWriters (over serialWritersToAtomic editTA)
               . over serialReaders (over serialReadersFromAtomic editFA
                                   . over serialReadersFromStream editFS)
   where
     editTA hm = (hm <>) $ mconcat $ flip map (allToAtomicFnsWithType hm) $
       \(ext, f) ->
-        toAtomicFn [Just $ ext <> "zip"] $ Zlib.compress . f  -- Lazy bytestring
+        toAtomicFn [Just $ ext <> "zlib"] $ Zlib.compress . f  -- Lazy bytestring
     editFA hm = (hm <>) $ mconcat $ flip map (allFromAtomicFnsWithType hm) $
       \(ext, f) ->
-        fromAtomicFn [Just $ ext <> "zip"] $
+        fromAtomicFn [Just $ ext <> "zlib"] $
           f . LBS.toStrict . Zlib.decompress . LBS.fromStrict  -- Strict bytestring
     editFS hm = (hm <>) $ mconcat $ flip map (allFromStreamFnsWithType hm) $
       \(ext, FromStreamFn'' f) ->
-        fromStreamFn [Just $ ext <> "zip"] $
+        fromStreamFn [Just $ ext <> "zlib"] $
           f . BSS.toChunks . SZip.decompress SZip.defaultWindowBits . BSS.fromChunks
 
 -- -- | Traverses to the repetition keys stored in the access functions of a
