@@ -114,7 +114,7 @@ pipeline, your application just needs to call:
 
 ```haskell
 main :: IO ()
-main = runPipelineTask cfg mainTask ()
+main = runPipelineTask_ cfg mainTask ()
   where
     cfg = FullConfig "MyApp" "pipeline-config.yaml" "./default-root-dir"
 ```
@@ -163,13 +163,13 @@ persons:
   have to know how the data is represented, just that it exists. She just reuses
   the serials written by the storage developper and targets the _tasks_
   framework.
-- The _software architect_ work will start once we need to bump things up a
+- The _devops_ work will start once we need to bump things up a
   bit. Once we have iterated several times over our analyses and simulations and
   want to have things running in a bigger scale, then it's time for the pipeline
   to move from the scientist's puny laptop and go bigger. This is time to
   "patch" the pipeline, make it run in different context, in the cloud, behind a
   scheduler, as jobs in a task queue reading its inputs from all kinds of
-  databases. The software architect will target the _resource tree_ framework
+  databases. The devops will target the _resource tree_ framework
   (possibly without ever recompiling the pipeline, only by adjusting its
   configuration from the outside)
 
