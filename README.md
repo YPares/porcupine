@@ -114,7 +114,7 @@ pipeline, your application just needs to call:
 
 ```haskell
 main :: IO ()
-main = runPipelineTask_ cfg mainTask ()
+main = runPipelineTask_ cfg mainTask
   where
     cfg = FullConfig "MyApp" "pipeline-config.yaml" "./default-root-dir"
 ```
