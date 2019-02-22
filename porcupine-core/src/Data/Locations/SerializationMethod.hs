@@ -13,6 +13,7 @@
 {-# LANGUAGE ScopedTypeVariables       #-}
 {-# LANGUAGE StandaloneDeriving        #-}
 {-# LANGUAGE TemplateHaskell           #-}
+{-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE TupleSections             #-}
 {-# OPTIONS_GHC -Wall #-}
 
@@ -32,6 +33,7 @@ import qualified Data.Csv.Builder            as CsvBuilder
 import           Data.DocRecord
 import           Data.DocRecord.OptParse     (RecordUsableWithCLI)
 import qualified Data.HashMap.Strict         as HM
+import           Data.Maybe
 import           Data.Locations.LocVariable
 import           Data.Locations.LogAndErrors
 import           Data.Monoid                 (First (..))
@@ -45,15 +47,19 @@ import           Data.Void
 import qualified Data.Yaml                   as Y
 import           Streaming
 import qualified Streaming.Prelude           as S
+import qualified Streaming.Zip               as SZip
+import           Codec.Compression.Zlib      as Zlib
 
 
 -- | A file extension
 type FileExt = T.Text
 
+type FromAtomicFn' i a = i -> Either String a
+
 -- | How to read an @a@ from some identified type @i@, which is meant to be a
 -- general-purpose intermediate representation, like 'A.Value'.
 data FromAtomicFn a =
-  forall i. (Typeable i) => FromAtomicFn (i -> Either String a)
+  forall i. (Typeable i) => FromAtomicFn (FromAtomicFn' i a)
 deriving instance Functor FromAtomicFn
 
 instance Show (FromAtomicFn a) where
@@ -62,17 +68,33 @@ instance Show (FromAtomicFn a) where
 fromAtomicFn
   :: forall i a. (Typeable i)
   => [Maybe FileExt]
-  -> (i -> Either String a)
+  -> FromAtomicFn' i a
   -> HM.HashMap (TypeRep,Maybe FileExt) (FromAtomicFn a)
 fromAtomicFn exts f = HM.fromList $ map (\ext -> ((argTypeRep,ext), FromAtomicFn f)) exts
   where
     argTypeRep = typeOf (undefined :: i)
 
+allFromAtomicFnsWithType :: forall i ext a. (Typeable i)
+                         => HM.HashMap (TypeRep,Maybe ext) (FromAtomicFn a)
+                         -> [(ext, FromAtomicFn' i a)]
+allFromAtomicFnsWithType = mapMaybe fltr . HM.toList
+  where
+    wanted = typeOf (undefined :: i)
+    fltr ((_,Nothing),_) = Nothing
+    fltr ((tr,Just ext), FromAtomicFn (f :: FromAtomicFn' i' a))
+      | tr == wanted = case eqT :: Maybe (i:~:i') of
+          Just Refl -> Just (ext, f)
+          Nothing   -> error $ "allFromAtomicFnsWithType: some function doesn't deal with type "
+                        ++ show wanted ++ " when it should"
+      | otherwise = Nothing
+
+
+type FromStreamFn' i a =
+  forall m r. (LogMask m) => Stream (Of i) m r -> m (Of a r)
+
 -- | How to read an @a@ from some @Stream (Of i) m r@
 data FromStreamFn a =
-  forall i. (Typeable i)
-  => FromStreamFn (forall m r. (LogMask m)
-                   => Stream (Of i) m r -> m (Of a r))
+  forall i. (Typeable i) => FromStreamFn (FromStreamFn' i a)
 
 instance Functor FromStreamFn where
   fmap f (FromStreamFn g) = FromStreamFn $ \s -> do
@@ -85,11 +107,27 @@ instance Show (FromStreamFn a) where
 fromStreamFn
   :: forall i a. (Typeable i)
   => [Maybe FileExt]
-  -> (forall m r. (LogMask m) => Stream (Of i) m r -> m (Of a r))
+  -> FromStreamFn' i a
   -> HM.HashMap (TypeRep,Maybe FileExt) (FromStreamFn a)
 fromStreamFn exts f = HM.fromList $ map (\ext -> ((argTypeRep,ext), FromStreamFn f)) exts
   where
     argTypeRep = typeOf (undefined :: i)
+
+newtype FromStreamFn'' i a = FromStreamFn'' (FromStreamFn' i a)
+
+allFromStreamFnsWithType :: forall i ext a. (Typeable i)
+                         => HM.HashMap (TypeRep,Maybe ext) (FromStreamFn a)
+                         -> [(ext, FromStreamFn'' i a)]
+allFromStreamFnsWithType = mapMaybe fltr . HM.toList
+  where
+    wanted = typeOf (undefined :: i)
+    fltr ((_,Nothing),_) = Nothing
+    fltr ((tr,Just ext), FromStreamFn (f :: FromStreamFn' i' a))
+      | tr == wanted = case eqT :: Maybe (i:~:i') of
+          Just Refl -> Just (ext, FromStreamFn'' f)
+          Nothing   -> error $ "allFromStreamFnsWithType: some function doesn't deal with type "
+                        ++ show wanted ++ " when it should"
+      | otherwise = Nothing
 
 -- | A function to read @a@ from a 'DocRec'
 data ReadFromConfigFn a = forall rs. (Typeable rs) => ReadFromConfigFn (DocRec rs -> a)
@@ -148,6 +186,20 @@ toAtomicFn :: forall i a. (Typeable i)
 toAtomicFn exts f = HM.fromList $ map (\ext -> ((argTypeRep,ext), ToAtomicFn f)) exts
   where
     argTypeRep = typeOf (undefined :: i)
+
+allToAtomicFnsWithType :: forall i ext a. (Typeable i)
+                         => HM.HashMap (TypeRep,Maybe ext) (ToAtomicFn a)
+                         -> [(ext, a -> i)]
+allToAtomicFnsWithType = mapMaybe fltr . HM.toList
+  where
+    wanted = typeOf (undefined :: i)
+    fltr ((_,Nothing),_) = Nothing
+    fltr ((tr,Just ext), ToAtomicFn (f :: a -> i'))
+      | tr == wanted = case eqT :: Maybe (i:~:i') of
+          Just Refl -> Just (ext, f)
+          Nothing   -> error $ "allToAtomicFnsWithType: some function doesn't deal with type "
+                        ++ show wanted ++ " when it should"
+      | otherwise = Nothing
 
 -- -- | How to turn an @a@ into some @Stream (Of i) m ()@
 -- data ToStreamFn a =
@@ -534,6 +586,27 @@ eraseSerials (SerialsFor _ desers ext rk) = SerialsFor mempty desers ext rk
 eraseDeserials :: SerialsFor a b -> PureSerials a
 eraseDeserials (SerialsFor sers _ ext rk) = SerialsFor sers mempty ext rk
 
+
+-- * Serialization for compressed formats
+
+-- | Wraps all the functions in the serial so for each extension .xxx supported,
+-- we know also support .xxxzip. Doesn't change the default extension
+addZipSerials :: SerialsFor a b -> SerialsFor a b
+addZipSerials = over serialWriters (over serialWritersToAtomic editTA)
+              . over serialReaders (over serialReadersFromAtomic editFA
+                                  . over serialReadersFromStream editFS)
+  where
+    editTA hm = (hm <>) $ mconcat $ flip map (allToAtomicFnsWithType hm) $
+      \(ext, f) ->
+        toAtomicFn [Just $ ext <> "zip"] $ Zlib.compress . f  -- Lazy bytestring
+    editFA hm = (hm <>) $ mconcat $ flip map (allFromAtomicFnsWithType hm) $
+      \(ext, f) ->
+        fromAtomicFn [Just $ ext <> "zip"] $
+          f . LBS.toStrict . Zlib.decompress . LBS.fromStrict  -- Strict bytestring
+    editFS hm = (hm <>) $ mconcat $ flip map (allFromStreamFnsWithType hm) $
+      \(ext, FromStreamFn'' f) ->
+        fromStreamFn [Just $ ext <> "zip"] $
+          f . BSS.toChunks . SZip.decompress SZip.defaultWindowBits . BSS.fromChunks
 
 -- -- | Traverses to the repetition keys stored in the access functions of a
 -- -- 'SerialsFor'
