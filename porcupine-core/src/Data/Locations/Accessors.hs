@@ -279,6 +279,8 @@ baseContexts topNamespace =
 -- | The context in which aeson Values can be resolved to actual Locations
 type LocResolutionM m = ReaderT (AvailableAccessors m) m
 
+data ErrorsFromAccessors = 
+
 -- | Finds in the accessors list a way to parse a list of JSON values that
 -- should correspond to some `LocOf l` type
 withParsedLocsWithVars
