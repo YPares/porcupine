@@ -589,8 +589,9 @@ eraseDeserials (SerialsFor sers _ ext rk) = SerialsFor sers mempty ext rk
 
 -- * Serialization for compressed formats
 
--- | Wraps all the functions in the serial so for each extension .xxx supported,
--- we know also support .xxxzip. Doesn't change the default extension
+-- | Wraps all the functions in the serial so for each serial (extension) @xxx@
+-- supported, we know also support @xxxzlib@. Doesn't change the default
+-- extension
 addZlibSerials :: SerialsFor a b -> SerialsFor a b
 addZlibSerials = over serialWriters (over serialWritersToAtomic editTA)
               . over serialReaders (over serialReadersFromAtomic editFA
