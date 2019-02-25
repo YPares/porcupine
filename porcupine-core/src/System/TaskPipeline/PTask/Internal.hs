@@ -24,7 +24,7 @@ module System.TaskPipeline.PTask.Internal
   , ptrsFunflowRunConfig
   , ptrsDataAccessTree
   , splittedPTask
-  , runnablePTaskState
+  , runnablePTaskReaderState
   , makePTask
   , makePTask'
   , modifyingRuntimeState
@@ -230,9 +230,10 @@ splittedPTask = iso to_ from_
     from_ = PTask . AppArrow . writer . swap
     swap (a,b) = (b,a)
 
--- | Permits to apply a function to the state of a 'RunnablePTask' when in runs.
-runnablePTaskState :: Setter' (RunnablePTask m a b) (PTaskState m)
-runnablePTaskState = lens unAppArrow (const AppArrow) . setting local
+-- | Permits to apply a function to the Reader state of a 'RunnablePTask' when
+-- in runs.
+runnablePTaskReaderState :: Setter' (RunnablePTask m a b) (PTaskState m)
+runnablePTaskReaderState = lens unAppArrow (const AppArrow) . setting local
 
 -- | Makes a task from a tree of requirements and a function. The 'Properties'
 -- indicate whether we can cache this task.

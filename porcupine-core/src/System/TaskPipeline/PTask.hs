@@ -31,6 +31,7 @@ module System.TaskPipeline.PTask
   , ptaskInSubtree
   , voidTask
   , addContextToTask
+  , addStaticContextToTask
   , addNamespaceToTask
   , logTask
   ) where
@@ -166,18 +167,32 @@ ptaskRunnablePart = splittedPTask . _2
 
 -- | To transform the state of the PTask when it will run
 ptaskReaderState :: Setter' (PTask m a b) (PTaskState m)
-ptaskReaderState = ptaskRunnablePart . runnablePTaskState
+ptaskReaderState = ptaskRunnablePart . runnablePTaskReaderState
 
 -- | To transform the 'DataAccessTree' of the PTask when it will run
 ptaskDataAccessTree :: Setter' (PTask m a b) (LocationTree (DataAccessNode m))
 ptaskDataAccessTree = ptaskReaderState . ptrsDataAccessTree
 
--- | Adds some context that will be used at logging time. See 'katipAddContext'
-addContextToTask :: (LogItem i) => i -> PTask m a b -> PTask m a b
-addContextToTask item =
-  over (ptaskReaderState . ptrsKatipContext) (<> (liftPayload item))
+-- | Adds some context to a task, that will be used by the logger. That bit of
+-- context is dynamic, that's why what we do is wrap the task into a new one,
+-- expecting the 'LogItem'. See 'katipAddContext'. If your bit of context can be
+-- known statically (ie. before the pipeline actually runs), prefer
+-- 'addStaticContextToTask'.
+addContextToTask :: (LogItem i, Monad m) => PTask m a b -> PTask m (i,a) b
+addContextToTask = over ptaskRunnablePart $ modifyingRuntimeState
+  (\(item,_) -> over ptrsKatipContext (<> liftPayload item))
+  snd
 
--- | Adds a namespace to the task. See 'katipAddNamespace'
+-- | Adds to a task some context that is know _before_ the pipeline run. The
+-- 'LogItem' to add is therefore static and can be given just as an argument.
+addStaticContextToTask :: (LogItem i) => i -> PTask m a b -> PTask m a b
+addStaticContextToTask item =
+  over (ptaskReaderState . ptrsKatipContext) (<> liftPayload item)
+
+-- | Adds a namespace to the task. See 'katipAddNamespace'. Like context in
+-- 'addStaticContextToTask', the namespace is meant to be static, that's why we
+-- give it as a parameter to 'addNamespaceToTask', instead of creating a PTask
+-- that expects the namespace as an input.
 addNamespaceToTask :: String -> PTask m a b -> PTask m a b
 addNamespaceToTask ns =
   over (ptaskReaderState . ptrsKatipNamespace) (<> (fromString ns))
@@ -190,6 +205,6 @@ addNamespaceToTask ns =
 ptaskInSubtree :: [LocationTreePathItem] -> PTask m a b -> PTask m a b
 ptaskInSubtree path = over splittedPTask $ \(reqTree, runnable) ->
   let reqTree' = foldr (\pathItem rest -> folderNode [pathItem :/ rest]) reqTree path
-      runnable' = runnable & over (runnablePTaskState . ptrsDataAccessTree)
+      runnable' = runnable & over (runnablePTaskReaderState . ptrsDataAccessTree)
                                   (view $ atSubfolderRec path)
   in (reqTree', runnable')
