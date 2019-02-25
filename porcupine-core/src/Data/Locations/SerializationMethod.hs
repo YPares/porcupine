@@ -310,13 +310,21 @@ fromJSONStream exts = fromStreamFn (map Just exts) $ \strm -> do
       Left msg -> throwWithPrefix msg
 
 -- | From a stream of strict bytestrings of YAML
-fromYAMLStream exts = fromStreamFn (map Just exts) $ \strm -> do
-  (bs :> r) <- BSS.toStrict $ BSS.fromChunks strm -- TODO: same than above
+fromYAMLStream exts = fromStreamFn (map Just exts) (decodeYAMLStream . BSS.fromChunks)
+
+decodeYAMLStream :: (LogThrow m, FromJSON a) => BSS.ByteString m r -> m (Of a r)
+decodeYAMLStream strm = do
+  (bs :> r) <- BSS.toStrict strm -- TODO: same than above
   (:> r) <$> decodeY bs
   where
     decodeY x = case Y.decodeEither' x of
       Right y  -> return y
       Left exc -> logAndThrowM exc
+
+decodeYAMLStream_ :: (LogThrow m, FromJSON a) => BSS.ByteString m () -> m a
+decodeYAMLStream_ strm = do
+  (v :> _) <- decodeYAMLStream strm
+  return v
 
 instance (FromJSON a) => DeserializesWith JSONSerial a where
   getSerialReaders _srl = mempty

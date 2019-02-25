@@ -70,9 +70,11 @@ import           Data.Maybe
 import           Data.Monoid                             (First (..))
 import           Data.Representable
 import qualified Data.Text                               as T
+import qualified Data.Text.Encoding                      as TE
 import qualified Data.Text.Lazy                          as LT
 import qualified Data.Text.Lazy.Encoding                 as LTE
 import           Data.Typeable
+import qualified Data.Yaml                               as Y
 import           GHC.Generics                            (Generic)
 import           Katip
 import           Options.Applicative
@@ -186,7 +188,7 @@ type VirtualResourceTree = LocationTree VirtualFileNode
 type PhysicalResourceTree m = LocationTree (PhysicalFileNode m)
 
 -- | The tree manipulated by tasks when they actually run
-type DataResourceTree m = LocationTree (DataAccessNode m)
+type DataAccessTree m = LocationTree (DataAccessNode m)
 
 instance HasDefaultMappingRule VirtualFileNode where
   getDefaultLocShortcut VirtualFileNode{..} = getDefaultLocShortcut vfnodeFile
@@ -310,7 +312,7 @@ rscTreeConfigurationReader ResourceTreeAndMappings{rtamResourceTree=defTree} =
                <> help "Map a virtual file path to a physical location"))
         parseLocBinding vpath locOp loc = do
           p <- fromTextRepr vpath
-          l <- parseJSONEither $ String loc
+          l <- over _Left displayException $ Y.decodeEither' $ TE.encodeUtf8 loc
           return (p,locOp,l)
         locBinding (T.splitOn "+=" . T.pack -> [vpath,loc]) =
           parseLocBinding vpath AddLayer loc
