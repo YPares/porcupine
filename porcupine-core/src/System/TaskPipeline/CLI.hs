@@ -11,8 +11,11 @@ module System.TaskPipeline.CLI
   , PipelineCommand(..)
   , PipelineConfigMethod(..)
   , LocTreeLayout(..)
+  , BaseInputConfig(..)
   , PostParsingAction(..)
   , PreRun(..)
+  , ConfigFileSource(..)
+  , tryReadConfigFileSource
   , cliYamlParser
   , execCliParser
   , withCliParser
@@ -20,7 +23,7 @@ module System.TaskPipeline.CLI
 
   , pipelineConfigMethodProgName
   , pipelineConfigMethodDefRoot
-  , tryGetConfigFileOnCLI
+  , withConfigFileSourceFromCLI
   ) where
 
 import           Control.Lens
@@ -32,6 +35,7 @@ import qualified Data.ByteString.Lazy                    as LBS
 import           Data.Char                               (toLower)
 import qualified Data.HashMap.Lazy                       as HashMap
 import           Data.Locations
+import           Data.Maybe
 import qualified Data.Text                               as T
 import qualified Data.Text.Encoding                      as T
 import qualified Data.Yaml                               as Y
@@ -87,13 +91,11 @@ withCliParser
   :: (Monoid r)
   => String
   -> String
-  -> (Maybe LocalFilePath
-      -> IO (Parser (Maybe (a, cmd), LoggerScribeParams, [PostParsingAction])))
+  -> Parser (Maybe (a, cmd), LoggerScribeParams, [PostParsingAction])
   -> (a -> cmd -> LoggerScribeParams -> PreRun -> IO r)
   -> IO r
 withCliParser progName progDesc_ cliParser f = do
-  (mbArgs, lsp, actions) <- tryGetConfigFileOnCLI $ \yamlFile ->
-    cliParser yamlFile >>= execCliParser progName progDesc_
+  (mbArgs, lsp, actions) <- execCliParser progName progDesc_ cliParser
   case mbArgs of
     Just (cfg, cmd) ->
       f cfg cmd lsp $ PreRun $ mapM_ processAction actions
@@ -107,12 +109,59 @@ withCliParser progName progDesc_ cliParser f = do
      case configFile of
        LocFilePath "-" _ ->
          error "Config was read from stdin, cannot overwrite it"
-       LocFilePath _ "yaml" ->
+       LocFilePath _ e | e `elem` ["yaml","yml"] ->
          liftIO $ Y.encodeFile rawFile cfg
        LocFilePath _ "json" ->
          liftIO $ LBS.writeFile rawFile $ A.encodePretty cfg
        _ -> error $ "Config file has unknown format"
      logFM NoticeS $ logStr $ "Wrote file '" ++ rawFile ++ "'"
+
+data ConfigFileSource = YAMLStdin | ConfigFileURL Loc
+
+-- | Tries to read a yaml filepath on CLI, then a JSON path, then command line
+-- args as expected by the @callParser@ argument.
+withConfigFileSourceFromCLI
+  :: (Maybe ConfigFileSource -> IO b)  -- If a filepath has been read as first argument
+  -> IO b
+withConfigFileSourceFromCLI f = do
+  cliArgs <- liftIO getArgs
+  case cliArgs of
+    [] -> f Nothing
+    filename : rest -> do
+      case parseURLLikeLoc filename of
+        Left _ -> f Nothing
+        Right (LocalFile (LocFilePath "-" ext)) ->
+          if ext == "" || allowedExt ext
+          then withArgs rest $ f $ Just YAMLStdin
+          else error $ filename ++ ": Only JSON or YAML config can be read from stdin"
+        Right loc | getLocType loc == "" -> f Nothing
+                        -- No extension, therefore probably not a filepath
+                  | allowedExt (getLocType loc) -> withArgs rest $ f $ Just $ ConfigFileURL loc
+                  | otherwise -> error $ filename ++ ": Only JSON or YAML cofiles allowed"
+  where
+    allowedExt = (`elem` ["yaml","yml","json"]) . map toLower
+
+tryReadConfigFileSource :: (FromJSON cfg)
+                        => ConfigFileSource -> (Loc -> IO cfg) -> IO (Maybe cfg)
+tryReadConfigFileSource configFileSource ifRemote =
+  case configFileSource of
+    YAMLStdin ->
+      Just <$> (BS.hGetContents stdin >>= Y.decodeThrow)
+    ConfigFileURL (LocalFile lfp) -> do
+      let p = lfp ^. locFilePathAsRawFilePath
+      yamlFound <- doesFileExist p
+      if yamlFound
+        then Just <$> Y.decodeFileThrow p
+        else return Nothing
+    ConfigFileURL remoteLoc -> -- If config is remote, it must always be present
+                               -- for now
+      Just <$> ifRemote remoteLoc
+
+data BaseInputConfig cfg = BaseInputConfig
+  { bicSourceFile    :: Maybe LocalFilePath
+  , bicLoadedConfig  :: Maybe Y.Value
+  , bicDefaultConfig :: cfg
+  }
 
 -- | Creates a command line parser that will return an action returning the
 -- configuration and the chosen subcommand or Nothing if the user simply asked
@@ -121,27 +170,13 @@ withCliParser progName progDesc_ cliParser f = do
 cliYamlParser
   :: (ToJSON cfg)
   => String                   -- ^ The program name
-  -> LocalFilePath            -- ^ Configuration file
-  -> cfg                      -- ^ Default configuration
+  -> BaseInputConfig cfg      -- ^ Default configuration
   -> ConfigurationReader cfg overrides
   -> [(Parser cmd, String, String)]  -- ^ [(Parser cmd, Command repr, Command help string)]
   -> cmd                      -- ^ Default command
   -> IO (Parser (Maybe (cfg, cmd), LoggerScribeParams, [PostParsingAction]))
-cliYamlParser progName configFile defCfg inputParsing cmds defCmd = do
-  let rawFile = configFile ^. locFilePathAsRawFilePath
-  mcfg <- case configFile of
-    LocFilePath "-" ext | ext == "" || map toLower ext == "json" ->
-      Just <$> (LBS.hGetContents stdin >>= failLeft . A.eitherDecode)
-    LocFilePath "-" ext | map toLower ext == "yaml" ->
-      Just <$> (BS.hGetContents stdin >>= Y.decodeThrow)
-    _ -> do
-      yamlFound <- doesFileExist rawFile
-      if yamlFound
-        then Just <$> Y.decodeFileThrow rawFile else return Nothing
-  return $ pureCliParser progName mcfg configFile defCfg inputParsing cmds defCmd
-  where
-    failLeft (Left s)  = error s
-    failLeft (Right x) = return x
+cliYamlParser progName baseInputCfg inputParsing cmds defCmd = do
+  return $ pureCliParser progName baseInputCfg inputParsing cmds defCmd
 
 -- | A shortcut to run a parser and defining the program help strings
 execCliParser
@@ -159,41 +194,49 @@ execCliParser header_ progDesc_ parser_ = do
 pureCliParser
   :: (ToJSON cfg)
   => String                   -- ^ The program name
-  -> Maybe Y.Value            -- ^ Config read
-  -> LocalFilePath            -- ^ Configuration file
-  -> cfg                      -- ^ Default configuration
+  -> BaseInputConfig cfg      -- ^ The base configuration we read
   -> ConfigurationReader cfg overrides
   -> [(Parser cmd, String, String)]  -- ^ [(Parser cmd, Command repr, Command help string)]
   -> cmd                      -- ^ Default command
   -> Parser (Maybe (cfg, cmd), LoggerScribeParams, [PostParsingAction])
                               -- ^ (Config and command, actions to run to
                               -- override the yaml file)
-pureCliParser progName mcfg configFile defCfg cfgCLIParsing cmds defCmd =
-  subparser
-  ( command "write-config-template"
-    (info
-      (pure (Nothing, maxVerbosityLoggerScribeParams, [PostParsingWrite configFile defCfg]))
-      (progDesc $ "Write a default configuration file in " <> configFile')))
+pureCliParser progName baseInputConfig cfgCLIParsing cmds defCmd =
+  (case bicSourceFile baseInputConfig of
+     Nothing -> empty
+     Just f  -> subparser $
+       command "write-config-template"
+        (info
+         (pure (Nothing, maxVerbosityLoggerScribeParams
+               ,[PostParsingWrite f (bicDefaultConfig baseInputConfig)]))
+         (progDesc $ "Write a default configuration file in " <> (f^.locFilePathAsRawFilePath))))
   <|>
-  handleOptions progName configFile mcfg defCfg cliOverriding <$>
-   (subparser
-    (command "save"
-          (info (pure Nothing)
-                (progDesc $ "Just save the command line overrides in " <> configFile'))
-     <> foldMap
-      (\(cmdParser, cmdShown, cmdInfo) ->
-        command cmdShown
-                (info (Just . (,cmdShown) <$> cmdParser)
-                      (progDesc cmdInfo)))
-      cmds)
-    <|> pure (Just (defCmd, ""))) <*>
-   (switch ( long "save"
-           <> short 's'
-           <> help ("Save overrides in the " <> configFile' <> " before running.") )) <*>
-   overridesParser cliOverriding
+  handleOptions progName baseInputConfig cliOverriding
+    <$> ((subparser $
+           (case bicSourceFile baseInputConfig of
+              Nothing -> mempty
+              Just f ->
+                command "save" $
+                  info (pure Nothing) $
+                       progDesc $ "Just save the command line overrides in " <> (f^.locFilePathAsRawFilePath))
+           <>
+           foldMap
+             (\(cmdParser, cmdShown, cmdInfo) ->
+                 command cmdShown $
+                   info (Just . (,cmdShown) <$> cmdParser) $
+                        progDesc cmdInfo)
+             cmds)
+         <|>
+         pure (Just (defCmd, "")))
+    <*> (case bicSourceFile baseInputConfig of
+           Nothing -> pure False
+           Just f  ->
+             switch ( long "save"
+                   <> short 's'
+                   <> help ("Save overrides in the " <> (f^.locFilePathAsRawFilePath) <> " before running.") ))
+    <*> overridesParser cliOverriding
   where
     cliOverriding = addScribeParamsParsing cfgCLIParsing
-    configFile' = configFile ^. locFilePathAsRawFilePath
 
 severityShortcuts :: Parser Severity
 severityShortcuts =
@@ -282,24 +325,23 @@ handleOptions
   :: forall cfg cmd overrides.
      (ToJSON cfg)
   => String -- ^ Program name
-  -> LocalFilePath -- ^ Config file
-  -> Maybe Y.Value -- ^ Config body. This is the JSON content of the config file
-  -> cfg           -- ^ The default configuration
+  -> BaseInputConfig cfg
   -> ConfigurationReader (LoggerScribeParams, cfg) (LoggerScribeParams, overrides)
-  -> Maybe (cmd, String) -- ^ Command to run (and a name/description for it)
+  -> Maybe (cmd, String) -- ^ Command to run (and a name/description for it). If
+                         -- Nothing, means we should just save the config
   -> Bool -- ^ Whether to save the overrides
   -> (LoggerScribeParams, overrides) -- ^ overrides
   -> (Maybe (cfg, cmd), LoggerScribeParams, [PostParsingAction])
                           -- ^ (Config and command, actions to run to override
                           -- the yaml file)
-handleOptions progName _ Nothing _ _ Nothing _ _ = error $
+handleOptions progName (BaseInputConfig _ Nothing _) _ Nothing _ _ = error $
   "No config found and nothing to save. Please run `" ++ progName ++ " write-config-template' first."
-handleOptions progName configFile mbCfg defCfg cliOverriding mbCmd saveOverridesAlong overrides =
+handleOptions progName (BaseInputConfig mbCfgFile mbCfg defCfg) cliOverriding mbCmd saveOverridesAlong overrides =
   let defaultCfg = toJSON defCfg
       (cfgWarnings, cfg) = case mbCfg of
         Just c -> mergeWithDefault [] defaultCfg c
         Nothing -> ([PostParsingLog DebugS $ logStr $
-                      configFile' ++ " is not found. Treated as empty."]
+                      "Config file" ++ configFile' ++ " is not found. Treated as empty."]
                    ,defaultCfg)
       (overrideWarnings, mbScribeParamsAndCfgOverriden) =
         overrideCfgFromYamlFile cliOverriding cfg overrides
@@ -308,12 +350,12 @@ handleOptions progName configFile mbCfg defCfg cliOverriding mbCmd saveOverrides
     Right (lsp, cfgOverriden) ->
       case mbCmd of
         Nothing -> (Nothing, lsp, allWarnings ++
-                                  [PostParsingWrite configFile cfgOverriden])
+                                  [PostParsingWrite (fromJust mbCfgFile) cfgOverriden])
         Just (cmd, cmdShown) ->
             let actions =
                   allWarnings ++
                   (if saveOverridesAlong
-                     then [PostParsingWrite configFile cfgOverriden]
+                     then [PostParsingWrite (fromJust mbCfgFile) cfgOverriden]
                      else []) ++
                   [PostParsingLog DebugS $ logStr $ "Running `" <> T.pack progName
                       <> " " <> T.pack cmdShown <> "' with the following config:\n"
@@ -321,11 +363,12 @@ handleOptions progName configFile mbCfg defCfg cliOverriding mbCmd saveOverrides
             in (Just (cfgOverriden, cmd), lsp, actions)
     Left err -> dispErr err
   where
-    configFile' = configFile ^. locFilePathAsRawFilePath
+    configFile' = case mbCfgFile of Nothing -> ""
+                                    Just f -> " " ++ f ^. locFilePathAsRawFilePath
     dispErr err = error $
       (if nullOverrides cliOverriding overrides
        then "C"
-       else "Overriden c") ++ "onfig from " <> configFile' <> " is not valid:\n  " ++ err
+       else "Overriden c") ++ "onfig from " <> show mbCfgFile <> " is not valid:\n  " ++ err
 
 mergeWithDefault :: [T.Text] -> Y.Value -> Y.Value -> ([PostParsingAction], Y.Value)
 mergeWithDefault path (Object o1) (Object o2) =
@@ -343,23 +386,6 @@ mergeWithDefault path (Object o1) (Object o2) =
   in (warnings ++ subWarnings, Object merged)
 mergeWithDefault _ _ v = pure v
 
--- | Tries to read a yaml filepath on CLI, then a JSON path, then command line
--- args as expected by the @callParser@ argument.
-tryGetConfigFileOnCLI
-  :: (Maybe LocalFilePath -> IO b)  -- If a filepath has been read as first argument
-  -> IO b
-tryGetConfigFileOnCLI callParser = do
-  cliArgs <- liftIO getArgs
-  case cliArgs of
-    filename : rest
-      | let localFilePath = filename ^. from locFilePathAsRawFilePath
-            name = localFilePath ^. pathWithoutExt
-            ext = map toLower $ localFilePath ^. pathExtension,
-        ext == "yaml" || ext == "json" || (name == "-" && ext == "")
-      -> withArgs rest $
-           callParser $ Just localFilePath
-    _ -> callParser Nothing
-
 parseShowLocTree :: (Monoid r) => Parser (PipelineCommand r)
 parseShowLocTree = ShowLocTree <$>
   (   (flag' FullMappings
@@ -372,11 +398,10 @@ pipelineCliParser
   :: (Monoid r, ToJSON cfg)
   => (cfg -> ConfigurationReader cfg overrides)
   -> String
-  -> LocalFilePath
-  -> cfg
+  -> BaseInputConfig cfg
   -> IO (Parser (Maybe (cfg, PipelineCommand r), LoggerScribeParams, [PostParsingAction]))
-pipelineCliParser getCliOverriding progName configFile defCfg =
-  cliYamlParser progName configFile defCfg (getCliOverriding defCfg)
+pipelineCliParser getCliOverriding progName baseInputConfig =
+  cliYamlParser progName baseInputConfig (getCliOverriding $ bicDefaultConfig baseInputConfig)
   [(pure RunPipeline, "run", "Run the pipeline")
   ,(parseShowLocTree, "show-locations", "Show the location tree of the pipeline")]
   RunPipeline

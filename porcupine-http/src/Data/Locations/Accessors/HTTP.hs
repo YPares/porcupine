@@ -81,7 +81,9 @@ instance (MonadResource m, MonadMask m)
         (setRequestHeader "Accept" . (:[]))
         (TE.encodeUtf8 <$> acceptContentType l)
     f $ SC.toBStream $
-      httpSource (setMimeType $ setRequestMethod (TE.encodeUtf8 $ readMethod l) req)
+      httpSource (setMimeType $
+                  setRequestCheckStatus $
+                  setRequestMethod (TE.encodeUtf8 $ readMethod l) req)
                  getResponseBody
 
 -- |
