@@ -29,6 +29,8 @@ import           Data.Maybe
 import qualified Data.Text                    as T
 import qualified Data.Text.Encoding           as TE
 import           GHC.Generics                 (Generic)
+import           Network.HTTP.Client          (responseTimeoutMicro)
+import           Network.HTTP.Client.Internal (Request (..))
 import           Network.HTTP.Simple
 import qualified Network.Mime                 as Mime
 import           Streaming
@@ -56,11 +58,12 @@ makeReq loc = error $ show loc ++ " isn't an http(s) URL"
 instance (MonadResource m, MonadMask m)
   => LocationAccessor m "http" where
   data GLocOf "http" a = HTTPLoc
-    { url :: URLLikeLoc a
-    , writeMethod :: T.Text
-    , readMethod :: T.Text
-    , serial :: Maybe T.Text
+    { url               :: URLLikeLoc a
+    , writeMethod       :: T.Text
+    , readMethod        :: T.Text
+    , serial            :: Maybe T.Text
     , acceptContentType :: Maybe T.Text
+    , timeout           :: Maybe Int  -- In microseconds
     } deriving (Functor, Foldable, Traversable, Generic, ToJSON)
   locExists _ = return True
   writeBSS l bss = do
@@ -70,6 +73,7 @@ instance (MonadResource m, MonadMask m)
       req & setRequestMethod (TE.encodeUtf8 $ writeMethod l)
           & setRequestBodyLBS bs
           & setRequestCheckStatus
+          & setTimeout l
           & maybeUpdate
             (setRequestHeader "Content-type" . (:[]))
             (TE.encodeUtf8 <$> acceptContentType l)
@@ -77,14 +81,26 @@ instance (MonadResource m, MonadMask m)
   readBSS l f = do
     req <- makeReq $ url l
     let
-      setMimeType = maybeUpdate
-        (setRequestHeader "Accept" . (:[]))
-        (TE.encodeUtf8 <$> acceptContentType l)
-    f $ SC.toBStream $
-      httpSource (setMimeType $
-                  setRequestCheckStatus $
-                  setRequestMethod (TE.encodeUtf8 $ readMethod l) req)
-                 getResponseBody
+      req' = req
+           & setRequestMethod (TE.encodeUtf8 $ readMethod l)
+           & setTimeout l
+           & setRequestCheckStatus
+           & maybeUpdate
+             (setRequestHeader "Accept" . (:[]))
+             (TE.encodeUtf8 <$> acceptContentType l)
+    f $ SC.toBStream $ httpSource req' getResponseBody
+
+instance (MonadResource m, MonadMask m) => MayProvideLocationAccessors m "http"
+
+-- |
+-- Sets a timeout, obtained from the location
+--
+-- NOTE: We use an internal field of 'Request' to do so. We should probably look
+-- whether it's possible to have a better supported way to set a timeout
+-- (probably setting it in the Manager).
+setTimeout :: GLocOf "http" a -> Request -> Request
+setTimeout = maybeUpdate (\t r -> r{responseTimeout=responseTimeoutMicro t})
+           . timeout
 
 -- |
 -- Extract the mime type out of a file extension
@@ -98,8 +114,6 @@ getMimeType ext =
 -- This is useful for optionally overriding a field in a record
 maybeUpdate :: (b -> a -> a) -> Maybe b -> a -> a
 maybeUpdate f = flip (foldr f)
-
-instance (MonadResource m, MonadMask m) => MayProvideLocationAccessors m "http"
 
 instance (IsLocString a) => Show (GLocOf "http" a) where
   show = show . url
@@ -126,13 +140,14 @@ instance (IsLocString a) => FromJSON (GLocOf "http" a) where
                 <*> (v .: "readMethod" <|> pure "GET")
                 <*> pure extension
                 <*> ((Just <$> v .: "acceptContentType") <|> fallbackMimeType)
+                <*> (v .:? "timeout")
   parseJSON v@(String _) = do
     url <- parseJSON v
     case url of
       RemoteFile{rfProtocol=p}
         | p == "http" || p == "https" ->
           let extension = getURLType url in
-          return $ HTTPLoc url "POST" "GET" extension (getMimeType =<< extension)
+          return $ HTTPLoc url "POST" "GET" extension (getMimeType =<< extension) Nothing
       _ -> fail "Doesn't use http(s) protocol"
   parseJSON _ = fail
     "Must be an http(s) URL or a JSON object with fields url,writeMethod,readMethod"

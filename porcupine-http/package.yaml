@@ -15,6 +15,7 @@ dependencies:
   - transformers
   - safe-exceptions
   - http-conduit
+  - http-client
   - resourcet
   - bytestring
   - mime-types
