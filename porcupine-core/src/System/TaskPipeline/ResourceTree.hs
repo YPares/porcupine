@@ -13,22 +13,39 @@
 {-# OPTIONS_GHC -fno-warn-missing-pattern-synonym-signatures #-}
 {-# OPTIONS_GHC -fno-warn-name-shadowing #-}
 
--- | This file describes the ResourceTree API. The ResourceTree is central to
--- every pipeline that runs. It is aggregated from each subtask composing the
--- pipeline, and can from that point exist in several states:
+-- | This file defines the ResourceTree API.
 --
--- - Virtual: it contains only VirtualFiles. It is the state of the ResourceTree
---   that is used by the tasks to declare their requirements, and by the configuration
---   manager to write the default tree and mappings and read back the conf
--- - Physical: once configuration and mappings to physical files have been read,
+-- A resource tree is a "LocationTree" containing the resources for a pipeline.
+-- The resource trees of subtasks are aggregated into the resource trees of
+-- a pipeline.
+--
+-- The ResourceTree can appear in three flavors.
+--
+-- * "VirtualResourceTree": It contains only VirtualFiles. It is the state of
+--   the ResourceTree that is used by the tasks to declare their requirements,
+--   and by the configuration manager to write the default tree and mappings
+--   and read back the conf
+--
+-- * "PhysicalResourceTree": It contains physical locations. Once the
+--   configuration and mappings to physical files have been read,
 --   each node is attached its corresponding physical locations. The locations for
 --   the node which have no explicit mappings in the configuration are derived from the
 --   nodes higher in the hierarchy (this implies that the only mandatory mapping is the
 --   root of the tree). Physical resource trees are used to check that each virtual file
 --   is compatible with the physical locations bound to it.
--- - DataAccess: once every location has been checked, we can replace the VirtualFiles in
---   the resource tree by the action that actually writes or reads the data from the
---   physical locations each VirtualFile has been bound to.
+--
+-- * "DataResourceTree": It contains the functions that allow to read or write
+--   to the resources. This tree is created after every physical location has
+--   been checked according to the following rules:
+--
+--      * if a physical location has an extension that is not recognized by the
+--        VirtualFile it is bound to, the process fails
+--
+--      * if a VirtualFile has at the same time physical locations bound AND
+--        embedded data, then the embedded data is considered to be the
+--        _rightmost_ layer (ie. the one overriding all the other ones), so that
+--        the data of this VirtualFile can be easily overriden by just changing
+--        the config file.
 --
 -- The VirtualFiles of a resource tree in the Virtual state, when written to the
 -- configuration file, are divided into 2 sections: "data" and
@@ -44,15 +61,10 @@
 -- Monoid should be right-biased (ie. in the expression @a <> b@, @b@ overwrites
 -- the contents of @a@).
 --
--- Some rules are applied when transitionning from Physical to DataAccess:
+-- TODO: The physical resource tree still has variables in the locations. When
+-- are these spliced? What are the uses cases for physical locations with
+-- variables, and how do they differ from virtual locations?
 --
--- - if a physical location has an extension that is not recognized by the
---   VirtualFile it is bound to, the process fails
--- - if a VirtualFile has at the same time physical locations bound AND embedded data,
---   then the embedded data is considered to be the _rightmost_ layer (ie. the one
---   overriding all the other ones), so that the data of this VirtualFile can be
---   easily overriden by just changing the config file.
-
 module System.TaskPipeline.ResourceTree where
 
 import           Control.Exception.Safe
@@ -97,6 +109,9 @@ instance Semigroup SomeVirtualFile where
     Nothing -> error "Two differently typed VirtualFiles are at the same location"
 
 -- | Packs together the two functions that will read
+--
+-- TODO: This is not just a pair of functions. There is a third unexplained
+-- field.
 data DataAccessor m a b = DataAccessor
   { daPerformWrite :: a -> m ()
   , daPerformRead  :: m b
@@ -113,28 +128,25 @@ data SomeDataAccess m where
 data VFNodeAccessType = ATWrite | ATRead
   deriving (Eq, Show)
 
--- | The nodes of the ResourceTree, before mapping each 'VirtualFiles' to
--- physical locations
+-- | The nodes of a "VirtualResourceTree"
 data VirtualFileNode = MbVirtualFileNode [VFNodeAccessType] (Maybe SomeVirtualFile)
 -- | A non-empty 'VirtualFileNode'
 pattern VirtualFileNode {vfnodeAccesses, vfnodeFile} =
   MbVirtualFileNode vfnodeAccesses (Just (SomeVirtualFile vfnodeFile))
 
 -- | vfnodeFile is a @Traversal'@ into the VirtualFile contained in a
--- VirtualFileNode, but hiding it's real read/write types.
+-- VirtualFileNode, but hiding its real read/write types.
 vfnodeFileVoided :: Traversal' VirtualFileNode (VirtualFile Void ())
 vfnodeFileVoided f (VirtualFileNode at vf) =
   VirtualFileNode at <$> vfileVoided f vf
 vfnodeFileVoided _ vfn = pure vfn
 
--- | The nodes of the ResourceTree, after mapping each 'VirtualFiles' to
--- physical locations
+-- | The nodes of a "PhysicalResourceTree"
 data PhysicalFileNode m = MbPhysicalFileNode [SomeLocWithVars m] (Maybe SomeVirtualFile)
 -- | A non-empty 'PhysicalFileNode'
 pattern PhysicalFileNode l vf = MbPhysicalFileNode l (Just (SomeVirtualFile vf))
 
--- | The nodes of the LocationTree after the 'VirtualFiles' have been resolved
--- to physical paths, and data possibly extracted from these paths
+-- | The nodes of a "DataResourceTree"
 data DataAccessNode m = MbDataAccessNode [SomeLocWithVars m] (First (SomeDataAccess m))
   -- Data access function isn't a semigroup, hence the use of First here instead
   -- of Maybe.
@@ -196,6 +208,9 @@ instance HasDefaultMappingRule VirtualFileNode where
 
 -- | Filters the tree to get only the nodes that don't have data and can be
 -- mapped to external files
+--
+-- TODO: Explain the rules. What does it mean for a node to have data?
+-- Can a node with data be mapped to an external file?
 rscTreeToMappings
   :: VirtualResourceTree
   -> Maybe LocationMappings
@@ -209,6 +224,15 @@ rscTreeToMappings tree = mappingsFromLocTree <$> over filteredLocsInTree rmOpts 
     rmOpts n = Just n
 
 -- | Filters the tree to get only the nodes than can be embedded in the config file
+--
+-- TODO: Explain which are the nodes that can be embedded in config files.
+-- Explain how they relate to the nodes obtained in the previous function.
+-- Can a node have data and be embedded in a config file?
+-- Can a node be mapped externally and be embedded in a config file?
+--
+-- TODO: It is going to create some confusion having DataTree's and
+-- DataResourceTree's in the discourse. Could we define better what a
+-- DataTree is and see if there are better names?
 rscTreeToEmbeddedDataTree
   :: VirtualResourceTree
   -> Maybe VirtualResourceTree
@@ -229,6 +253,10 @@ embeddedDataSection = "data"
 mappingsSection :: T.Text
 mappingsSection = "locations"
 
+-- TODO: This function type is suspicious given that it always
+-- yields a singleton list. May be fixed by changing the type or
+-- explaining what the function does. Recursion would work just
+-- as well if the function returned a pair.
 embeddedDataTreeToJSONFields
   :: T.Text -> VirtualResourceTree -> [(T.Text, Value)]
 embeddedDataTreeToJSONFields thisPath (LocationTree mbOpts sub) =
@@ -395,6 +423,8 @@ rscTreeConfigurationReader (ResourceTreeAndMappings{rtamResourceTree=defTree}) =
 
 -- | Transform a virtual file node in file node with definite physical
 -- locations. Splices in the locs the variables that can be spliced.
+--
+-- See the meaning of the parameters in 'Data.Locations.Mappings.applyMappings'.
 applyOneRscMapping :: LocVariableMap -> [SomeLocWithVars m] -> VirtualFileNode -> Bool -> PhysicalFileNode m
 applyOneRscMapping variables configLayers mbVF mappingIsExplicit = buildPhysicalNode mbVF
   where
@@ -403,6 +433,9 @@ applyOneRscMapping variables configLayers mbVF mappingIsExplicit = buildPhysical
       where
         First defExt = vfnodeFile ^. vfileSerials . serialDefaultExt
         intent = vfileDescIntent $ getVirtualFileDescription vfnodeFile
+        -- TODO: It seems to be the case that the are some constraints to meet
+        -- on a valid physical resource tree. For instance, that having a
+        -- VFForCLIOptions node with derived layers is invalid?
         layers | not mappingIsExplicit, Just VFForCLIOptions <- intent = []
              -- Options usually present in the config file need an _explicit_
              -- mapping to be present in the config file, if we want them to be
@@ -430,6 +463,7 @@ data TaskConstructionError =
   deriving (Show)
 instance Exception TaskConstructionError
 
+-- TODO: Is this dead-code?
 data DataAccessContext = DAC
   { locationAccessed     :: Value
   , requiredLocVariables :: [LocVariable]
