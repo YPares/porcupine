@@ -156,20 +156,16 @@ data SerialReaders a = SerialReaders
   , _serialReaderFromConfig :: First (ReadFromConfigFn a)
        -- ^ How to read data from the CLI. It can be seen as a special kind of
        -- reader FromAtomic.
-  , _serialReaderEmbeddedValue :: First a
-      -- ^ Simply read from an embedded value. Depending on when this field is
-      -- accessed, it can correspond to a default value or the value we read
-      -- from the configuration.
   }
   deriving (Functor, Show)
 
 makeLenses ''SerialReaders
 
 instance Semigroup (SerialReaders a) where
-  SerialReaders a s c v <> SerialReaders a' s' c' v' =
-    SerialReaders (HM.unionWith const a a') (HM.unionWith const s s') (c<>c') (v<>v')
+  SerialReaders a s c <> SerialReaders a' s' c' =
+    SerialReaders (HM.unionWith const a a') (HM.unionWith const s s') (c<>c')
 instance Monoid (SerialReaders a) where
-  mempty = SerialReaders mempty mempty mempty mempty
+  mempty = SerialReaders mempty mempty mempty
 
 -- | How to turn an @a@ into some identified type @i@, which is meant to a
 -- general purpose intermediate representation, like 'A.Value' or even 'T.Text'.
@@ -527,15 +523,14 @@ instance DeserializesWith PlainTextSerial T.Text where
 -- | A serialization method used for options which can have a default value,
 -- that can be exposed through the configuration.
 data DocRecSerial a = forall rs. (Typeable rs, RecordUsableWithCLI rs)
-                   => DocRecSerial a (a -> DocRec rs) (DocRec rs -> a)
+                   => DocRecSerial (a -> DocRec rs) (DocRec rs -> a)
 instance SerializationMethod (DocRecSerial a)
 instance SerializesWith (DocRecSerial a) a where
-  getSerialWriters (DocRecSerial _ f _) = mempty
+  getSerialWriters (DocRecSerial f _) = mempty
     { _serialWriterToConfig = First $ Just $ WriteToConfigFn f }
 instance DeserializesWith (DocRecSerial a) a where
-  getSerialReaders (DocRecSerial d _ f) = mempty
-    { _serialReaderEmbeddedValue = First $ Just d
-    , _serialReaderFromConfig = First $ Just $ ReadFromConfigFn f }
+  getSerialReaders (DocRecSerial _ f) = mempty
+    { _serialReaderFromConfig = First $ Just $ ReadFromConfigFn f }
 
 
 -- * Combining serializers and deserializers into one structure
