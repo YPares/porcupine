@@ -67,7 +67,7 @@ import           System.TaskPipeline.ResourceTree
 loadData
   :: (LogThrow m, Typeable a, Typeable b)
   => VirtualFile a b -- ^ Use as a 'DataSource'
-  -> PTask m () b  -- ^ The resulting task
+  -> PTask m ignored b  -- ^ The resulting task. Ignores its input.
 loadData vf =
       arr (\_ -> SingletonES $ return ([] :: [Int], error "loadData: THIS IS VOID"))
   >>> accessVirtualFile (DoRead id) [] vf
