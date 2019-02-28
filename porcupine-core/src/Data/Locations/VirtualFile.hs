@@ -27,6 +27,7 @@ module Data.Locations.VirtualFile
   , dataSource, dataSink, bidirVirtualFile
   , makeSink, makeSource
   , documentedFile
+  , withEmbeddedValue
   , usesLayeredMapping, canBeUnmapped, unmappedByDefault
   , getVirtualFileDescription
   , vfileRecOfOptions
@@ -83,6 +84,7 @@ instance Default VFileImportance where
 data VirtualFile a b = VirtualFile
   { _vfileOriginalPath      :: [LocationTreePathItem]
   , _vfileLayeredReadScheme :: LayeredReadScheme b
+  , _vfileEmbeddedValue     :: Maybe b
   , _vfileMappedByDefault   :: Bool
   , _vfileImportance        :: VFileImportance
   , _vfileDocumentation     :: Maybe T.Text
@@ -113,14 +115,14 @@ instance HasDefaultMappingRule (VirtualFile a b) where
 -- For now, given the requirement of PTask, VirtualFile has to be a Monoid
 -- because a Resource Tree also has to.
 instance Semigroup (VirtualFile a b) where
-  VirtualFile p u m i d s <> VirtualFile _ _ _ _ _ s' =
-    VirtualFile p u m i d (s<>s')
+  VirtualFile p l v m i d s <> VirtualFile _ _ _ _ _ _ s' =
+    VirtualFile p l v m i d (s<>s')
 instance Monoid (VirtualFile a b) where
-  mempty = VirtualFile [] SingleLayerRead True def Nothing mempty
+  mempty = VirtualFile [] SingleLayerRead Nothing True def Nothing mempty
 
 instance Profunctor VirtualFile where
-  dimap f g (VirtualFile p _ m i d s) =
-    VirtualFile p SingleLayerRead m i d $ dimap f g s
+  dimap f g (VirtualFile p _ v m i d s) =
+    VirtualFile p SingleLayerRead (g <$> v) m i d $ dimap f g s
 
 
 -- * Obtaining a description of how the 'VirtualFile' should be used
@@ -155,11 +157,11 @@ getVirtualFileDescription vf =
   where
     (SerialsFor
       (SerialWriters toA toC)
-      (SerialReaders fromA fromS fromC fromV)
+      (SerialReaders fromA fromS fromC)
       prefExt
       _) = _vfileSerials vf
     intent
-      | First (Just _) <- fromC, First (Just _) <- fromV, First (Just _) <- toC = Just VFForCLIOptions
+      | First (Just _) <- fromC, Just _ <- vf ^. vfileEmbeddedValue, First (Just _) <- toC = Just VFForCLIOptions
       | HM.null fromA && HM.null fromS && HM.null toA = Nothing
       | HM.null fromA && HM.null fromS = Just VFForWriting
       | HM.null toA = Just VFForReading
@@ -176,6 +178,11 @@ getVirtualFileDescription vf =
 -- | Just for logs and error messages
 showVFileOriginalPath :: VirtualFile a b -> String
 showVFileOriginalPath = T.unpack . toTextRepr .  LTP . _vfileOriginalPath
+
+-- | Embeds a value inside the 'VirtualFile'. This value will be considered the
+-- base layer if we read extra @b@'s from external physical files.
+withEmbeddedValue :: b -> VirtualFile a b -> VirtualFile a b
+withEmbeddedValue = set vfileEmbeddedValue . Just
 
 -- | Indicates that the file uses layered mapping
 usesLayeredMapping :: (Semigroup b) => VirtualFile a b -> VirtualFile a b
@@ -215,7 +222,7 @@ type DataSink a = VirtualFile a ()
 -- the data. You should prefer 'dataSink' and 'dataSource' for clarity when the
 -- file is meant to be readonly or writeonly.
 virtualFile :: [LocationTreePathItem] -> SerialsFor a b -> VirtualFile a b
-virtualFile path sers = VirtualFile path SingleLayerRead True def Nothing sers
+virtualFile path sers = VirtualFile path SingleLayerRead Nothing True def Nothing sers
 
 -- | Creates a virtual file from its virtual path and ways to deserialize the
 -- data.
@@ -234,7 +241,8 @@ bidirVirtualFile = virtualFile
 -- | Turns the 'VirtualFile' into a pure sink
 makeSink :: VirtualFile a b -> DataSink a
 makeSink vf = vf{_vfileSerials=eraseDeserials $ _vfileSerials vf
-                ,_vfileLayeredReadScheme=LayeredReadWithNull}
+                ,_vfileLayeredReadScheme=LayeredReadWithNull
+                ,_vfileEmbeddedValue=Nothing}
 
 -- | Turns the 'VirtualFile' into a pure source
 makeSource :: VirtualFile a b -> DataSource b
@@ -251,11 +259,6 @@ vfileAsBidir :: forall a b. (Typeable a, Typeable b)
 vfileAsBidir f vf = case eqT :: Maybe (a :~: b) of
   Just Refl -> f vf
   Nothing   -> pure vf
-
--- | If the 'VirtualFile' has an embedded value, traverses to it.
-vfileEmbeddedValue :: Lens' (VirtualFile a b) (Maybe b)
-vfileEmbeddedValue =
-  vfileSerials . serialReaders . serialReaderEmbeddedValue . lens (\(First x) -> x) (\_ x -> First x)
 
 -- | If the 'VirtualFile' has an embedded value convertible to type @c@, we get
 -- it.
@@ -317,14 +320,14 @@ type DocRecOfOptions = RecOfOptions DocField
 -- fields when setting the new doc record.
 vfileRecOfOptions :: forall a. Traversal' (VirtualFile a a) DocRecOfOptions
 vfileRecOfOptions f vf = case mbopts of
-  Just (WriteToConfigFn convert, defVal, convertBack) ->
+  Just (defVal, WriteToConfigFn convert, convertBack) ->
     rebuild convertBack <$> f (RecOfOptions $ convert defVal)
   _ -> pure vf
   where
     serials = _vfileSerials vf
     First mbopts = (,,)
-      <$> _serialWriterToConfig (_serialWriters serials)
-      <*> _serialReaderEmbeddedValue (_serialReaders serials)
+      <$> First (_vfileEmbeddedValue vf)
+      <*> _serialWriterToConfig (_serialWriters serials)
       <*> _serialReaderFromConfig (_serialReaders serials)
 
     rebuild :: ReadFromConfigFn a -> DocRecOfOptions -> VirtualFile a a
@@ -337,8 +340,8 @@ vfileRecOfOptions f vf = case mbopts of
 -- | Gives access to a version of the VirtualFile without type params. The
 -- original path isn't settable.
 vfileVoided :: Lens' (VirtualFile a b) (VirtualFile Void ())
-vfileVoided f (VirtualFile p l m i d s) =
-  rebuild <$> f (VirtualFile p SingleLayerRead m i d mempty)
+vfileVoided f (VirtualFile p l v m i d s) =
+  rebuild <$> f (VirtualFile p SingleLayerRead Nothing m i d mempty)
   where
-    rebuild (VirtualFile _ _ m' i' d' _) =
-      VirtualFile p l m' i' d' s
+    rebuild (VirtualFile _ _ _ m' i' d' _) =
+      VirtualFile p l v m' i' d' s
