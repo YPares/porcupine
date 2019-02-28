@@ -9,6 +9,7 @@ module System.TaskPipeline.Options
   ( -- * API
     getOptions
   , getOption
+  , optionsVirtualFile
   -- * Re-exports from docrecords
   , DocRec, Rec(..), (^^.), (^^?), (^^?!)
   , PathWithType(..)
@@ -37,7 +38,17 @@ getOptions
                              -- docs and default values
   -> PTask m () (DocRec rs)  -- ^ A PTask that returns the new options values,
                              -- overriden by the user
-getOptions path defOpts = loadData $
+getOptions path defOpts = loadData $ optionsVirtualFile path defOpts
+
+-- | Creates a 'VirtualFile' from a default set of options (as a DocRec). To be
+-- used with 'loadData'.
+optionsVirtualFile
+  :: (Typeable rs, RecordUsableWithCLI rs)
+  => [LocationTreePathItem]  -- ^ The path for the options in the LocationTree
+  -> DocRec rs               -- ^ The DocRec containing the fields with their
+                             -- docs and default values
+  -> BidirVirtualFile (DocRec rs)
+optionsVirtualFile path defOpts =
   bidirVirtualFile path $
     someBidirSerial (DocRecSerial defOpts id id) <> someBidirSerial YAMLSerial
 
