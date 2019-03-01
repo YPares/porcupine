@@ -13,6 +13,7 @@ import           GHC.Generics
 import           Porcupine.Run
 import           Porcupine.Serials
 import           Porcupine.Tasks
+import qualified Streaming.Prelude           as S
 
 
 
@@ -35,15 +36,17 @@ getLowStock s = map low (chart s)
 getDateStock :: Stock -> [String]
 getDateStock s = map date (chart s)
 
+-- | How to load Stock prices
+stockFile :: DataSource Stock
+stockFile = dataSource ["Inputs", "Stock"]
+                      (somePureDeserial JSONSerial)
+
+
 -- We do sliding windows for smothing the curve
 data SlidingWindows = SlidingWindows { smoothcurve :: [Double] }
   deriving (Generic)
 instance ToJSON SlidingWindows
 
--- | How to load Stock prices
-stockFile :: DataSource Stock
-stockFile = dataSource ["Inputs", "Stock"]
-                      (somePureDeserial JSONSerial)
 
 -- | How to modify the data
 modifiedStock :: DataSink SlidingWindows
@@ -67,15 +70,6 @@ computeSmoothedCurve s = SlidingWindows curve where
   price = getLowStock s
   curve = map ave (msliding 10 price)
 
-  -- ave =
-  --    let s = sum price
-  --        n = fromIntegral (length price)
-  --    in s/n
-  -- std =
-  --   let s = sum [ (c- ave)^2 | c <- price]
-  --       n = fromIntegral (length price)
-  --   in sqrt (s/n)
-
 -- | The task combining the three previous operations.
 --
 -- This task may look very opaque from the outside, having no parameters and no
@@ -85,16 +79,11 @@ analyseOneStock :: (LogThrow m) => PTask m () ()
 analyseOneStock =
   loadData stockFile >>> arr computeSmoothedCurve >>> writeData modifiedStock
 
-mainTask :: (LogThrow m) => PTask m () ()
-mainTask =
-  -- First we get the ids of the users that we want to analyse. We need only one
-  -- field that will contain a range of values, see IndexRange. By default, this
-  -- range contains just one value, zero.
-  getOption ["Settings"] (docField @"stocks" (oneIndex (0::Int)) "The stock ids to load")
-  -- We turn the range we read into a full lazy list:
-  >>> arr enumIndices
-  -- Then we just map over these ids and call analyseOneUser each time:
-  >>> parMapTask_ (repIndex "id") analyseOneStock
+analyseStocks :: (LogThrow m) => PTask m () ()
+analyseStocks =
+  arr (const (S.each ["aapl" , "fb" , "googl"])) >>> loadDataStream "company" stockFile
+   >>> arr (S.map (\(idx,stock) -> (idx, computeSmoothedCurve stock)))
+   >>> writeDataStream "company" modifiedStock
 
 main :: IO ()
 main = runPipelineTask (FullConfig "example2" "porcupine-example2.yaml" "porcupine-core/examples/example2/data")
@@ -109,4 +98,4 @@ main = runPipelineTask (FullConfig "example2" "porcupine-example2.yaml" "porcupi
                           -- FullConfig (and therefore CLI), the progName for
                           -- the CLI given above ("example1") will be inherited
                           -- by the logger, so we can leave it blank
-                       mainTask ()
+                       analyseStocks ()
