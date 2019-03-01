@@ -379,14 +379,14 @@ rscTreeConfigurationReader ResourceTreeAndMappings{rtamResourceTree=defTree} =
                 -- We merge the two configurations:
               let newOpts = RecOfOptions $ rmTags $
                     rzipWith chooseHighestPriority recFromYaml recFromCLI
-              rebuildNode <$> setVFileRecOfOptionsLayers vfnodeFile [newOpts]
+              rebuildNode <$> setVFileRecOfOptions vfnodeFile newOpts
             Nothing ->
               -- YAML: yes, CLI: no
               rebuildNode <$> setVFileAesonValue vfnodeFile v
           Left _ -> case mbRecFromCLI of
             Just (RecOfOptions recFromCLI) ->
               -- YAML: no, CLI: yes
-              rebuildNode <$> setVFileRecOfOptionsLayers vfnodeFile [RecOfOptions (rmTags recFromCLI)]
+              rebuildNode <$> setVFileRecOfOptions vfnodeFile (RecOfOptions (rmTags recFromCLI))
             Nothing ->
               -- YAML: no, CLI: no
               return node
