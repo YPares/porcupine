@@ -1,4 +1,4 @@
-In this text we try to go through our example and explain it step bi step. Our approach
+In this text we try to go through our example and explain it step by step. Our approach
 is to put the code step by step and explain the used functions and types. Here we go
 
 ``` Haskell
@@ -12,7 +12,7 @@ instance FromJSON Stock
 
 ```
 
-In this part we set the types that are compatibel with our data written in JSON files.
+In this part we set the types that are compatible with our data written in JSON files.
 The expression `instance FromJSON MyData` allows us to read data of JSON type and produce a
 variable with the data as `MyData`.
 
@@ -26,7 +26,7 @@ stockFile = dataSource ["Inputs", "Stock"]
 ```
 
 Let's dig to this part. The `DataSource` is a type constructor. If we come back to its
-implementation we will find that it is just a synonyms
+implementation we will find that it is just a synonym:
 
 ``` Haskell
 
@@ -95,15 +95,15 @@ computeSmoothedCurve s = SlidingWindows curve where
   curve = map ave (msliding 10 price)
 ```
 
-Here we come to the most important feature of Porcupine and this is the work flow. We first work with a simpler
-verison and we will explain then that deals with streams. Let us start with the following workflow:
+Here we come to the most important feature of Porcupine and this is the notion of work flow. We first work with a simpler
+version and we will explain then the one that deals with streams. Let us start with the following workflow:
 
 ``` Haskell
 analyseOneStock :: (LogThrow m) => PTask m () ()
 analyseOneStock =
   loadData stockFile >>> arr computeSmoothedCurve >>> writeData modifiedStock
 ```
-Here we have some types to understand. The notion of a _task_ is handeled via the type
+Here we have some types to understand. The notion of a _task_ is handled via the type
 `PTask m a b`. Here how it is defined
 
 ``` Haskell
@@ -141,11 +141,11 @@ modifiedStock :: VirtualFile SlidingWindows ()
 loadData stockFile :: PTask m () Stock
 arr computeSmoothedCurve :: PTask m Stock SlidingWindows
 writeData modifiedStock :: PTask m SlidingWindows ()
-analyseOneStock = PTask m () ()
+analyseOneStock :: PTask m () ()
 ```
 
 If you want to load/write a stream of files in the workflow, the Porcupine allows it you to do it
-via the functions that are similar to load/write data above with a slight differnce:
+via the functions that are similar to load/write data above with a slight difference:
 
 
 ``` Haskell
@@ -171,3 +171,38 @@ data Of a b = !a :> b
 ```
 We should note that in the definition of `loadDataStream` we keep track of indexes we use to load the data
 whilst in the `writeDataStream` we output the type of the stream that is `()` in our example.
+
+
+In this spirit let us analyse the following workflow:
+
+``` Haskell
+analyseStocks :: (LogThrow m) => PTask m () ()
+analyseStocks =
+  arr (const (S.each ["aapl" , "google"])) >>> loadDataStream "company" stockFile
+   >>> arr (S.map (\(idx,stock) -> (idx, computeSmoothedCurve stock)))
+   >>> writeDataStream "company" modifiedStock
+```
+Despite the workflow `analyseOneStock`, the workflow `analyseStocks` tries to read a multiple data and process them and then write a new file for each. Later, we combine these data in just one big matrix. Let us analyze the former expression. We imported the module `import qualified Streaming.Prelude as S` and we called the function `each` from this module. The type of this function is as follows:
+``` Haskell
+S.each :: (Monad m, Foldable f) => f a -> S.Stream (S.Of a) m ()
+```
+In paticular, it takes a list of items (as an instance of class `Foldable`) and returns a stream of the objects. So the first component in the workflow has the type
+``` haskell
+arr (const (S.each ["aapl" , "google"])) :: PTask m a (Stream (Of idx) m ())
+```
+For the second component of the workflow, if you come back to the type of `loadDataStream` you will see that
+``` haskell
+loadDataStream "company" stockFile :: PTask m (Stream (Of idx) m r) (Stream (Of (idx, b)) m r)
+```
+We recall that
+``` haskell
+S.map :: Monad m => (a -> b) -> S.Stream (S.Of a) m r -> S.Stream (S.Of b) m r
+```
+and so
+``` haskell
+arr (S.map (\(idx,stock) -> (idx, computeSmoothedCurve stock))) :: PTask m (Stream (Of idx,b) m r) (Stream (Of (idx, b)) m r)
+```
+and finally
+```haskell
+writeDataStream "company" modifiedStock :: PTask m (Stream (Of idx,b) m r) r
+```
