@@ -47,11 +47,14 @@ data SlidingWindows = SlidingWindows { smoothcurve :: [Double] }
   deriving (Generic)
 instance ToJSON SlidingWindows
 
-
 -- | How to modify the data
 modifiedStock :: DataSink SlidingWindows
 modifiedStock = dataSink ["Outputs", "ModifiedStock"]
                         (somePureSerial JSONSerial)
+
+globalMatrix :: DataSink (Tabular [[Double]])
+globalMatrix = dataSink [ "Outputs" , "globalData"]
+                        (somePureSerial (CSVSerial (T.pack "csv") False ','))
 
 ave :: [Double] -> Double
 ave list = let s = sum list
@@ -70,20 +73,17 @@ computeSmoothedCurve s = SlidingWindows curve where
   price = getLowStock s
   curve = map ave (msliding 10 price)
 
--- | The task combining the three previous operations.
---
--- This task may look very opaque from the outside, having no parameters and no
--- return value. But we will be able to reuse it over different users without
--- having to change it at all.
-analyseOneStock :: (LogThrow m) => PTask m () ()
-analyseOneStock =
-  loadData stockFile >>> arr computeSmoothedCurve >>> writeData modifiedStock
+putallStocks :: [SlidingWindows] -> Tabular [[Double]]
+putallStocks s = Tabular Nothing (map smoothcurve s)
 
 analyseStocks :: (LogThrow m) => PTask m () ()
 analyseStocks =
   arr (const (S.each ["aapl" , "fb" , "googl"])) >>> loadDataStream "company" stockFile
    >>> arr (S.map (\(idx,stock) -> (idx, computeSmoothedCurve stock)))
-   >>> writeDataStream "company" modifiedStock
+   >>> unsafeLiftToPTask (S.toList_)
+   >>> arr (map snd)
+   >>> arr putallStocks
+   >>> writeData globalMatrix
 
 main :: IO ()
 main = runPipelineTask (FullConfig "example2" "porcupine-example2.yaml" "porcupine-core/examples/example2/data")

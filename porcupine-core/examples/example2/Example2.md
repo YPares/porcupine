@@ -1,44 +1,38 @@
-In this text we try to go through our example and explain it step by step. Our approach
+### Example 2 explanations
+
+In this text we try to go through our example and explain it. Our approach
 is to put the code step by step and explain the used functions and types. Here we go
 
 ``` Haskell
-
-data Stockdaily = Stockdaily { date :: String , high :: Double , low :: Double} deriving (Generic)
+data Stockdaily = Stockdaily { date :: String , high :: Double , low :: Double}
+deriving (Generic)
 instance FromJSON Stockdaily
 
-data Stock = Stock { chart :: [Stockdaily] }
-  deriving (Generic)
+data Stock = Stock { chart :: [Stockdaily] } deriving (Generic)
 instance FromJSON Stock
-
 ```
 
-In this part we set the types that are compatible with our data written in JSON files.
-The expression `instance FromJSON MyData` allows us to read data of JSON type and produce a
+In this part we set the types that are compatible with our data written in JSON files. The expression `instance FromJSON MyData` allows us to read data of JSON type and produce a
 variable with the data as `MyData`.
 
 
 ``` Haskell
-
 stockFile :: DataSource Stock
 stockFile = dataSource ["Inputs", "Stock"]
                       (somePureDeserial JSONSerial)
-
 ```
 
-Let's dig to this part. The `DataSource` is a type constructor. If we come back to its
+Let's dig a bit to this part. The `DataSource` is a type constructor. If we come back to its
 implementation we will find that it is just a synonym:
 
 ``` Haskell
-
 type DataSource a = VirtualFile Void a
-
 ```
 
 Let us dig into the definition of `VirtualFile`. It is called virtual it does not yet exist and we will
 put it later in our work flow such that it works properly.
 
 ``` Haskell
-
 data VirtualFile a b = VirtualFile
   { _vfileOriginalPath      :: [LocationTreePathItem]
   , _vfileLayeredReadScheme :: LayeredReadScheme b
@@ -46,7 +40,6 @@ data VirtualFile a b = VirtualFile
   , _vfileImportance        :: VFileImportance
   , _vfileDocumentation     :: Maybe T.Text
   , _vfileSerials           :: SerialsFor a b }
-
 ```
 
 We don't go through all the attributes and we just wanted to show how it is constructed. Let us come back to our
@@ -205,4 +198,32 @@ arr (S.map (\(idx,stock) -> (idx, computeSmoothedCurve stock))) :: PTask m (Stre
 and finally
 ```haskell
 writeDataStream "company" modifiedStock :: PTask m (Stream (Of idx,b) m r) r
+```
+
+
+#Appendix
+
+These types/functions should be covered in this text as well :
+
+```Haskell
+unsafeLiftToPTask :: (KatipContext m) => (a -> m b) -> PTask m a b
+unsafeLiftToPTask = makePTask mempty . const
+```
+```haskell
+data Tabular a = Tabular
+  { tabularHeader :: Maybe [String]
+  , tabularData   :: a }
+  deriving (Show)
+
+-- | Can serialize and deserialize any @Tabular a@ where @a@ is an instance of
+-- 'CSV'.
+data CSVSerial
+  = CSVSerial { csvSerialExt       :: FileExt  -- ^ The extension to use (csv, tsv,
+                                         -- txt, etc.)
+              , csvSerialHasHeader :: Bool  -- ^ Used by the reader part
+              , csvSerialDelimiter :: Char  -- ^ Used by both reader and writer
+              }
+```
+```haskell
+unsafeLiftToPTask :: (KatipContext m) => (a -> m b) -> PTask m a b
 ```
