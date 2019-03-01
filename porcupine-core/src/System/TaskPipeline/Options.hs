@@ -51,7 +51,7 @@ optionsVirtualFile
 optionsVirtualFile path defOpts =
   withEmbeddedValue defOpts $
     bidirVirtualFile path $
-         someBidirSerial (DocRecSerial id id :: DocRecSerial (DocRec rs))
+         someBidirSerial (OptionsSerial id id :: OptionsSerial (DocRec rs))
       <> someBidirSerial YAMLSerial
 
 -- | Just like 'getOptions', but for a single field.

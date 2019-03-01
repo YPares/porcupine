@@ -13,14 +13,14 @@ module Data.Locations.VirtualFile
   , VirtualFile(..), LayeredReadScheme(..)
   , BidirVirtualFile, DataSource, DataSink
   , VirtualFileIntent(..), VirtualFileDescription(..)
-  , DocRecOfOptions, RecOfOptions(..)
+  , RecOfOptions(..)
   , VFileImportance(..)
   , vfileSerials
   , vfileAsBidir, vfileImportance
   , vfileEmbeddedValue
-  , setVFileIntermediaryValue, setVFileAesonValue
-  , getVFileIntermediaryValue, getVFileAesonValue
-  , getVFileRecOfOptions, setVFileRecOfOptionsLayers
+  , setVFileIntermediaryValue, setVFileAesonValue, setVFileRecOfOptions
+  , getVFileIntermediaryValue, getVFileAesonValue, getVFileRecOfOptions
+  --, tryMergeLayers
   , vfileOriginalPath, showVFileOriginalPath
   , vfileLayeredReadScheme
   , vfileVoided
@@ -158,15 +158,15 @@ getVirtualFileDescription vf =
   VirtualFileDescription intent readableFromConfig writableInOutput exts
   where
     (SerialsFor
-      (SerialWriters toA toC)
-      (SerialReaders fromA fromS fromC)
+      (SerialWriters toA)
+      (SerialReaders fromA fromS)
       prefExt
       _) = _vfileSerials vf
     intent
-      | First (Just _) <- fromC, Just _ <- vf ^. vfileEmbeddedValue, First (Just _) <- toC = Just VFForCLIOptions
       | HM.null fromA && HM.null fromS && HM.null toA = Nothing
       | HM.null fromA && HM.null fromS = Just VFForWriting
       | HM.null toA = Just VFForReading
+      | Just _ <- vf ^. vfileEmbeddedValue = Just VFForCLIOptions
       | otherwise = Just VFForRW
     extSet = HS.fromList . mapMaybe snd . HM.keys
     otherExts = extSet toA <> extSet fromA <> extSet fromS
@@ -262,10 +262,19 @@ vfileAsBidir f vf = case eqT :: Maybe (a :~: b) of
   Just Refl -> f vf
   Nothing   -> pure vf
 
+-- | Gives access to a version of the VirtualFile without type params. The
+-- original path isn't settable.
+vfileVoided :: Lens' (VirtualFile a b) (VirtualFile Void ())
+vfileVoided f (VirtualFile p l v m i d s) =
+  rebuild <$> f (VirtualFile p SingleLayerRead Nothing m i d mempty)
+  where
+    rebuild (VirtualFile _ _ _ m' i' d' _) =
+      VirtualFile p l v m' i' d' s
+
 -- | If the 'VirtualFile' has an embedded value convertible to type @c@, we get
 -- it.
 getVFileIntermediaryValue :: forall a c. (Typeable c)
-                          => VirtualFile a a
+                          => BidirVirtualFile a
                           -> Maybe c
 getVFileIntermediaryValue vf = let resTypeRep = typeOf (undefined :: c) in
   case HM.lookup (resTypeRep,Nothing)
@@ -278,8 +287,13 @@ getVFileIntermediaryValue vf = let resTypeRep = typeOf (undefined :: c) in
 
 -- | If the 'VirtualFile' has an embedded value that can be turned into an Aeson
 -- 'Value', we get it.
-getVFileAesonValue :: VirtualFile a a -> Maybe Value
+getVFileAesonValue :: BidirVirtualFile a -> Maybe Value
 getVFileAesonValue = getVFileIntermediaryValue
+
+-- | If the 'VirtualFile' has an embedded value that can be turned into a
+-- 'DocRec', we get it.
+getVFileRecOfOptions :: BidirVirtualFile a -> Maybe DocRecOfOptions
+getVFileRecOfOptions = getVFileIntermediaryValue
 
 -- | If the 'VirtualFile' can hold a embedded value convertible from type @c@,
 -- we set it (or remove it if Nothing). Note that the conversion may fail, we
@@ -305,52 +319,29 @@ setVFileIntermediaryValue vf i = let inpTypeRep = typeOf (undefined :: c) in
 setVFileAesonValue :: VirtualFile a b -> Value -> Either String (VirtualFile a b)
 setVFileAesonValue = setVFileIntermediaryValue
 
+-- | If the file can carry a defaut value convertible from a 'DocRec', we set
+-- it.
+setVFileRecOfOptions :: VirtualFile a b -> DocRecOfOptions -> Either String (VirtualFile a b)
+setVFileRecOfOptions = setVFileIntermediaryValue
 
--- * Compatibility layer with the doc records of options used by the
--- command-line parser
-
--- | Contains any set of options that should be exposed via the CLI
-data RecOfOptions field where
-  RecOfOptions :: (Typeable rs, RecordUsableWithCLI rs) => Rec field rs -> RecOfOptions field
-
-type DocRecOfOptions = RecOfOptions DocField
-
--- | If the file has an embedded value that can be converted to a DocRecords, we
--- return it
-getVFileRecOfOptions :: BidirVirtualFile a -> Maybe DocRecOfOptions
-getVFileRecOfOptions vf = case mbopts of
-  Just (defVal, WriteToConfigFn convert) -> Just $ RecOfOptions $ convert defVal
-  where
-    First mbopts = (,) <$> First (vf ^. vfileEmbeddedValue)
-                       <*> vf ^. vfileSerials . serialWriters . serialWriterToConfig
-
--- | Assigns to the file a list of layers of records of options. No layers means
--- we remove the value. If we have more that one layer, this will fail if the
--- file doesn't use LayeredRead.
-setVFileRecOfOptionsLayers :: VirtualFile a b -> [DocRecOfOptions] -> Either String (VirtualFile a b)
-setVFileRecOfOptionsLayers vf layers =
-  case vf ^. vfileSerials . serialReaders . serialReaderFromConfig of
-    First Nothing -> Left $ showVFileOriginalPath vf ++
-                      ": That file embedded value cannot be set from a DocRecOfOptions"
-    First (Just (ReadFromConfigFn convert)) -> do
-      let transform (RecOfOptions r) = case cast r of
-            Nothing -> Left $ "setVFileRecOfOptionsLayers: " ++ showVFileOriginalPath vf
-                              ++ ": record fields aren't compatible when they should"
-            Just r' -> return $ convert r'
-      newVal <- case (layers, vf^.vfileLayeredReadScheme) of
-        ([], _) -> return Nothing
-        ([x], _) -> Just <$> transform x
-        ((l:ls), LayeredRead) -> Just . sconcat <$> traverse transform (l:|ls)
-        (ls, LayeredReadWithNull) -> Just . mconcat <$> traverse transform ls
-        (_, _) -> Left $ "setVFileRecOfOptionsLayers: " ++ showVFileOriginalPath vf
-                  ++ ": that VirtualFile cannot use several layers of data"
-      return $ vf & vfileEmbeddedValue .~ newVal
-
--- | Gives access to a version of the VirtualFile without type params. The
--- original path isn't settable.
-vfileVoided :: Lens' (VirtualFile a b) (VirtualFile Void ())
-vfileVoided f (VirtualFile p l v m i d s) =
-  rebuild <$> f (VirtualFile p SingleLayerRead Nothing m i d mempty)
-  where
-    rebuild (VirtualFile _ _ _ m' i' d' _) =
-      VirtualFile p l v m' i' d' s
+-- -- | Assigns to the file a list of layers of records of options. No layers means
+-- -- we remove the value. If we have more that one layer, this will fail if the
+-- -- file doesn't use LayeredRead.
+-- tryMergeLayers :: (Typeable c) => VirtualFile a b -> [c] -> Either String c
+-- tryMergeLayers vf layers =
+--   case vf ^. vfileSerials . serialReaders . serialReaderFromConfig of
+--     First Nothing -> Left $ showVFileOriginalPath vf ++
+--                       ": That file embedded value cannot be set from a DocRecOfOptions"
+--     First (Just (ReadFromConfigFn convert)) -> do
+--       let transform (RecOfOptions r) = case cast r of
+--             Nothing -> Left $ "setVFileRecOfOptionsLayers: " ++ showVFileOriginalPath vf
+--                               ++ ": record fields aren't compatible when they should"
+--             Just r' -> return $ convert r'
+--       newVal <- case (layers, vf^.vfileLayeredReadScheme) of
+--         ([], _) -> return Nothing
+--         ([x], _) -> Just <$> transform x
+--         ((l:ls), LayeredRead) -> Just . sconcat <$> traverse transform (l:|ls)
+--         (ls, LayeredReadWithNull) -> Just . mconcat <$> traverse transform ls
+--         (_, _) -> Left $ "setVFileRecOfOptionsLayers: " ++ showVFileOriginalPath vf
+--                   ++ ": that VirtualFile cannot use several layers of data"
+--       return $ vf & vfileEmbeddedValue .~ newVal

@@ -153,19 +153,16 @@ data SerialReaders a = SerialReaders
        -- ^ How to read data from a stream of intermediate data types (like
        -- strict ByteStrings). Each one of them being strict as much as
        -- possible.
-  , _serialReaderFromConfig :: First (ReadFromConfigFn a)
-       -- ^ How to read data from the CLI. It can be seen as a special kind of
-       -- reader FromAtomic.
   }
   deriving (Functor, Show)
 
 makeLenses ''SerialReaders
 
 instance Semigroup (SerialReaders a) where
-  SerialReaders a s c <> SerialReaders a' s' c' =
-    SerialReaders (HM.unionWith const a a') (HM.unionWith const s s') (c<>c')
+  SerialReaders a s <> SerialReaders a' s' =
+    SerialReaders (HM.unionWith const a a') (HM.unionWith const s s')
 instance Monoid (SerialReaders a) where
-  mempty = SerialReaders mempty mempty mempty
+  mempty = SerialReaders mempty mempty
 
 -- | How to turn an @a@ into some identified type @i@, which is meant to a
 -- general purpose intermediate representation, like 'A.Value' or even 'T.Text'.
@@ -231,17 +228,15 @@ data SerialWriters a = SerialWriters
 
   -- , _serialWritersToStream :: HM.HashMap (TypeRep,Maybe FileExt) (ToStreamFn a)
   --     -- ^ How to write the data to an external file or storage.
-  , _serialWriterToConfig  :: First (WriteToConfigFn a)
   }
   deriving (Show)
 
 makeLenses ''SerialWriters
 
 instance Semigroup (SerialWriters a) where
-  SerialWriters a c <> SerialWriters a' c' =
-    SerialWriters (HM.unionWith const a a') (c<>c')
+  SerialWriters a <> SerialWriters a' = SerialWriters (HM.unionWith const a a')
 instance Monoid (SerialWriters a) where
-  mempty = SerialWriters mempty mempty
+  mempty = SerialWriters mempty
 
 instance Contravariant SerialWriters where
   contramap f sw = SerialWriters
@@ -249,8 +244,6 @@ instance Contravariant SerialWriters where
                                (_serialWritersToAtomic sw)
     -- , _serialWritersToStream = fmap (\(ToStreamFn f') -> ToStreamFn $ f' . f)
     --                            (_serialWritersToStream sw)
-    , _serialWriterToConfig = fmap (\(WriteToConfigFn f') -> WriteToConfigFn $ f' . f)
-                              (_serialWriterToConfig sw)
     }
 
 -- | Links a serialization method to a prefered file extension, if this is
@@ -520,17 +513,29 @@ instance DeserializesWith PlainTextSerial T.Text where
 
 -- * Serialization of options
 
+-- | Contains any set of options that should be exposed via the CLI
+data RecOfOptions field where
+  RecOfOptions :: (Typeable rs, RecordUsableWithCLI rs) => Rec field rs -> RecOfOptions field
+
+type DocRecOfOptions = RecOfOptions DocField
+
 -- | A serialization method used for options which can have a default value,
 -- that can be exposed through the configuration.
-data DocRecSerial a = forall rs. (Typeable rs, RecordUsableWithCLI rs)
-                   => DocRecSerial (a -> DocRec rs) (DocRec rs -> a)
-instance SerializationMethod (DocRecSerial a)
-instance SerializesWith (DocRecSerial a) a where
-  getSerialWriters (DocRecSerial f _) = mempty
-    { _serialWriterToConfig = First $ Just $ WriteToConfigFn f }
-instance DeserializesWith (DocRecSerial a) a where
-  getSerialReaders (DocRecSerial _ f) = mempty
-    { _serialReaderFromConfig = First $ Just $ ReadFromConfigFn f }
+data OptionsSerial a = forall rs. (Typeable rs, RecordUsableWithCLI rs)
+                   => OptionsSerial (a -> DocRec rs) (DocRec rs -> a)
+instance SerializationMethod (OptionsSerial a)
+instance SerializesWith (OptionsSerial a) a where
+  getSerialWriters (OptionsSerial f _) = mempty
+    { _serialWritersToAtomic =
+        toAtomicFn [Nothing] (RecOfOptions . f) }
+instance DeserializesWith (OptionsSerial a) a where
+  getSerialReaders (OptionsSerial _ (f :: DocRec rs -> a)) = mempty
+    { _serialReadersFromAtomic =
+        let conv :: DocRecOfOptions -> Either String a
+            conv (RecOfOptions r) = case cast r of
+              Just r' -> Right $ f r'
+              Nothing -> Left "OptionsSerial: _serialReadersFromAtomic: Not the right fields"
+        in fromAtomicFn [Nothing] conv }
 
 
 -- * Combining serializers and deserializers into one structure
