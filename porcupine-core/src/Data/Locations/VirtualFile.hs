@@ -20,6 +20,7 @@ module Data.Locations.VirtualFile
   , vfileEmbeddedValue
   , setVFileIntermediaryValue, setVFileAesonValue
   , getVFileIntermediaryValue, getVFileAesonValue
+  , getVFileRecOfOptions, setVFileRecOfOptionsLayers
   , vfileOriginalPath, showVFileOriginalPath
   , vfileLayeredReadScheme
   , vfileVoided
@@ -30,7 +31,6 @@ module Data.Locations.VirtualFile
   , withEmbeddedValue
   , usesLayeredMapping, canBeUnmapped, unmappedByDefault
   , getVirtualFileDescription
-  , vfileRecOfOptions
   ) where
 
 import           Control.Lens
@@ -41,6 +41,7 @@ import           Data.DocRecord.OptParse            (RecordUsableWithCLI)
 import qualified Data.HashMap.Strict                as HM
 import qualified Data.HashSet                       as HS
 import           Data.List                          (intersperse)
+import           Data.List.NonEmpty                 (NonEmpty (..))
 import           Data.Locations.Loc
 import           Data.Locations.LocationTree
 import           Data.Locations.Mappings            (HasDefaultMappingRule (..),
@@ -50,6 +51,7 @@ import           Data.Maybe
 import           Data.Monoid                        (First (..))
 import           Data.Profunctor                    (Profunctor (..))
 import           Data.Representable
+import           Data.Semigroup                     (sconcat)
 import qualified Data.Text                          as T
 import           Data.Type.Equality
 import           Data.Typeable
@@ -313,29 +315,36 @@ data RecOfOptions field where
 
 type DocRecOfOptions = RecOfOptions DocField
 
--- | If the file is bidirectional and has an embedded value that can be
--- converted to and from DocRecords (so that it can be read from config file AND
--- command-line), we traverse to it. Setting it changes the value embedded in
--- the file to reflect the new record of options. BEWARE not to change the
--- fields when setting the new doc record.
-vfileRecOfOptions :: forall a. Traversal' (VirtualFile a a) DocRecOfOptions
-vfileRecOfOptions f vf = case mbopts of
-  Just (defVal, WriteToConfigFn convert, convertBack) ->
-    rebuild convertBack <$> f (RecOfOptions $ convert defVal)
-  _ -> pure vf
+-- | If the file has an embedded value that can be converted to a DocRecords, we
+-- return it
+getVFileRecOfOptions :: BidirVirtualFile a -> Maybe DocRecOfOptions
+getVFileRecOfOptions vf = case mbopts of
+  Just (defVal, WriteToConfigFn convert) -> Just $ RecOfOptions $ convert defVal
   where
-    serials = _vfileSerials vf
-    First mbopts = (,,)
-      <$> First (_vfileEmbeddedValue vf)
-      <*> _serialWriterToConfig (_serialWriters serials)
-      <*> _serialReaderFromConfig (_serialReaders serials)
+    First mbopts = (,) <$> First (vf ^. vfileEmbeddedValue)
+                       <*> vf ^. vfileSerials . serialWriters . serialWriterToConfig
 
-    rebuild :: ReadFromConfigFn a -> DocRecOfOptions -> VirtualFile a a
-    rebuild (ReadFromConfigFn convertBack) (RecOfOptions r) =
-      let newVal = case cast r of
-            Nothing -> error "vfileRecOfOptions: record fields aren't compatible"
-            Just r' -> convertBack r'
-      in vf & vfileEmbeddedValue .~ Just newVal
+-- | Assigns to the file a list of layers of records of options. No layers means
+-- we remove the value. If we have more that one layer, this will fail if the
+-- file doesn't use LayeredRead.
+setVFileRecOfOptionsLayers :: VirtualFile a b -> [DocRecOfOptions] -> Either String (VirtualFile a b)
+setVFileRecOfOptionsLayers vf layers =
+  case vf ^. vfileSerials . serialReaders . serialReaderFromConfig of
+    First Nothing -> Left $ showVFileOriginalPath vf ++
+                      ": That file embedded value cannot be set from a DocRecOfOptions"
+    First (Just (ReadFromConfigFn convert)) -> do
+      let transform (RecOfOptions r) = case cast r of
+            Nothing -> Left $ "setVFileRecOfOptionsLayers: " ++ showVFileOriginalPath vf
+                              ++ ": record fields aren't compatible when they should"
+            Just r' -> return $ convert r'
+      newVal <- case (layers, vf^.vfileLayeredReadScheme) of
+        ([], _) -> return Nothing
+        ([x], _) -> Just <$> transform x
+        ((l:ls), LayeredRead) -> Just . sconcat <$> traverse transform (l:|ls)
+        (ls, LayeredReadWithNull) -> Just . mconcat <$> traverse transform ls
+        (_, _) -> Left $ "setVFileRecOfOptionsLayers: " ++ showVFileOriginalPath vf
+                  ++ ": that VirtualFile cannot use several layers of data"
+      return $ vf & vfileEmbeddedValue .~ newVal
 
 -- | Gives access to a version of the VirtualFile without type params. The
 -- original path isn't settable.
