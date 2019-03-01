@@ -285,6 +285,10 @@ type ResourceTreeAndMappingsOverrides =
     -- The tree containing the options parsed by optparse-applicative
   )
 
+varBinding (T.splitOn "=" . T.pack -> [T.unpack -> var, T.unpack -> val]) =
+  Right (LocVariable var,val)
+varBinding _ = Left "Var binding must be of the form \"variable=value\""
+
 -- | Reads the data from the input config file. Constructs the parser for the
 -- command-line arguments. Combines both results to create the
 -- 'VirtualResourceTree' (and its mappings) the pipeline should run on.
@@ -303,9 +307,7 @@ rscTreeConfigurationReader ResourceTreeAndMappings{rtamResourceTree=defTree} =
           many (option (eitherReader varBinding)
                  (long "var"
                <> help "Set a variable already present in the config file"))
-        varBinding (T.splitOn "=" . T.pack -> [T.unpack -> var, T.unpack -> val]) =
-          Right (LocVariable var,val)
-        varBinding _ = Left "Var binding must be of the form \"variable=value\""
+        
         mappingsParser =
           many (option (eitherReader locBinding)
                  (long "loc"
@@ -316,13 +318,13 @@ rscTreeConfigurationReader ResourceTreeAndMappings{rtamResourceTree=defTree} =
           return (p,locOp,l)
         locBinding (T.splitOn "+=" . T.pack -> [vpath,loc]) =
           parseLocBinding vpath AddLayer loc
-        locBinding (T.splitOn "=" . T.pack -> [vpath,loc]) =
+        locBinding (T.splitOn "="  . T.pack -> [vpath,loc]) =
           parseLocBinding vpath ReplaceLayers loc
         locBinding _ =
           Left "Location mapping must be of the form \"virtual_path(+)=physical_path\""
 
     nodeAndRecOfOptions :: VirtualFileNode -> (VirtualFileNode, Maybe DocRecOfOptions)
-    nodeAndRecOfOptions n@VirtualFileNode{..} = (n, vfnodeFile ^? vfileAsBidir . vfileRecOfOptions)
+    nodeAndRecOfOptions n@VirtualFileNode{..} = (n, (vfnodeFile ^? vfileAsBidir) >>= getVFileRecOfOptions)
     nodeAndRecOfOptions n = (n, Nothing)
     parseOptions :: RecOfOptions DocField -> Parser (RecOfOptions SourcedDocField)
     parseOptions (RecOfOptions r) = RecOfOptions <$>
@@ -365,19 +367,26 @@ rscTreeConfigurationReader ResourceTreeAndMappings{rtamResourceTree=defTree} =
           Right v -> case mbRecFromCLI of
             Just (RecOfOptions recFromCLI) -> do
               -- YAML: yes, CLI: yes
+                -- layeredRecs <- case v of
+                -- Object m | Just () <- HM.lookup "$layers" m ->
+                --              if length (HM.toList m) >= 2
+                --              then Left "If you specify data with $layers, there cannot be another key at the same level"
+                --              else
+                --                mapM parseJSONEither layers
+                -- _ -> parseJSONEither v
+                  
               recFromYaml <- tagWithYamlSource <$> parseJSONEither v
                 -- We merge the two configurations:
               let newOpts = RecOfOptions $ rmTags $
                     rzipWith chooseHighestPriority recFromYaml recFromCLI
-              return $ rebuildNode $ vfnodeFile & vfileAsBidir . vfileRecOfOptions .~ newOpts
+              rebuildNode <$> setVFileRecOfOptionsLayers vfnodeFile [newOpts]
             Nothing ->
               -- YAML: yes, CLI: no
               rebuildNode <$> setVFileAesonValue vfnodeFile v
           Left _ -> case mbRecFromCLI of
             Just (RecOfOptions recFromCLI) ->
               -- YAML: no, CLI: yes
-              return $ rebuildNode $
-                vfnodeFile & vfileAsBidir . vfileRecOfOptions .~ RecOfOptions (rmTags recFromCLI)
+              rebuildNode <$> setVFileRecOfOptionsLayers vfnodeFile [RecOfOptions (rmTags recFromCLI)]
             Nothing ->
               -- YAML: no, CLI: no
               return node
