@@ -13,64 +13,77 @@ import           GHC.Generics
 import           Porcupine.Run
 import           Porcupine.Serials
 import           Porcupine.Tasks
+import qualified Streaming.Prelude           as S
 
 
 
 -- This example uses the porcupine to read a data that represents the evloution of a given stock in given data and
 -- gives back the average and standard deviation of the stock on that date.
 
+data Stockdaily = Stockdaily { date :: String , high :: Double , low :: Double} deriving (Generic)
+instance FromJSON Stockdaily
 
-data Stock = Stock { stockName    :: T.Text
-                 , stockprice :: [Float] }
+data Stock = Stock { chart :: [Stockdaily] }
   deriving (Generic)
 instance FromJSON Stock
 
-data Analysis = Analysis { ave :: Float
-                            , std :: Float  }
-  deriving (Generic)
-instance ToJSON Analysis
+getHighStock :: Stock -> [Double]
+getHighStock s = map high (chart s)
+
+getLowStock :: Stock -> [Double]
+getLowStock s = map low (chart s)
+
+getDateStock :: Stock -> [String]
+getDateStock s = map date (chart s)
 
 -- | How to load Stock prices
-userFile :: DataSource Stock
-userFile = dataSource ["Inputs", "Stock"]
+stockFile :: DataSource Stock
+stockFile = dataSource ["Inputs", "Stock"]
                       (somePureDeserial JSONSerial)
 
--- | How to write analysis
-analysisFile :: DataSink Analysis
-analysisFile = dataSink ["Outputs", "Analysis"]
+
+-- We do sliding windows for smothing the curve
+data SlidingWindows = SlidingWindows { smoothcurve :: [Double] }
+  deriving (Generic)
+instance ToJSON SlidingWindows
+
+-- | How to modify the data
+modifiedStock :: DataSink SlidingWindows
+modifiedStock = dataSink ["Outputs", "ModifiedStock"]
                         (somePureSerial JSONSerial)
 
+globalMatrix :: DataSink (Tabular [[Double]])
+globalMatrix = dataSink [ "Outputs" , "globalData"]
+                        (somePureSerial (CSVSerial (T.pack "csv") False ','))
+
+ave :: [Double] -> Double
+ave list = let s = sum list
+               n = fromIntegral (length list)
+               in s/n
+
+msliding :: Int -> [a] -> [[a]]
+msliding n p = case p of
+  []     -> []
+  (x:xs) -> [take n p] ++ (msliding n xs)
+
+
 -- | The simple computation we want to perform
-computeAnalysis :: Stock -> Analysis
-computeAnalysis (Stock name price) = Analysis ave std where
-  ave =
-     let s = sum price
-         n = fromIntegral (length price)
-     in s/n
-  std =
-    let s = sum [ (c- ave)^2 | c <- price]
-        n = fromIntegral (length price)
-    in sqrt (s/n)
+computeSmoothedCurve :: Stock -> SlidingWindows
+computeSmoothedCurve s = SlidingWindows curve where
+  price = getLowStock s
+  curve = map ave (msliding 10 price)
 
--- | The task combining the three previous operations.
---
--- This task may look very opaque from the outside, having no parameters and no
--- return value. But we will be able to reuse it over different users without
--- having to change it at all.
-analyseOneUser :: (LogThrow m) => PTask m () ()
-analyseOneUser =
-  loadData userFile >>> arr computeAnalysis >>> writeData analysisFile
+putallStocks :: [SlidingWindows] -> Tabular [[Double]]
+putallStocks s = Tabular Nothing (map smoothcurve s)
 
-mainTask :: (LogThrow m) => PTask m () ()
-mainTask =
-  -- First we get the ids of the users that we want to analyse. We need only one
-  -- field that will contain a range of values, see IndexRange. By default, this
-  -- range contains just one value, zero.
-  getOption ["Settings"] (docField @"stocks" (oneIndex (0::Int)) "The stock ids to load")
-  -- We turn the range we read into a full lazy list:
-  >>> arr enumIndices
-  -- Then we just map over these ids and call analyseOneUser each time:
-  >>> parMapTask_ (repIndex "id") analyseOneUser
+analyseStocks :: (LogThrow m) => PTask m () ()
+analyseStocks =
+  arr (const (S.each ["aapl" , "fb" , "googl"])) >>> loadDataStream "company" stockFile
+   >>> arr (S.map (\(idx,stock) -> (idx, computeSmoothedCurve stock)))
+   >>> unsafeLiftToPTask (S.toList_)
+   >>> arr (map snd)
+   >>> arr putallStocks
+   >>> writeData globalMatrix
 
 main :: IO ()
 main = runPipelineTask (FullConfig "example2" "porcupine-example2.yaml" "porcupine-core/examples/example2/data")
@@ -85,4 +98,4 @@ main = runPipelineTask (FullConfig "example2" "porcupine-example2.yaml" "porcupi
                           -- FullConfig (and therefore CLI), the progName for
                           -- the CLI given above ("example1") will be inherited
                           -- by the logger, so we can leave it blank
-                       mainTask ()
+                       analyseStocks ()
