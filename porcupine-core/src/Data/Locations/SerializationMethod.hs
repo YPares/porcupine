@@ -595,6 +595,27 @@ eraseDeserials :: SerialsFor a b -> PureSerials a
 eraseDeserials (SerialsFor sers _ ext rk) = SerialsFor sers mempty ext rk
 
 
+-- * Retrieve conversion functions from a 'SerialsFor' @a@ @b@
+
+-- | Tries to get a conversion function to some type @i@
+getToAtomicFn :: forall i a b. (Typeable i) => SerialsFor a b -> Maybe (a -> i)
+getToAtomicFn ser = do
+  ToAtomicFn (f :: a -> i') <-
+    HM.lookup (typeOf (undefined :: i),Nothing) (ser ^. serialWriters . serialWritersToAtomic)
+  case eqT :: Maybe (i' :~: i) of
+    Just Refl -> return f
+    Nothing -> error $ "getToAtomicFn: Some conversion function isn't properly indexed. Should not happen"
+
+-- | Tries to get a conversion function from some type @i@
+getFromAtomicFn :: forall i a b. (Typeable i) => SerialsFor a b -> Maybe (FromAtomicFn' i b)
+getFromAtomicFn ser = do
+  FromAtomicFn (f :: FromAtomicFn' i' b) <-
+    HM.lookup (typeOf (undefined :: i),Nothing) (ser ^. serialReaders . serialReadersFromAtomic)
+  case eqT :: Maybe (i' :~: i) of
+    Just Refl -> return f
+    Nothing -> error $ "getFromAtomicFn: Some conversion function isn't properly indexed. Should not happen"
+
+
 -- * Serialization for compressed formats
 
 -- | Wraps all the functions in the serial so for each serial (extension) @xxx@

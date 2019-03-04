@@ -18,9 +18,8 @@ module Data.Locations.VirtualFile
   , vfileSerials
   , vfileAsBidir, vfileImportance
   , vfileEmbeddedValue
-  , setVFileIntermediaryValue, setVFileAesonValue, setVFileRecOfOptions
-  , getVFileIntermediaryValue, getVFileAesonValue, getVFileRecOfOptions
-  --, tryMergeLayers
+  , getConvertedEmbeddedValue, setConvertedEmbeddedValue
+  , tryMergeLayersForVFile
   , vfileOriginalPath, showVFileOriginalPath
   , vfileLayeredReadScheme
   , vfileVoided
@@ -271,77 +270,50 @@ vfileVoided f (VirtualFile p l v m i d s) =
     rebuild (VirtualFile _ _ _ m' i' d' _) =
       VirtualFile p l v m' i' d' s
 
--- | If the 'VirtualFile' has an embedded value convertible to type @c@, we get
+-- | If the 'VirtualFile' has an embedded value convertible to type @i@, we get
 -- it.
-getVFileIntermediaryValue :: forall a c. (Typeable c)
-                          => BidirVirtualFile a
-                          -> Maybe c
-getVFileIntermediaryValue vf = let resTypeRep = typeOf (undefined :: c) in
-  case HM.lookup (resTypeRep,Nothing)
-                 (_serialWritersToAtomic $ _serialWriters $ _vfileSerials vf) of
-    Nothing -> Nothing
-    Just (ToAtomicFn toA) -> case cast (toA <$> vf ^. vfileEmbeddedValue) of
-      Nothing -> error $ "getVFileIntermediaryValue: Impossible to cast the value to type "
-        ++ show resTypeRep ++ ", however a conversion function was declared in the writers"
-      Just i  -> i
+getConvertedEmbeddedValue
+  :: (Typeable i)
+  => BidirVirtualFile a
+  -> Maybe i
+getConvertedEmbeddedValue vf = do
+  toA <- getToAtomicFn (vf ^. vfileSerials)
+  toA <$> vf ^. vfileEmbeddedValue
 
--- | If the 'VirtualFile' has an embedded value that can be turned into an Aeson
--- 'Value', we get it.
-getVFileAesonValue :: BidirVirtualFile a -> Maybe Value
-getVFileAesonValue = getVFileIntermediaryValue
-
--- | If the 'VirtualFile' has an embedded value that can be turned into a
--- 'DocRec', we get it.
-getVFileRecOfOptions :: BidirVirtualFile a -> Maybe DocRecOfOptions
-getVFileRecOfOptions = getVFileIntermediaryValue
-
--- | If the 'VirtualFile' can hold a embedded value convertible from type @c@,
+-- | If the 'VirtualFile' can hold a embedded value convertible from type @i@,
 -- we set it (or remove it if Nothing). Note that the conversion may fail, we
 -- return Left if the VirtualFile couldn't be set.
-setVFileIntermediaryValue :: forall a b c. (Typeable c)
-                          => VirtualFile a b
-                          -> c
-                          -> Either String (VirtualFile a b)
-setVFileIntermediaryValue vf i = let inpTypeRep = typeOf (undefined :: c) in
-  case HM.lookup (inpTypeRep,Nothing)
-                 (_serialReadersFromAtomic $ _serialReaders $ _vfileSerials vf) of
-    Nothing -> Left $ "No conversion function is available to turn type " ++ show inpTypeRep
-               ++ "into the type expected by " ++ showVFileOriginalPath vf
-    Just (FromAtomicFn fromA) -> case cast i of
-      Nothing -> error $ "setVFileIntermediaryValue: Impossible to cast back the value from type "
-        ++ show inpTypeRep ++ ", however a conversion function was declared in the readers"
-      Just i' -> case fromA i' of
-        Left s    -> Left s
-        Right i'' -> Right $ vf & vfileEmbeddedValue .~ Just i''
+setConvertedEmbeddedValue
+  :: forall a b i. (Typeable i)
+  => VirtualFile a b
+  -> i
+  -> Either String (VirtualFile a b)
+setConvertedEmbeddedValue vf i =
+  case getFromAtomicFn (vf ^. vfileSerials) of
+    Nothing -> Left $ showVFileOriginalPath vf ++
+               ": no conversion function is available to transform type " ++ show (typeOf (undefined :: i))
+    Just fromA -> do
+      i' <- fromA i
+      return $ vf & vfileEmbeddedValue .~ Just i'
 
--- | If the file can carry a defaut value convertible from aeson Value, we set
--- it.
-setVFileAesonValue :: VirtualFile a b -> Value -> Either String (VirtualFile a b)
-setVFileAesonValue = setVFileIntermediaryValue
-
--- | If the file can carry a defaut value convertible from a 'DocRec', we set
--- it.
-setVFileRecOfOptions :: VirtualFile a b -> DocRecOfOptions -> Either String (VirtualFile a b)
-setVFileRecOfOptions = setVFileIntermediaryValue
-
--- -- | Assigns to the file a list of layers of records of options. No layers means
--- -- we remove the value. If we have more that one layer, this will fail if the
--- -- file doesn't use LayeredRead.
--- tryMergeLayers :: (Typeable c) => VirtualFile a b -> [c] -> Either String c
--- tryMergeLayers vf layers =
---   case vf ^. vfileSerials . serialReaders . serialReaderFromConfig of
---     First Nothing -> Left $ showVFileOriginalPath vf ++
---                       ": That file embedded value cannot be set from a DocRecOfOptions"
---     First (Just (ReadFromConfigFn convert)) -> do
---       let transform (RecOfOptions r) = case cast r of
---             Nothing -> Left $ "setVFileRecOfOptionsLayers: " ++ showVFileOriginalPath vf
---                               ++ ": record fields aren't compatible when they should"
---             Just r' -> return $ convert r'
---       newVal <- case (layers, vf^.vfileLayeredReadScheme) of
---         ([], _) -> return Nothing
---         ([x], _) -> Just <$> transform x
---         ((l:ls), LayeredRead) -> Just . sconcat <$> traverse transform (l:|ls)
---         (ls, LayeredReadWithNull) -> Just . mconcat <$> traverse transform ls
---         (_, _) -> Left $ "setVFileRecOfOptionsLayers: " ++ showVFileOriginalPath vf
---                   ++ ": that VirtualFile cannot use several layers of data"
---       return $ vf & vfileEmbeddedValue .~ newVal
+-- | Tries to convert each @i@ layer to and from type @b@ and find a
+-- Monoid/Semigroup instance for @b@ in the vfileLayeredReadScheme, so we can
+-- merge these layers. So if we have more that one layer, this will fail if the
+-- file doesn't use LayeredRead.
+tryMergeLayersForVFile :: forall a i. (Typeable i) => BidirVirtualFile a -> [i] -> Either String i
+tryMergeLayersForVFile vf layers = let ser = vf ^. vfileSerials in
+  case (,) <$> getFromAtomicFn ser <*> getToAtomicFn ser of
+    Nothing -> Left $ showVFileOriginalPath vf ++
+               ": no conversion functions are available to transform back and forth type "
+               ++ show (typeOf (undefined :: i))
+    Just (fromA, toA) -> do
+      newVal <- case (layers, vf^.vfileLayeredReadScheme) of
+        ([], LayeredReadWithNull) -> return mempty
+        ([], _) -> Left $ "tryMergeLayersForVFile: " ++ showVFileOriginalPath vf
+                   ++ " doesn't support mapping to no layers"
+        ([x], _) -> fromA x
+        (l:ls, LayeredRead) -> sconcat <$> traverse fromA (l:|ls)
+        (ls, LayeredReadWithNull) -> mconcat <$> traverse fromA ls
+        (_, _) -> Left $ "tryMergeLayersForVFile: " ++ showVFileOriginalPath vf
+                  ++ " cannot use several layers of data"
+      return $ toA newVal
