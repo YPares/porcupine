@@ -236,7 +236,7 @@ embeddedDataTreeToJSONFields thisPath (LocationTree mbOpts sub) =
   where
     opts' = case mbOpts of
       VirtualFileNode{..} ->
-        case (vfnodeFile ^? vfileAsBidir) >>= getVFileAesonValue of
+        case (vfnodeFile ^? vfileAsBidir) >>= getConvertedEmbeddedValue of
           Just (Object o) -> o
           _               -> mempty
       _ -> mempty
@@ -324,7 +324,7 @@ rscTreeConfigurationReader ResourceTreeAndMappings{rtamResourceTree=defTree} =
           Left "Location mapping must be of the form \"virtual_path(+)=physical_path\""
 
     nodeAndRecOfOptions :: VirtualFileNode -> (VirtualFileNode, Maybe DocRecOfOptions)
-    nodeAndRecOfOptions n@VirtualFileNode{..} = (n, (vfnodeFile ^? vfileAsBidir) >>= getVFileRecOfOptions)
+    nodeAndRecOfOptions n@VirtualFileNode{..} = (n, (vfnodeFile ^? vfileAsBidir) >>= getConvertedEmbeddedValue)
     nodeAndRecOfOptions n = (n, Nothing)
     parseOptions :: RecOfOptions DocField -> Parser (RecOfOptions SourcedDocField)
     parseOptions (RecOfOptions r) = RecOfOptions <$>
@@ -379,14 +379,14 @@ rscTreeConfigurationReader ResourceTreeAndMappings{rtamResourceTree=defTree} =
                 -- We merge the two configurations:
               let newOpts = RecOfOptions $ rmTags $
                     rzipWith chooseHighestPriority recFromYaml recFromCLI
-              rebuildNode <$> setVFileRecOfOptions vfnodeFile newOpts
+              rebuildNode <$> setConvertedEmbeddedValue vfnodeFile newOpts
             Nothing ->
               -- YAML: yes, CLI: no
-              rebuildNode <$> setVFileAesonValue vfnodeFile v
+              rebuildNode <$> setConvertedEmbeddedValue vfnodeFile v
           Left _ -> case mbRecFromCLI of
             Just (RecOfOptions recFromCLI) ->
               -- YAML: no, CLI: yes
-              rebuildNode <$> setVFileRecOfOptions vfnodeFile (RecOfOptions (rmTags recFromCLI))
+              rebuildNode <$> setConvertedEmbeddedValue vfnodeFile (RecOfOptions (rmTags recFromCLI))
             Nothing ->
               -- YAML: no, CLI: no
               return node
