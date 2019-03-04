@@ -300,7 +300,12 @@ setConvertedEmbeddedValue vf i =
 -- Monoid/Semigroup instance for @b@ in the vfileLayeredReadScheme, so we can
 -- merge these layers. So if we have more that one layer, this will fail if the
 -- file doesn't use LayeredRead.
-tryMergeLayersForVFile :: forall a i. (Typeable i) => BidirVirtualFile a -> [i] -> Either String i
+tryMergeLayersForVFile
+  :: forall a i. (Typeable i)
+  => BidirVirtualFile a
+  -> [i]
+  -> Either String i
+tryMergeLayersForVFile _ [i] = return i
 tryMergeLayersForVFile vf layers = let ser = vf ^. vfileSerials in
   case (,) <$> getFromAtomicFn ser <*> getToAtomicFn ser of
     Nothing -> Left $ showVFileOriginalPath vf ++
@@ -311,7 +316,7 @@ tryMergeLayersForVFile vf layers = let ser = vf ^. vfileSerials in
         ([], LayeredReadWithNull) -> return mempty
         ([], _) -> Left $ "tryMergeLayersForVFile: " ++ showVFileOriginalPath vf
                    ++ " doesn't support mapping to no layers"
-        ([x], _) -> fromA x
+        ([x], _) -> error "tryMergeLayersForVFile: Should have been handled by now"
         (l:ls, LayeredRead) -> sconcat <$> traverse fromA (l:|ls)
         (ls, LayeredReadWithNull) -> mconcat <$> traverse fromA ls
         (_, _) -> Left $ "tryMergeLayersForVFile: " ++ showVFileOriginalPath vf
