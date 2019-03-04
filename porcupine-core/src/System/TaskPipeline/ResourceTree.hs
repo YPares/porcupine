@@ -364,25 +364,24 @@ rscTreeConfigurationReader ResourceTreeAndMappings{rtamResourceTree=defTree} =
                               (LTP path, (node@VirtualFileNode{..}, mbRecFromCLI)) =
       let rebuildNode newF = VirtualFileNode{vfnodeFile = newF, ..}
       in case findInAesonVal path dataSectionContent of
-          Right v -> case mbRecFromCLI of
-            Just (RecOfOptions recFromCLI) -> do
-              -- YAML: yes, CLI: yes
-                -- layeredRecs <- case v of
-                -- Object m | Just () <- HM.lookup "$layers" m ->
-                --              if length (HM.toList m) >= 2
-                --              then Left "If you specify data with $layers, there cannot be another key at the same level"
-                --              else
-                --                mapM parseJSONEither layers
-                -- _ -> parseJSONEither v
-                  
-              recFromYaml <- tagWithYamlSource <$> parseJSONEither v
-                -- We merge the two configurations:
-              let newOpts = RecOfOptions $ rmTags $
-                    rzipWith chooseHighestPriority recFromYaml recFromCLI
-              rebuildNode <$> setConvertedEmbeddedValue vfnodeFile newOpts
-            Nothing ->
-              -- YAML: yes, CLI: no
-              rebuildNode <$> setConvertedEmbeddedValue vfnodeFile v
+          Right rawObjFromYaml ->
+            case mbRecFromCLI of
+              Just (RecOfOptions (recFromCLI :: Rec SourcedDocField rs)) -> do
+                -- YAML: yes, CLI: yes
+                RecOfOptions (recFromYaml::DocRec rs') <- getMergedLayersFromAesonValue vfnodeFile rawObjFromYaml
+                                                          (RecOfOptions::DocRec rs -> DocRecOfOptions)
+                case eqT :: Maybe (rs' :~: rs) of
+                  Nothing -> error "replaceWithDataFromConfig: Not the same record type has been returned \
+                                   \by getMergedLayersFromAesonValue"
+                  Just Refl -> do
+                    let recFromYaml' = tagWithYamlSource recFromYaml
+                    -- We merge the two configurations:
+                    rebuildNode <$> setConvertedEmbeddedValue vfnodeFile
+                      (RecOfOptions $ rmTags $ rzipWith chooseHighestPriority recFromYaml' recFromCLI)
+              Nothing -> do
+                -- YAML: yes, CLI: no
+                mergedDataFromYaml <- getMergedLayersFromAesonValue vfnodeFile rawObjFromYaml (id::Value -> Value)
+                rebuildNode <$> setConvertedEmbeddedValue vfnodeFile mergedDataFromYaml
           Left _ -> case mbRecFromCLI of
             Just (RecOfOptions recFromCLI) ->
               -- YAML: no, CLI: yes
@@ -398,6 +397,20 @@ rscTreeConfigurationReader ResourceTreeAndMappings{rtamResourceTree=defTree} =
         go (p:ps) (Object (HM.lookup (_ltpiName p) -> Just v)) = go ps v
         go _ _ = Left $ "rscTreeConfigurationReader: " ++
           (T.unpack $ toTextRepr $ LTP path) ++ " doesn't match any path in the Yaml config"
+
+    getMergedLayersFromAesonValue vf objFromYaml f = do
+      bidirVF <- case vf ^? vfileAsBidir of
+        Just f -> return f
+        Nothing -> Left $ "getMergedLayersFromAesonValue: " ++ showVFileOriginalPath vf
+                          ++ " contains embedded options: it should be bidirectional"
+      layersFromYaml <- case objFromYaml of
+        Object m
+          | Just v <- HM.lookup "$layers" m ->
+              case v of
+                Array layers -> mapM parseJSONEither $ foldr (:) [] layers
+                _ -> Left $ "If you specify data with $layers, $layers must contain an array."
+        _ -> (:[]) <$> parseJSONEither objFromYaml
+      tryMergeLayersForVFile bidirVF $ map f layersFromYaml
 
 -- ** Transforming a virtual resource tree to a physical resource tree (ie. a
 -- tree with physical locations attached)
@@ -500,7 +513,7 @@ makeDataAccessor vpath (VFileImportance sevRead sevWrite sevError)
           (_, [x]) -> return x
           (LayeredReadWithNull, ls) -> return $ mconcat ls
           (_, []) -> throwWithPrefix $ vpath ++ " has no layers from which to read"
-          (LayeredRead, l:ls) -> return $ foldr (<>) l ls
+          (LayeredRead, l:ls) -> return $ foldl (<>) l ls
           (SingleLayerRead, ls) -> do
             logFM WarningS $ logStr $ vpath ++
               " doesn't support layered mapping. Using only result from last layer '"
