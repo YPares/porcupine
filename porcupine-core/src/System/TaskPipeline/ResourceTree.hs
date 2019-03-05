@@ -313,9 +313,10 @@ type ResourceTreeAndMappingsOverrides =
     -- The tree containing the options parsed by optparse-applicative
   )
 
-varBinding (T.splitOn "=" . T.pack -> [T.unpack -> var, T.unpack -> val]) =
+splitVarBinding :: String -> Either String (LocVariable, String)
+splitVarBinding (T.splitOn "=" . T.pack -> [T.unpack -> var, T.unpack -> val]) =
   Right (LocVariable var,val)
-varBinding _ = Left "Var binding must be of the form \"variable=value\""
+splitVarBinding _ = Left "Var binding must be of the form \"variable=value\""
 
 -- | Reads the data from the input config file. Constructs the parser for the
 -- command-line arguments. Combines both results to create the
@@ -332,7 +333,7 @@ rscTreeConfigurationReader ResourceTreeAndMappings{rtamResourceTree=defTree} =
         treeOfOptsParser = traverseOf (traversed . _2 . _Just) parseOptions $
                            fmap nodeAndRecOfOptions defTree
         variablesParser = HM.fromList <$>
-          many (option (eitherReader varBinding)
+          many (option (eitherReader splitVarBinding)
                  (long "var"
                <> help "Set a variable already present in the config file"))
 

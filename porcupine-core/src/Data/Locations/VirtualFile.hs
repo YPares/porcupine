@@ -35,8 +35,6 @@ module Data.Locations.VirtualFile
 import           Control.Lens
 import           Data.Aeson                         (Value)
 import           Data.Default
-import           Data.DocRecord
-import           Data.DocRecord.OptParse            (RecordUsableWithCLI)
 import qualified Data.HashMap.Strict                as HM
 import qualified Data.HashSet                       as HS
 import           Data.List                          (intersperse)
@@ -316,9 +314,9 @@ tryMergeLayersForVFile vf layers = let ser = vf ^. vfileSerials in
         ([], LayeredReadWithNull) -> return mempty
         ([], _) -> Left $ "tryMergeLayersForVFile: " ++ showVFileOriginalPath vf
                    ++ " doesn't support mapping to no layers"
-        ([x], _) -> error "tryMergeLayersForVFile: Should have been handled by now"
-        (l:ls, LayeredRead) -> sconcat <$> traverse fromA (l:|ls)
-        (ls, LayeredReadWithNull) -> mconcat <$> traverse fromA ls
+        ([_], _) -> error "tryMergeLayersForVFile: Should have been handled by now"
+        (x:xs, LayeredRead) -> sconcat <$> traverse fromA (x:|xs)
+        (xs, LayeredReadWithNull) -> mconcat <$> traverse fromA xs
         (_, _) -> Left $ "tryMergeLayersForVFile: " ++ showVFileOriginalPath vf
                   ++ " cannot use several layers of data"
       return $ toA newVal
