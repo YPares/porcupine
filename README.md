@@ -1,8 +1,8 @@
 # Porcupine
 
-[![CircleCI](https://circleci.com/gh/tweag/porcupine/tree/master.svg?style=svg)](https://circleci.com/gh/tweag/porcupine/tree/master)
+[![CircleCI](https://circleci.com/gh/tweag/porcupine/tree/master.svg?style=svg)](https://circleci.com/gh/tweag/porcupine/tree/master) [![Join the chat at https://gitter.im/tweag/porcupine](https://badges.gitter.im/tweag/porcupine.svg)](https://gitter.im/tweag/porcupine?utm_source=badge&utm_medium=badge&utm_campaign=pr-badge&utm_content=badge)
 
-Porcupine stands for _Portable, Reusable & Customizable Pipeline_. It is a tool
+Porcupine stands for _Portable & Customizable Pipeline_. It is a tool
 aimed at data scientists and numerical analysts, so that they can express
 general data manipulation and analysis tasks,
 
@@ -83,9 +83,11 @@ dataSource :: [LocationTreePathItem] -> SerialsFor a b -> DataSource b
 ## Tasks
 
 A `PTask` is an arrow, that is to say a computation with an input and an
-output. Here we just call these computation "tasks". PTasks run in a base monad
+output. Here we just call these computations "tasks". PTasks run in a base monad
 `m` that can depend on the application but that should always implement
 `KatipContext` (for logging), `MonadCatch`, `MonadResource` and `MonadUnliftIO`.
+However you usually don't have to worry about that, as porcupine takes care of these
+dependencies for you.
 
 This is how we create a task that reads the `myInput` VirtualFile we defined
 previously:
@@ -114,7 +116,7 @@ pipeline, your application just needs to call:
 
 ```haskell
 main :: IO ()
-main = runPipelineTask cfg mainTask ()
+main = runPipelineTask_ cfg mainTask
   where
     cfg = FullConfig "MyApp" "pipeline-config.yaml" "./default-root-dir"
 ```
@@ -163,13 +165,13 @@ persons:
   have to know how the data is represented, just that it exists. She just reuses
   the serials written by the storage developper and targets the _tasks_
   framework.
-- The _software architect_ work will start once we need to bump things up a
+- The _devops_ work will start once we need to bump things up a
   bit. Once we have iterated several times over our analyses and simulations and
   want to have things running in a bigger scale, then it's time for the pipeline
   to move from the scientist's puny laptop and go bigger. This is time to
   "patch" the pipeline, make it run in different context, in the cloud, behind a
   scheduler, as jobs in a task queue reading its inputs from all kinds of
-  databases. The software architect will target the _resource tree_ framework
+  databases. The devops will target the _resource tree_ framework
   (possibly without ever recompiling the pipeline, only by adjusting its
   configuration from the outside)
 
@@ -178,6 +180,196 @@ runnning anything in the cloud to start benefiting from porcupine. But we want
 to support workflows where these three persons are distinct people, each one
 with her different set of skills.
 
+# Walking through an example
+
+Let's have a look at [example1](porcupine-core/examples/Example1.hs). It carries
+out a very simple analysis: counting the number of times each letter of the
+alphabet appears in some users' first name and last name. Each user data is read
+from [a json file specific to that user](porcupine-core/examples/data/Inputs)
+named `User-{userId}.json`, and the result for that user is written to another
+json file named `Analysis-{userId}.json`. This very basic process is repeated
+once per user ID to consider.
+
+Let's build and run that example. In a fresh clone and from the root directory
+of `porcupine`:
+
+```sh
+$ stack build porcupine-core:example1
+$ stack exec example1 -- write-config-template
+```
+
+You will see that it wrote a `porcupine.yaml` file in the current folder. Let's
+open it:
+
+```yaml
+variables: {}
+data:
+  Settings:
+    users: 0
+  Inputs: {}
+  Outputs: {}
+locations:
+  /Inputs/User: _-{userId}.json
+  /: porcupine-core/examples/data
+  /Outputs/Analysis: _-{userId}.json
+```
+
+The `data:` section contains one bit of information here: the `users:` field,
+corresponding to ranges of user IDs to consider. By default, we just consider
+user #0. But you could write something like:
+
+```yaml
+    users: [0..10,50..60,90..100]
+```
+
+Meaning that we'd process users from #0 to #10, then users from #50 to #60, then
+users from #90 to #100.
+
+You can alter the YAML and then run the example with:
+
+```sh
+$ stack exec example1
+```
+
+And you'll see it computes and writes an analysis of all the required users
+(although it will fail if you ask for user IDs for which we do not have input
+files). Have a look at the output folder (`porcupine-core/examples/data/Outputs`
+by default).
+
+Then you see the `locations:` section. Look at the `/:` location, it's the
+default root under which every file we be looked for and written, and `example1`
+by default binds it to `porcupine-core/examples/data`.
+
+Let's have a look at the other two lines:
+
+```yaml
+  /Inputs/User: _-{userId}.json
+  /Outputs/Analysis: _-{userId}.json
+```
+
+You can see here the default mappings for the two virtual files `/Inputs/User`
+and `/Ouputs/Analysis` that are used by `example1`. Wait. TWO virtual files? But
+we mentioned earlier that there were *many* user files to read and just as many
+analysis files to write? Indeed, but these are just *several occurences* of the
+same two VirtualFiles. You'll see in the code of example1 that the task
+conducing the analysis on one user doesn't even know that several users might
+exist, let alone where these users' files are. It just says "I want a user" (one
+VirtualFile, to be read) and "I output an analysis" (one VirtualFile, to be
+written). But more on that later.
+
+You can also notice that there is no difference between input and output files
+here. The syntax to bind them to physical locations is the same. Although the
+syntax of the mappings probably requires a bit of explaining:
+
+- The underscore sign at the beginning of a physical location means we want to
+  inherit the path instead of specifying it entirely. It means that the path
+  under which we will look for the file is to be derived from the rest of the
+  bindings:
+    - `/Inputs/User` is "located" under the virtual folder `/Inputs`
+	- `/Inputs` isn't explicitly mapped to any physical folder here. However,
+	    it is itself "located" under `/`
+	- `/` is bound to a physical folder, `porcupine-core/examples/data`
+	- then `/Inputs` is bound to `porcupine-core/examples/data/Inputs`
+	- and `/Inputs/User` is bound to
+	    `porcupine-core/examples/data/Inputs/User-{userId}.json`.
+- As you may have guessed, the `{...}` syntax denotes a _variable_, it's a part
+  of the file path that will depend on some context (here, the ID of the user
+  that is being analyzed).
+
+Let's know have a look at the code of
+[`example1`](porcupine-core/examples/Example1.hs) (types have been eluded for
+brevity but they are in the source):
+
+```haskell
+userFile = dataSource ["Inputs", "User"]
+                      (somePureDeserial JSONSerial)
+
+analysisFile = dataSink ["Outputs", "Analysis"]
+                        (somePureSerial JSONSerial)
+
+computeAnalysis (User name surname _) = Analysis $
+  HM.fromListWith (+) $ [(c,1) | c <- T.unpack name]
+                     ++ [(c,1) | c <- T.unpack surname]
+
+analyseOneUser =
+  loadData userFile >>> arr computeAnalysis >>> writeData analysisFile
+```
+
+We declare our source, our sink, a pure function to conduct the analysis, and
+then a very simple pipeline that will bind all of that together.
+
+At this point, if we were to directly run `analyseOneUser` as a task, we
+wouldn't be able to make it run over _all_ the users. As is, it would try to access
+`porcupine-core/examples/data/Inputs/User.json` (notice the variable `{userId}`
+is missing) and write `Outputs/Analysis.json`.
+
+This is not what we want. That's why we'll declare another task on top of that:
+
+```haskell
+mainTask =
+  getOption ["Settings"] (docField @"users" (oneIndex (0::Int)) "The user ids to load")
+  >>> arr enumIndices
+  >>> parMapTask_ (repIndex "userId") analyseOneUser
+```
+
+Here, we will first declare a record of one option field (that's why we use
+`getOption` here, singular). This record is also a VirtualFile we want to read,
+so it has to have a virtual path (here, `/Settings`). The field is created with
+`docField` (notice that the extension `TypeApplications` is used here), and, as
+we saw earlier in the yaml config, it is named `users` and has a default value
+of just one ID, zero. `oneIndex` returns a value of type `IndexRange`, and
+therefore that's what `getOption` will give us. But really any type could be
+used here, as long as this type instanciates `ToJSON` and `FromJSON` (so we can
+embed it in the YAML config file).
+
+`getOption`'s output will thus be list of ranges (tuples). We transform it to a
+flat list of every ID to consider with `enumIndices`, and finally we map (in
+parallel) over that list with `parMapTask_`, repeating our `analyseOneUser` once
+per user ID in input. Note the `repIndex "userId"`: this creates a *repetition
+index*. Every function that repeats tasks in porcupine will take one, and this
+is where the `{userId}` variable that we saw in the YAML config comes from. It
+works first by changing the default mappings of the VirtualFiles accessed by
+`analyseOneUser` so that each of them now contains the `{userId}` variable, and
+second by looking up that variable in the physical path and replacing it with
+the user ID currently being considered. All of that so we don't end up reading
+and writing the same files everytime the task is repeated.
+
+So what happens if you remove the variables from the mappings? Let's say you
+change the mappings of `/Outputs/Analysis` to:
+
+```yaml
+  /Outputs/Analysis: ./analysis.json
+```
+
+well then, this means that the same file will be overwritten again and again. So
+you definitely don't want that.
+
+However, you can perfectly move the variable any place you want. For instance
+you can reorganize the layout of the inputs and outputs to have one folder per
+user, with inputs and ouputs put side to side:
+
+```
+Users/
+├── 0/
+│   ├── Analysis.json
+│   └── User.json
+├── 1/
+|   ├── Analysis.json
+|   └── User.json
+├── 2/
+...
+```
+
+The configuration to take into account that new layout is just the following:
+
+```yaml
+locations:
+  /Inputs/User: Users/{userId}/User.json
+  /Outputs/Analysis: Users/{userId}/Analysis.json
+```
+
+In that scheme, the `Inputs`/`Ouputs` level has disappeared, and the
+VirtualFiles specify their paths explicitely.
 
 # Specific features
 
@@ -185,15 +377,27 @@ Aside from the general usage exposed previously, porcupine proposes several
 features to facilitate iterative development of pipelines and reusability of
 tasks.
 
-[TO BE FILLED]
-
 ## Options and embeddable data
+
+To hammer a bit on porcupine's philosophy, our goal is that there should be the
+least possible differences between a pipeline's _inputs_ and its
+_configuration_. Every call to `getOptions` will internally declare a
+VirtualFile, and is only a thin layer on top of `loadData`. That means that a
+	record of options passed to `getOptions` will be treated like any other input,
+and can perfectly be moved to a dedicated JSON or YAML file instead of being
+stored in the `data:` section of the pipeline configuration file.
+
+Conversely, any `VirtualFile` that uses the JSONSerial can be directly embedded
+in the `data:` section. Don't forget in that case to map that VirtualFile to
+`null` in the `locations:` section, or else the pipeline will try to access a
+file that doesn't exist.
+
 
 ## Location layers
 
 ## Repeated tasks and VirtualFiles
 
-## Mapping S3 objects
+## Location accessors
 
 ## Control logging
 

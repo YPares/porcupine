@@ -45,9 +45,11 @@ import           System.FilePath        ((</>))
 intoSink :: Monad m => ConduitT a Void m b -> Stream (Of a) m r -> m b
 intoSink snk src = runConduit $ fromStreamSource src .| snk
 
+-- TODO: rename to streamFolderRecursive
 streamFolder :: (MonadIO m) => FilePath -> Stream (Of FilePath) m ()
 streamFolder topPath = S.map (topPath </>) $ streamFolderRel topPath
 
+-- TODO: rename to streamFolderRecursiveRel
 streamFolderRel :: (MonadIO m) => FilePath -> Stream (Of FilePath) m ()
 streamFolderRel topPath =
   aux ""
@@ -64,6 +66,8 @@ streamFolderRel topPath =
 
 -- | Generalizes 'partitionEithers' from Streaming.Prelude to fork a stream into
 -- several substreams
+-- TODO: This language of filters needs an introduction.
+-- What problem do they solve? Why bare streams aren't suitable for the task?
 class StreamFilter s where
   type Wanted s :: *
   type Split s (m :: * -> *) :: * -> *
@@ -111,6 +115,7 @@ instance (StreamFilter s') => StreamFilter (Of Copy s') where
 
 -- | Copies stream elements to a layer underneath after applying a function on
 -- them
+-- TODO: Motivate.
 mapCopy
   :: Monad m
   => (a -> b) -> Stream (Of a) (Stream (Of b) m) r -> Stream (Of a) (Stream (Of b) m) r
@@ -120,6 +125,7 @@ mapCopy f stream = S.for stream $ \x -> do
 
 -- | A version of mapCopy that takes the whole substream of copied values and
 -- merges it downwards
+-- TODO: Motivate.
 hoistCopy
   :: (Monad m)
   => (forall n s. (Monad n) => Stream (Of a) n s -> Stream (Of b) n s)
@@ -129,6 +135,7 @@ hoistCopy g stream =
 
 -- | Just a simple tuple to annotate stream elements. It is strict in the
 -- annotation.
+-- TODO: Motivate. How is this better than a primitive pair?
 data t `With` ann = With { _ann :: !ann, _elt :: t }
   deriving (Eq, Generic)
 
@@ -139,6 +146,8 @@ instance (FromJSON t, FromJSON ann) => FromJSON (t `With` ann)
 
 type StreamWith id a = Stream (Of (a `With` id))
 
+-- TODO: Maybe this function can be defined more generally when the stream
+-- elements are functors.
 mapStreamW :: Monad m => (a -> b) -> StreamWith ann a m r -> StreamWith ann b m r
 mapStreamW f = S.map $ \case
   With pid a -> With pid (f a)
