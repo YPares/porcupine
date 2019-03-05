@@ -190,7 +190,7 @@ instance (Semigroup a) => Semigroup (PossiblyEmpty a) where
 instance (Semigroup a) => Monoid (PossiblyEmpty a) where
   mempty = PE (Left NoDefault)
 
- 
+
 -- | Wraps a field and gives it some tag
 data Tagged tag a = Tagged { tagFromTagged   :: tag
                            , valueFromTagged :: a }

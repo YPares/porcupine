@@ -307,7 +307,7 @@ rscTreeConfigurationReader ResourceTreeAndMappings{rtamResourceTree=defTree} =
           many (option (eitherReader varBinding)
                  (long "var"
                <> help "Set a variable already present in the config file"))
-        
+
         mappingsParser =
           many (option (eitherReader locBinding)
                  (long "loc"
