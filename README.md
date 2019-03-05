@@ -26,7 +26,7 @@ already have. A `SerialsFor A B` is a collection of `A -> i` and `i -> B`
 functions, where `i` can be any intermediary type, most often `ByteString`,
 `Data.Aeson.Value` or `Text`.
 
-`SerialsFor` is a [profunctor][profunctor]. That means that once you know how to
+`SerialsFor` is a [profunctor]. That means that once you know how to
 (de)serialize an `A` (ie. if you have a `SerialsFor A A`), then you can just use
 `dimap` to get a `SerialsFor B B` if you know how to convert `A` to & from
 `B`. Handling only one-way serialization or deserialization is perfectly
@@ -52,14 +52,14 @@ pipeline so that it can deal with more data sources.
 
 Every task in Porcupine exposes a resource tree. Resources are represented in
 porcupine by `VirtualFile`s, and a resource tree is a hierarchy (like a
-filesystem) of `VirtualFiles`. A `VirtualFile a b` just groups together a
-logical path and a `SerialsFor a b`, so it just something with an identifier
+filesystem) of `VirtualFiles`. A `VirtualFile A B` just groups together a
+logical path and a `SerialsFor A B`, so it is just something with an identifier
 (like `"/Inputs/Config"` or `"/Ouputs/Results"`) in which we can write a `A`
 and/or from which we can read a `B`. We say the path is "logical" because it
 doesn't necessary have to correspond to some physical path on the hard drive: in
 the end, the user of the task pipeline (the one who runs the executable) will
 bind each logical path to a physical location. Besides, a `VirtualFile` doesn't
-even have to correspond in the end to an actual file, as for instance you can
+even have to correspond in the end to an actual file, as for instance you could
 map an entry in a database to a `VirtualFile`. However, paths are a convenient
 and customary way to organise resources, and we can conveniently use them as a
 default layout for when your logical paths do correspond to actual paths on your
@@ -74,7 +74,7 @@ myInput :: VirtualFile Void MyConfig
 	-- MyConfig must be an instance of FromJSON here
 myInput = dataSource
             ["Inputs", "Config"] -- The logical path '/Inputs/Config'
-	        (somePureDeserial JSONSerial)
+	    (somePureDeserial JSONSerial)
 
 somePureDeserial :: (DeserializesWith s a) => s -> SerialsFor Void a
 dataSource :: [LocationTreePathItem] -> SerialsFor a b -> DataSource b
@@ -153,7 +153,7 @@ overrides the value set in the yaml config file.
 
 # Philosophy of use
 
-Porcupine's intent is to make it easy to cleanly separate the work between 3
+Porcupine's intent is to make it easy to separate clearly the work between 3
 persons:
 
 - The _storage developer_ will be in charge of determining how the data gets read
