@@ -33,7 +33,7 @@ import           GHC.Generics                    (Generic)
 import qualified Network.URL                     as URL
 import qualified System.Directory                as Dir (createDirectoryIfMissing)
 import qualified System.FilePath                 as Path
-
+import Debug.Trace
 
 -- | Each location bit can be a simple chunk of string, or a variable name
 -- waiting to be spliced in.
@@ -117,11 +117,14 @@ data QParam a = QParam a a
 
 instance (Monad m, ContentHashable m a) => ContentHashable m (QParam a)
 
-asQParams :: (IsLocString a) => Iso' [(String,String)] [QParam a]
-asQParams = iso to_ from_
+instance (IsLocString a) => Show (QParam a) where
+  show = show . view (from asQParam)
+
+asQParam :: (IsLocString a) => Iso' (String,String) (QParam a)
+asQParam = iso to_ from_
   where
-    to_ = map (\(x,y) -> QParam (x ^. from locStringAsRawString) (y ^. from locStringAsRawString))
-    from_ = map (\(QParam x y) -> (x ^. locStringAsRawString, y ^. locStringAsRawString))
+    to_ (x,y) = QParam (x ^. from locStringAsRawString) (y ^. from locStringAsRawString)
+    from_ (QParam x y) = (x ^. locStringAsRawString, y ^. locStringAsRawString)
 
 -- | Location's main type. A value of type 'URLLikeLoc' denotes a file or a
 -- folder that may be local or hosted remotely
@@ -147,7 +150,7 @@ instance (IsLocString a) => Show (URLLikeLoc a) where
         Just p  -> ":" <> show p
       qs = case rfLocParams of
         [] -> ""
-        _  -> "?" ++ URL.exportParams (rfLocParams ^. from asQParams)
+        _  -> "?" ++ URL.exportParams (map (view (from asQParam)) rfLocParams)
 
 locFilePath :: Lens' (URLLikeLoc a) (LocFilePath a)
 locFilePath f (LocalFile fp)                  = LocalFile <$> f fp
@@ -187,14 +190,15 @@ spliceLocVariables vars = fmap $ over locStringVariables $ \v -> case v of
 terminateLocWithVars :: (Traversable f) => f StringWithVars -> Either String (f String)
 terminateLocWithVars = traverse terminateStringWithVars
   where
-    terminateStringWithVars (StringWithVars [SWVB_Chunk s]) = Right s
-    terminateStringWithVars locString = Left $
+    terminateStringWithVars (StringWithVars [SWVB_Chunk s]) = trace ("OK: "++s) $ Right s
+    terminateStringWithVars locString = trace ("ERR: "++show locString) $ Left $
       "Variable(s) " ++ show (locString ^.. locStringVariables)
       ++ " in '" ++ show locString ++ "' haven't been given a value"
 
 -- | Means that @a@ can represent file paths
 class (Monoid a) => IsLocString a where
   locStringAsRawString :: Iso' a String
+  parseLocString       :: String -> Either String a
   parseLocStringAndExt :: String -> Either String (LocFilePath a)
 
 splitExtension' :: FilePath -> (FilePath, String)
@@ -204,6 +208,7 @@ splitExtension' fp = let (f,e) = Path.splitExtension fp in
 
 instance IsLocString String where
   locStringAsRawString = id
+  parseLocString = Right
   parseLocStringAndExt fp = Right $ fp ^. from locFilePathAsRawFilePath
 
 parseStringWithVars :: String -> Either String StringWithVars
@@ -231,6 +236,7 @@ refuseVarRefs place s = do
 instance IsLocString StringWithVars where
   locStringAsRawString = iso show from_
     where from_ s = StringWithVars [SWVB_Chunk s]
+  parseLocString = parseStringWithVars
   parseLocStringAndExt s =
     LocFilePath <$> parseStringWithVars p <*> refuseVarRefs "extension" e
     where (p, e) = splitExtension' s
@@ -241,15 +247,17 @@ parseURLLikeLoc "." = Right $ LocalFile $ LocFilePath ("." ^. from locStringAsRa
 parseURLLikeLoc litteralPath = do
   url <- maybe (Left $ "parseURLLikeLoc: Invalid URL '" ++ litteralPath ++ "'") Right $
              URL.importURL litteralPath
-  case URL.url_type url of
+  r <- case URL.url_type url of
     URL.Absolute h ->
        RemoteFile <$> (refuseVarRefs "protocol" $ getProtocol $ URL.protocol h)
                   <*> (refuseVarRefs "server" $ URL.host h)
                   <*> (Right $ URL.port h)
                   <*> (parseLocStringAndExt $ URL.url_path url)
-                  <*> (Right $ URL.url_params url ^. asQParams)
+                  <*> (map (uncurry QParam) <$>
+                         mapMOf (traversed.both) parseLocString (URL.url_params url))
     URL.HostRelative -> LocalFile <$> (parseLocStringAndExt $ "/" ++ URL.url_path url)
     URL.PathRelative -> LocalFile <$> (parseLocStringAndExt $ URL.url_path url)
+  return $ trace (show r) r
   where getProtocol (URL.RawProt h)  = map toLower h
         getProtocol (URL.HTTP False) = "http"
         getProtocol (URL.HTTP True)  = "https"
@@ -322,7 +330,7 @@ class (Traversable f
       -- ToJSON (f a))`:
       ,FromJSON (f String), FromJSON (f StringWithVars)
       ,ToJSON (f String), ToJSON (f StringWithVars)
-      -- `forall a. (IsLocString a) => (Show (f a))`
+      -- `forall a. (IsLocString a) => (Show (f a))`:
       ,Show (f String), Show (f StringWithVars)) => TypedLocation f where
 
   -- TODO: Find a way to replace get/setLocType by a Lens. This displeased
