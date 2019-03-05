@@ -67,7 +67,7 @@ hard drive.
 
 So once the user has their serials, they just need to create a
 `VirtualFile`. For instance, this is how you create a readonly resource that can
-only be mapped to a JSON file in the end:
+be mapped to a JSON or YAML file in the end:
 
 ```haskell
 myInput :: VirtualFile Void MyConfig
@@ -236,7 +236,16 @@ And you'll see it computes and writes an analysis of all the required users
 files). Have a look at the output folder (`porcupine-core/examples/data/Outputs`
 by default).
 
-Then you see the `locations:` section. Look at the `/:` location, it's the
+Another option you have is leave the yaml file like it is and just run:
+
+```yaml
+stack exec example1 -- --users "[0..10,50..60,90..100]"
+```
+
+Most of the options you can see under `data:` in a pipeline's configuration will also have a CLI flag
+counterpart. Run the executable with `--help` to see them.
+
+Back to the yaml file now. You see the `locations:` section. Look at the `/:` location, it's the
 default root under which every file we be looked for and written, and `example1`
 by default binds it to `porcupine-core/examples/data`.
 
@@ -377,13 +386,21 @@ Aside from the general usage exposed previously, porcupine proposes several
 features to facilitate iterative development of pipelines and reusability of
 tasks.
 
-## Options and embeddable data
+## Configuration, data embedded in config file, and external input files/resources
 
-To hammer a bit on porcupine's philosophy, our goal is that there should be the
-least possible differences between a pipeline's _inputs_ and its
-_configuration_. Every call to `getOptions` will internally declare a
+Let's say you have a pipeline that needs an input file to do some simulation, and a record
+of options controlling the way the simulation happens (which solver to use, which parameters
+to give it, etc). What exactly is the _input_ and what exactly is the _configuration_ here?
+One could argue that both could be considered input, or that both could be considered configuration.
+Our rule of the thumb in porcupine is that everything than can be given a default value and a
+help string should be displayed in the yaml configuration file (like the `users` field in example1),
+and should generate a CLI flag to be able to alter it on the fly. Everything else should just
+be looked in external files. _But these are just the default behaviours._
+
+Our goal is that there should be the fewest possible differences between a pipeline's inputs and its
+configuration. Every call to `getOption(s)` will internally declare a
 VirtualFile, and is only a thin layer on top of `loadData`. That means that a
-	record of options passed to `getOptions` will be treated like any other input,
+record of options passed to `getOptions` will be treated like any other input,
 and can perfectly be moved to a dedicated JSON or YAML file instead of being
 stored in the `data:` section of the pipeline configuration file.
 
@@ -392,12 +409,49 @@ in the `data:` section. Don't forget in that case to map that VirtualFile to
 `null` in the `locations:` section, or else the pipeline will try to access a
 file that doesn't exist.
 
-
 ## Location layers
 
-## Repeated tasks and VirtualFiles
+Every VirtualFile (be it read from embedded data of from external files) can be read from
+_several_ sources instead of one. That requires one thing though: that the type `B` you read
+from a `VirtualFile A B` is an instance of Semigroup (and that your VirtualFile is wrapped in
+`usesLayeredMapping` so it knows about that). This way, porcupine has a way to merge all
+these inputs into just one resource. It can come very handy, and can be used depending on your
+pipeline to organize your input resources into several layers, "stacked" so that the first layers'
+content are completed or overriden by the subsequent layers'. It all depends on which instance of Semigroup
+is read from your `VirtualFile`.
+
+In a similar fashion, if `B` is a Monoid (and if your `VirtualFile` is wrapped in `canBeUnmapped`),
+this authorizes you to map it to `null` in your config file, so we this file is "read", we just get
+a `mempty`.
+
+Layers also for for output files, although it's much simpler here: the data is just identically written to
+every layer. No requirements are therefore put on the type being written.
 
 ## Location accessors
+
+For now, the examples we saw only deal with local resources. Porcupine features an extensible API to
+declare other possible sources, via the `LocationAccessor` class. Each location accessor just needs to be
+imported and declared at the time of `runPipelineTask`, and that's all. Just do it and your whole pipeline's
+resources can now be mapped to a new source of data. A very common source of data is HTTP, and the `LocationAccessor`
+for it is provided in `porcupine-http`. Support for Amazon S3 is also provided in `porcupine-s3`.
+
+The example [example-pokeapi](porcupine-http/examples/ExamplePokeAPI.hs) shows how to deal with some data from
+the [PokeAPI](https://pokeapi.co). You can see that the code of the pipeline looks exactly like that of `example1`,
+the only difference is the call to `runPipelineTask`:
+
+```haskell
+main = runPipelineTask (FullConfig .......)
+                       (  #http <-- useHTTP
+                       :& baseContexts "")
+                       mainTask ()
+```
+
+We explicitely state that we want to use the `#http` LocationAccessor (and that we want to run it with the
+`useHTTP` function, imported from `Data.Locations.Accessors.HTTP`). Note that you need to activate the
+`OverloadedLabels` GHC extension.
+
+Note that _nothing_ in the code tells us where the data will actually be read. The connection between our dataSource
+and the REST API will be made in the [configuration file](porcupine-http/examples/example-pokeapi.yaml).
 
 ## Control logging
 
