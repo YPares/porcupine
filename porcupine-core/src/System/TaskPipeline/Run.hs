@@ -31,7 +31,7 @@ import           Data.Locations.Accessors
 import           Data.Maybe
 import           Data.Vinyl.Derived                 (HasField, rlensf)
 import           Katip
-import           Prelude                            hiding (id, (.))
+import           Prelude                            hiding ((.))
 import           System.Environment                 (lookupEnv)
 import           System.Exit
 import           System.FilePath                    ((</>))
@@ -165,16 +165,30 @@ bindResourceTreeAndRun (NoConfig _ root) accessorsRec tree f =
   where
     rtam = ResourceTreeAndMappings tree (Left root) mempty
     (accessors, argsRec) = splitAccessorsFromArgRec accessorsRec
-bindResourceTreeAndRun (FullConfig progName defConfigFile defRoot) accessorsRec tree f =
-  withCliParser progName "Run a task pipeline" getParser run
+bindResourceTreeAndRun (FullConfig progName defConfigFileURL defRoot) accessorsRec tree f =
+  withConfigFileSourceFromCLI $ \mbConfigFileSource -> do
+    let configFileSource = fromMaybe (ConfigFileURL (LocalFile defConfigFileURL)) mbConfigFileSource
+    mbConfig <- tryReadConfigFileSource configFileSource $ \remoteURL ->
+                  consumeSoup argsRec $ do
+                    -- If config file is remote, we use the accessors and run
+                    -- the readerSoup with the defaut katip params
+                    SomeGLoc loc <- flip runReaderT accessors $
+                                    resolvePathToSomeLoc $ show remoteURL
+                      -- TODO: Implement locExists in each accessor and use it
+                      -- here. For now we fail if given a remote config that
+                      -- doesn't exist.
+                    readBSS loc decodeYAMLStream_
+    parser <- pipelineCliParser rscTreeConfigurationReader progName $
+              BaseInputConfig (case configFileSource of
+                                 ConfigFileURL (LocalFile filep) -> Just filep
+                                 _                               -> Nothing)
+                              mbConfig
+                              (ResourceTreeAndMappings tree (Left defRoot) mempty)
+    withCliParser progName "Run a task pipeline" parser run
   where
-    getParser mbConfigFile =
-      pipelineCliParser rscTreeConfigurationReader progName
-        (fromMaybe defConfigFile mbConfigFile)
-        (ResourceTreeAndMappings tree (Left defRoot) mempty)
+    (accessors, argsRec) = splitAccessorsFromArgRec accessorsRec
     run rtam cmd lsp performConfigWrites =
-      let (accessors, argsRec) = splitAccessorsFromArgRec accessorsRec
-          -- We change the katip runner, from the options we got from CLI:
+      let -- We change the katip runner, from the options we got from CLI:
           argsRec' = argsRec & set (rlensf #katip)
             (ContextRunner (runLogger progName lsp))
       in

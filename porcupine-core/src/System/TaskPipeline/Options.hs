@@ -9,8 +9,9 @@ module System.TaskPipeline.Options
   ( -- * API
     getOptions
   , getOption
+  , optionsVirtualFile
   -- * Re-exports from docrecords
-  , DocRec, Rec(..), (^^.), (^^?), (^^?!)
+  , DocRec, Rec(..), (^^.), (^^?), (^^?!), (=:)
   , PathWithType(..)
   , docField
   ) where
@@ -25,7 +26,7 @@ import           GHC.TypeLits                          (KnownSymbol)
 import           System.TaskPipeline.PTask
 import           System.TaskPipeline.VirtualFileAccess
 
-import           Prelude                               hiding (id, (.))
+import           Prelude                               hiding (id)
 
 
 -- | Add a set of options (as a DocRec) to the 'LocationTree', in order to
@@ -37,9 +38,21 @@ getOptions
                              -- docs and default values
   -> PTask m () (DocRec rs)  -- ^ A PTask that returns the new options values,
                              -- overriden by the user
-getOptions path defOpts = loadData $
-  bidirVirtualFile path $
-    someBidirSerial (DocRecSerial defOpts id id) <> someBidirSerial YAMLSerial
+getOptions path defOpts = loadData $ optionsVirtualFile path defOpts
+
+-- | Creates a 'VirtualFile' from a default set of options (as a DocRec). To be
+-- used with 'loadData'.
+optionsVirtualFile
+  :: forall rs. (Typeable rs, RecordUsableWithCLI rs)
+  => [LocationTreePathItem]  -- ^ The path for the options in the LocationTree
+  -> DocRec rs               -- ^ The DocRec containing the fields with their
+                             -- docs and default values
+  -> BidirVirtualFile (DocRec rs)
+optionsVirtualFile path defOpts =
+  withEmbeddedValue defOpts $
+    bidirVirtualFile path $
+         someBidirSerial (OptionsSerial id id :: OptionsSerial (DocRec rs))
+      <> someBidirSerial YAMLSerial
 
 -- | Just like 'getOptions', but for a single field.
 getOption

@@ -14,6 +14,7 @@
 {-# LANGUAGE StandaloneDeriving        #-}
 {-# LANGUAGE TemplateHaskell           #-}
 {-# LANGUAGE TupleSections             #-}
+{-# LANGUAGE TypeOperators             #-}
 {-# OPTIONS_GHC -Wall #-}
 
 module Data.Locations.SerializationMethod where
@@ -29,11 +30,13 @@ import           Data.Char                   (ord)
 import qualified Data.Csv                    as Csv
 import qualified Data.Csv.Builder            as CsvBuilder
 -- import qualified Data.Csv.Parser             as CsvParser
+import           Codec.Compression.Zlib      as Zlib
 import           Data.DocRecord
 import           Data.DocRecord.OptParse     (RecordUsableWithCLI)
 import qualified Data.HashMap.Strict         as HM
 import           Data.Locations.LocVariable
 import           Data.Locations.LogAndErrors
+import           Data.Maybe
 import           Data.Monoid                 (First (..))
 import qualified Data.Text                   as T
 import qualified Data.Text.Encoding          as TE
@@ -45,15 +48,18 @@ import           Data.Void
 import qualified Data.Yaml                   as Y
 import           Streaming
 import qualified Streaming.Prelude           as S
+import qualified Streaming.Zip               as SZip
 
 
 -- | A file extension
 type FileExt = T.Text
 
+type FromAtomicFn' i a = i -> Either String a
+
 -- | How to read an @a@ from some identified type @i@, which is meant to be a
 -- general-purpose intermediate representation, like 'A.Value'.
 data FromAtomicFn a =
-  forall i. (Typeable i) => FromAtomicFn (i -> Either String a)
+  forall i. (Typeable i) => FromAtomicFn (FromAtomicFn' i a)
 deriving instance Functor FromAtomicFn
 
 instance Show (FromAtomicFn a) where
@@ -62,17 +68,33 @@ instance Show (FromAtomicFn a) where
 fromAtomicFn
   :: forall i a. (Typeable i)
   => [Maybe FileExt]
-  -> (i -> Either String a)
+  -> FromAtomicFn' i a
   -> HM.HashMap (TypeRep,Maybe FileExt) (FromAtomicFn a)
 fromAtomicFn exts f = HM.fromList $ map (\ext -> ((argTypeRep,ext), FromAtomicFn f)) exts
   where
     argTypeRep = typeOf (undefined :: i)
 
+allFromAtomicFnsWithType :: forall i ext a. (Typeable i)
+                         => HM.HashMap (TypeRep,Maybe ext) (FromAtomicFn a)
+                         -> [(ext, FromAtomicFn' i a)]
+allFromAtomicFnsWithType = mapMaybe fltr . HM.toList
+  where
+    wanted = typeOf (undefined :: i)
+    fltr ((_,Nothing),_) = Nothing
+    fltr ((tr,Just ext), FromAtomicFn (f :: FromAtomicFn' i' a))
+      | tr == wanted = case eqT :: Maybe (i:~:i') of
+          Just Refl -> Just (ext, f)
+          Nothing   -> error $ "allFromAtomicFnsWithType: some function doesn't deal with type "
+                        ++ show wanted ++ " when it should"
+      | otherwise = Nothing
+
+
+type FromStreamFn' i a =
+  forall m r. (LogMask m) => Stream (Of i) m r -> m (Of a r)
+
 -- | How to read an @a@ from some @Stream (Of i) m r@
 data FromStreamFn a =
-  forall i. (Typeable i)
-  => FromStreamFn (forall m r. (LogMask m)
-                   => Stream (Of i) m r -> m (Of a r))
+  forall i. (Typeable i) => FromStreamFn (FromStreamFn' i a)
 
 instance Functor FromStreamFn where
   fmap f (FromStreamFn g) = FromStreamFn $ \s -> do
@@ -85,11 +107,27 @@ instance Show (FromStreamFn a) where
 fromStreamFn
   :: forall i a. (Typeable i)
   => [Maybe FileExt]
-  -> (forall m r. (LogMask m) => Stream (Of i) m r -> m (Of a r))
+  -> FromStreamFn' i a
   -> HM.HashMap (TypeRep,Maybe FileExt) (FromStreamFn a)
 fromStreamFn exts f = HM.fromList $ map (\ext -> ((argTypeRep,ext), FromStreamFn f)) exts
   where
     argTypeRep = typeOf (undefined :: i)
+
+newtype FromStreamFn'' i a = FromStreamFn'' (FromStreamFn' i a)
+
+allFromStreamFnsWithType :: forall i ext a. (Typeable i)
+                         => HM.HashMap (TypeRep,Maybe ext) (FromStreamFn a)
+                         -> [(ext, FromStreamFn'' i a)]
+allFromStreamFnsWithType = mapMaybe fltr . HM.toList
+  where
+    wanted = typeOf (undefined :: i)
+    fltr ((_,Nothing),_) = Nothing
+    fltr ((tr,Just ext), FromStreamFn (f :: FromStreamFn' i' a))
+      | tr == wanted = case eqT :: Maybe (i:~:i') of
+          Just Refl -> Just (ext, FromStreamFn'' f)
+          Nothing   -> error $ "allFromStreamFnsWithType: some function doesn't deal with type "
+                        ++ show wanted ++ " when it should"
+      | otherwise = Nothing
 
 -- | A function to read @a@ from a 'DocRec'
 data ReadFromConfigFn a = forall rs. (Typeable rs) => ReadFromConfigFn (DocRec rs -> a)
@@ -115,23 +153,16 @@ data SerialReaders a = SerialReaders
        -- ^ How to read data from a stream of intermediate data types (like
        -- strict ByteStrings). Each one of them being strict as much as
        -- possible.
-  , _serialReaderFromConfig :: First (ReadFromConfigFn a)
-       -- ^ How to read data from the CLI. It can be seen as a special kind of
-       -- reader FromAtomic.
-  , _serialReaderEmbeddedValue :: First a
-      -- ^ Simply read from an embedded value. Depending on when this field is
-      -- accessed, it can correspond to a default value or the value we read
-      -- from the configuration.
   }
   deriving (Functor, Show)
 
 makeLenses ''SerialReaders
 
 instance Semigroup (SerialReaders a) where
-  SerialReaders a s c v <> SerialReaders a' s' c' v' =
-    SerialReaders (HM.unionWith const a a') (HM.unionWith const s s') (c<>c') (v<>v')
+  SerialReaders a s <> SerialReaders a' s' =
+    SerialReaders (HM.unionWith const a a') (HM.unionWith const s s')
 instance Monoid (SerialReaders a) where
-  mempty = SerialReaders mempty mempty mempty mempty
+  mempty = SerialReaders mempty mempty
 
 -- | How to turn an @a@ into some identified type @i@, which is meant to a
 -- general purpose intermediate representation, like 'A.Value' or even 'T.Text'.
@@ -148,6 +179,20 @@ toAtomicFn :: forall i a. (Typeable i)
 toAtomicFn exts f = HM.fromList $ map (\ext -> ((argTypeRep,ext), ToAtomicFn f)) exts
   where
     argTypeRep = typeOf (undefined :: i)
+
+allToAtomicFnsWithType :: forall i ext a. (Typeable i)
+                         => HM.HashMap (TypeRep,Maybe ext) (ToAtomicFn a)
+                         -> [(ext, a -> i)]
+allToAtomicFnsWithType = mapMaybe fltr . HM.toList
+  where
+    wanted = typeOf (undefined :: i)
+    fltr ((_,Nothing),_) = Nothing
+    fltr ((tr,Just ext), ToAtomicFn (f :: a -> i'))
+      | tr == wanted = case eqT :: Maybe (i:~:i') of
+          Just Refl -> Just (ext, f)
+          Nothing   -> error $ "allToAtomicFnsWithType: some function doesn't deal with type "
+                        ++ show wanted ++ " when it should"
+      | otherwise = Nothing
 
 -- -- | How to turn an @a@ into some @Stream (Of i) m ()@
 -- data ToStreamFn a =
@@ -183,17 +228,15 @@ data SerialWriters a = SerialWriters
 
   -- , _serialWritersToStream :: HM.HashMap (TypeRep,Maybe FileExt) (ToStreamFn a)
   --     -- ^ How to write the data to an external file or storage.
-  , _serialWriterToConfig  :: First (WriteToConfigFn a)
   }
   deriving (Show)
 
 makeLenses ''SerialWriters
 
 instance Semigroup (SerialWriters a) where
-  SerialWriters a c <> SerialWriters a' c' =
-    SerialWriters (HM.unionWith const a a') (c<>c')
+  SerialWriters a <> SerialWriters a' = SerialWriters (HM.unionWith const a a')
 instance Monoid (SerialWriters a) where
-  mempty = SerialWriters mempty mempty
+  mempty = SerialWriters mempty
 
 instance Contravariant SerialWriters where
   contramap f sw = SerialWriters
@@ -201,8 +244,6 @@ instance Contravariant SerialWriters where
                                (_serialWritersToAtomic sw)
     -- , _serialWritersToStream = fmap (\(ToStreamFn f') -> ToStreamFn $ f' . f)
     --                            (_serialWritersToStream sw)
-    , _serialWriterToConfig = fmap (\(WriteToConfigFn f') -> WriteToConfigFn $ f' . f)
-                              (_serialWriterToConfig sw)
     }
 
 -- | Links a serialization method to a prefered file extension, if this is
@@ -228,30 +269,54 @@ class (SerializationMethod serial) => DeserializesWith serial a where
 
 -- | Has 'SerializesWith' & 'DeserializesWith' instances that permits to
 -- store/load JSON and YAML files and 'A.Value's.
-data JSONSerial = JSONSerial  -- ^ Expects @.json@ files by default, but support @.yaml@/@.yml@ too
+data JSONSerial = JSONSerial  -- ^ Expects @.json@ files by default, but supports
+                              -- @.yaml@/@.yml@ files too "for free"
                 | YAMLSerial  -- ^ Expects @.yaml@/@.yml@ files by default, but
-                              -- support @.json@ too
-                | JSONSerialWithExt FileExt -- ^ For when you want json only
-                                            -- serialization, with a specific
-                                            -- extension. Don't include the dot.
-                | YAMLSerialWithExt FileExt -- ^ For when you want yaml only
-                                            -- serialization, with a specific
-                                            -- extension. Don't include the dot.
+                              -- supports @.json@ files too "for free"
+
+-- | For when you want a JSON **only** or YAML **only** serialization, but tied to a
+-- specific extension. It's more restrictive than 'JSONSerial' in the sense that
+-- JSONSerialWithExt cannot read from values from the configuration (because in
+-- the config we only have an Aeson Value, without an associated extension, so
+-- we cannot know for sure this Value corresponds to the expected extension)
+data JSONSerialWithExt = JSONSerialWithExt FileExt
+                            -- ^ Expects files of a given extension, ONLY
+                            -- formatted in JSON (YAML not provided "for free")
+                       | YAMLSerialWithExt FileExt
+                            -- ^ Expects files of a given extension, ONLY
+                            -- formatted in YAML (JSON not provided "for free")
 
 instance SerializationMethod JSONSerial where
-  getSerialDefaultExt JSONSerial            = Just "json"
-  getSerialDefaultExt YAMLSerial            = Just "yaml"
+  getSerialDefaultExt JSONSerial = Just "json"
+  getSerialDefaultExt YAMLSerial = Just "yaml"
+
+instance SerializationMethod JSONSerialWithExt where
   getSerialDefaultExt (JSONSerialWithExt e) = Just e
   getSerialDefaultExt (YAMLSerialWithExt e) = Just e
+
+-- | To lazy bytestring of JSON
+toAtomicJSON, toAtomicYAML
+  :: ToJSON a
+  => [FileExt] -> HM.HashMap (TypeRep, Maybe FileExt) (ToAtomicFn a)
+toAtomicJSON exts =
+  toAtomicFn (map Just exts) A.encode
+
+-- | To lazy bytestring of YAML
+toAtomicYAML exts =
+  toAtomicFn (map Just exts) $ LBS.fromStrict . Y.encode
 
 instance (ToJSON a) => SerializesWith JSONSerial a where
   getSerialWriters _srl = mempty
     { _serialWritersToAtomic =
-        toAtomicFn [Nothing] A.toJSON  -- To A.Value
-        <> toAtomicFn [Just "json"] A.encode   -- To lazy bytestring of JSON
-        <> toAtomicFn [Just "yaml",Just "yml"]
-             (LBS.fromStrict . Y.encode) -- To lazy bytestring of YAML
-    }
+        toAtomicFn [Nothing] A.toJSON  -- To A.Value, doesn't need an extension
+        <> toAtomicJSON ["json"]
+        <> toAtomicYAML ["yaml","yml"] }
+
+instance (ToJSON a) => SerializesWith JSONSerialWithExt a where
+  getSerialWriters (JSONSerialWithExt ext) = mempty
+    { _serialWritersToAtomic = toAtomicJSON [ext] }
+  getSerialWriters (YAMLSerialWithExt ext) = mempty
+    { _serialWritersToAtomic = toAtomicYAML [ext] }
 
 parseJSONEither :: (A.FromJSON t) => A.Value -> Either String t
 parseJSONEither x = case A.fromJSON x of
@@ -259,34 +324,70 @@ parseJSONEither x = case A.fromJSON x of
   A.Error r   -> Left r
 {-# INLINE parseJSONEither #-}
 
-instance (FromJSON a) => DeserializesWith JSONSerial a where
-  getSerialReaders _srl = mempty
-    { _serialReadersFromAtomic =
-        fromAtomicFn [Nothing] parseJSONEither  -- From A.Value
-        <> fromAtomicFn [Just "json"] A.eitherDecodeStrict -- From strict bytestring of JSON
-        <> fromAtomicFn [Just "yaml",Just "yml"]
-            (over _Left displayException . Y.decodeEither') -- From strict bytestring of YAML
-    , _serialReadersFromStream =
-        -- Decoding from a stream of bytestrings _only if it originates from a
-        -- json source_
-        fromStreamFn [Just "json"] (\strm -> do
-          (bs :> r) <- BSS.toStrict $ BSS.fromChunks strm
-            -- TODO: Enhance this so we don't have to accumulate the whole
-            -- stream
-          (:> r) <$> decodeJ bs)
-        -- TODO: Add reading from a stream of JSON objects (which would
-        -- therefore be considered a JSON array of objects?)
-        <> fromStreamFn [Just "yaml", Just "yml"] (\strm -> do
-          (bs :> r) <- BSS.toStrict $ BSS.fromChunks strm -- TODO: same than
-                                                          -- above
-          (:> r) <$> decodeY bs)
-    } where
+-- | From strict bytestring of JSON
+fromAtomicJSON, fromAtomicYAML
+  :: FromJSON a
+  => [FileExt] -> HM.HashMap (TypeRep, Maybe FileExt) (FromAtomicFn a)
+fromAtomicJSON exts =
+  fromAtomicFn (map Just exts) A.eitherDecodeStrict
+
+-- | From strict bytestring of YAML
+fromAtomicYAML exts =
+  fromAtomicFn (map Just exts) $
+    over _Left displayException . Y.decodeEither'
+
+-- | From a stream of strict bytestrings of JSON
+fromJSONStream, fromYAMLStream
+  :: FromJSON a
+  => [FileExt] -> HM.HashMap (TypeRep, Maybe FileExt) (FromStreamFn a)
+fromJSONStream exts = fromStreamFn (map Just exts) $ \strm -> do
+  (bs :> r) <- BSS.toStrict $ BSS.fromChunks strm
+    -- TODO: Enhance this so we don't have to accumulate the whole
+    -- stream
+  (:> r) <$> decodeJ bs
+  where
     decodeJ x = case A.eitherDecodeStrict x of
       Right y  -> return y
       Left msg -> throwWithPrefix msg
+
+-- | From a stream of strict bytestrings of YAML
+fromYAMLStream exts = fromStreamFn (map Just exts) (decodeYAMLStream . BSS.fromChunks)
+
+decodeYAMLStream :: (LogThrow m, FromJSON a) => BSS.ByteString m r -> m (Of a r)
+decodeYAMLStream strm = do
+  (bs :> r) <- BSS.toStrict strm -- TODO: same than above
+  (:> r) <$> decodeY bs
+  where
     decodeY x = case Y.decodeEither' x of
       Right y  -> return y
       Left exc -> logAndThrowM exc
+
+decodeYAMLStream_ :: (LogThrow m, FromJSON a) => BSS.ByteString m () -> m a
+decodeYAMLStream_ strm = do
+  (v :> _) <- decodeYAMLStream strm
+  return v
+
+instance (FromJSON a) => DeserializesWith JSONSerial a where
+  getSerialReaders _srl = mempty
+    { _serialReadersFromAtomic =
+        fromAtomicFn [Nothing] parseJSONEither -- From A.Value, doesn't need an
+                                               -- extension
+        <> fromAtomicJSON ["json"]
+        <> fromAtomicYAML ["yaml","yml"]
+    , _serialReadersFromStream =
+        fromJSONStream ["json"]
+        -- TODO: Add reading from a stream of JSON objects (which would
+        -- therefore be considered a JSON array of objects?)
+        <>
+        fromYAMLStream ["yaml","yml"] }
+
+instance (FromJSON a) => DeserializesWith JSONSerialWithExt a where
+  getSerialReaders (JSONSerialWithExt ext) = mempty
+    { _serialReadersFromAtomic = fromAtomicJSON [ext]
+    , _serialReadersFromStream = fromJSONStream [ext] }
+  getSerialReaders (YAMLSerialWithExt ext) = mempty
+    { _serialReadersFromAtomic = fromAtomicYAML [ext]
+    , _serialReadersFromStream = fromYAMLStream [ext] }
 
 -- * Serialization to/from CSV
 
@@ -412,18 +513,29 @@ instance DeserializesWith PlainTextSerial T.Text where
 
 -- * Serialization of options
 
+-- | Contains any set of options that should be exposed via the CLI
+data RecOfOptions field where
+  RecOfOptions :: (Typeable rs, RecordUsableWithCLI rs) => Rec field rs -> RecOfOptions field
+
+type DocRecOfOptions = RecOfOptions DocField
+
 -- | A serialization method used for options which can have a default value,
 -- that can be exposed through the configuration.
-data DocRecSerial a = forall rs. (Typeable rs, RecordUsableWithCLI rs)
-                   => DocRecSerial a (a -> DocRec rs) (DocRec rs -> a)
-instance SerializationMethod (DocRecSerial a)
-instance SerializesWith (DocRecSerial a) a where
-  getSerialWriters (DocRecSerial _ f _) = mempty
-    { _serialWriterToConfig = First $ Just $ WriteToConfigFn f }
-instance DeserializesWith (DocRecSerial a) a where
-  getSerialReaders (DocRecSerial d _ f) = mempty
-    { _serialReaderEmbeddedValue = First $ Just d
-    , _serialReaderFromConfig = First $ Just $ ReadFromConfigFn f }
+data OptionsSerial a = forall rs. (Typeable rs, RecordUsableWithCLI rs)
+                   => OptionsSerial (a -> DocRec rs) (DocRec rs -> a)
+instance SerializationMethod (OptionsSerial a)
+instance SerializesWith (OptionsSerial a) a where
+  getSerialWriters (OptionsSerial f _) = mempty
+    { _serialWritersToAtomic =
+        toAtomicFn [Nothing] (RecOfOptions . f) }
+instance DeserializesWith (OptionsSerial a) a where
+  getSerialReaders (OptionsSerial _ (f :: DocRec rs -> a)) = mempty
+    { _serialReadersFromAtomic =
+        let conv :: DocRecOfOptions -> Either String a
+            conv (RecOfOptions r) = case cast r of
+              Just r' -> Right $ f r'
+              Nothing -> Left "OptionsSerial: _serialReadersFromAtomic: Not the right fields"
+        in fromAtomicFn [Nothing] conv }
 
 
 -- * Combining serializers and deserializers into one structure
@@ -482,6 +594,49 @@ eraseSerials (SerialsFor _ desers ext rk) = SerialsFor mempty desers ext rk
 eraseDeserials :: SerialsFor a b -> PureSerials a
 eraseDeserials (SerialsFor sers _ ext rk) = SerialsFor sers mempty ext rk
 
+
+-- * Retrieve conversion functions from a 'SerialsFor' @a@ @b@
+
+-- | Tries to get a conversion function to some type @i@
+getToAtomicFn :: forall i a b. (Typeable i) => SerialsFor a b -> Maybe (a -> i)
+getToAtomicFn ser = do
+  ToAtomicFn (f :: a -> i') <-
+    HM.lookup (typeOf (undefined :: i),Nothing) (ser ^. serialWriters . serialWritersToAtomic)
+  case eqT :: Maybe (i' :~: i) of
+    Just Refl -> return f
+    Nothing -> error $ "getToAtomicFn: Some conversion function isn't properly indexed. Should not happen"
+
+-- | Tries to get a conversion function from some type @i@
+getFromAtomicFn :: forall i a b. (Typeable i) => SerialsFor a b -> Maybe (FromAtomicFn' i b)
+getFromAtomicFn ser = do
+  FromAtomicFn (f :: FromAtomicFn' i' b) <-
+    HM.lookup (typeOf (undefined :: i),Nothing) (ser ^. serialReaders . serialReadersFromAtomic)
+  case eqT :: Maybe (i' :~: i) of
+    Just Refl -> return f
+    Nothing -> error $ "getFromAtomicFn: Some conversion function isn't properly indexed. Should not happen"
+
+
+-- * Serialization for compressed formats
+
+-- | Wraps all the functions in the serial so for each serial (extension) @xxx@
+-- supported, we know also support @xxxzlib@. Doesn't change the default
+-- extension
+addZlibSerials :: SerialsFor a b -> SerialsFor a b
+addZlibSerials = over serialWriters (over serialWritersToAtomic editTA)
+              . over serialReaders (over serialReadersFromAtomic editFA
+                                  . over serialReadersFromStream editFS)
+  where
+    editTA hm = (hm <>) $ mconcat $ flip map (allToAtomicFnsWithType hm) $
+      \(ext, f) ->
+        toAtomicFn [Just $ ext <> "zlib"] $ Zlib.compress . f  -- Lazy bytestring
+    editFA hm = (hm <>) $ mconcat $ flip map (allFromAtomicFnsWithType hm) $
+      \(ext, f) ->
+        fromAtomicFn [Just $ ext <> "zlib"] $
+          f . LBS.toStrict . Zlib.decompress . LBS.fromStrict  -- Strict bytestring
+    editFS hm = (hm <>) $ mconcat $ flip map (allFromStreamFnsWithType hm) $
+      \(ext, FromStreamFn'' f) ->
+        fromStreamFn [Just $ ext <> "zlib"] $
+          f . BSS.toChunks . SZip.decompress SZip.defaultWindowBits . BSS.fromChunks
 
 -- -- | Traverses to the repetition keys stored in the access functions of a
 -- -- 'SerialsFor'

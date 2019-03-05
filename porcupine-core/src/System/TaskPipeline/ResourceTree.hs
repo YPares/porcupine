@@ -1,4 +1,3 @@
-{-# LANGUAGE DeriveFunctor       #-}
 {-# LANGUAGE DeriveGeneric       #-}
 {-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE FlexibleInstances   #-}
@@ -7,7 +6,6 @@
 {-# LANGUAGE PatternSynonyms     #-}
 {-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE TupleSections       #-}
 {-# LANGUAGE TypeOperators       #-}
 {-# LANGUAGE ViewPatterns        #-}
 {-# OPTIONS_GHC -fno-warn-missing-pattern-synonym-signatures #-}
@@ -68,7 +66,7 @@
 module System.TaskPipeline.ResourceTree where
 
 import           Control.Exception.Safe
-import           Control.Lens                            hiding ((:>), (<.>))
+import           Control.Lens                            hiding ((:>))
 import           Control.Monad
 import           Data.Aeson
 import qualified Data.ByteString                         as Strict
@@ -84,9 +82,11 @@ import           Data.Maybe
 import           Data.Monoid                             (First (..))
 import           Data.Representable
 import qualified Data.Text                               as T
+import qualified Data.Text.Encoding                      as TE
 import qualified Data.Text.Lazy                          as LT
 import qualified Data.Text.Lazy.Encoding                 as LTE
 import           Data.Typeable
+import qualified Data.Yaml                               as Y
 import           GHC.Generics                            (Generic)
 import           Katip
 import           Options.Applicative
@@ -167,7 +167,7 @@ instance Monoid (DataAccessNode m) where
   mempty = MbDataAccessNode [] mempty
 
 instance Show VirtualFileNode where
-  show (VirtualFileNode{..}) =
+  show VirtualFileNode{..} =
     "VirtualFileNode with " ++ show (getVirtualFileDescription vfnodeFile)
     ++ " accessed for: " ++ show vfnodeAccesses
   show _                    = ""
@@ -200,11 +200,11 @@ type VirtualResourceTree = LocationTree VirtualFileNode
 type PhysicalResourceTree m = LocationTree (PhysicalFileNode m)
 
 -- | The tree manipulated by tasks when they actually run
-type DataResourceTree m = LocationTree (DataAccessNode m)
+type DataAccessTree m = LocationTree (DataAccessNode m)
 
 instance HasDefaultMappingRule VirtualFileNode where
-  getDefaultLocShortcut (VirtualFileNode{..}) = getDefaultLocShortcut vfnodeFile
-  getDefaultLocShortcut _                     = Nothing
+  getDefaultLocShortcut VirtualFileNode{..} = getDefaultLocShortcut vfnodeFile
+  getDefaultLocShortcut _                   = Nothing
 
 -- | Filters the tree to get only the nodes that don't have data and can be
 -- mapped to external files
@@ -216,7 +216,7 @@ rscTreeToMappings
   -> Maybe LocationMappings
 rscTreeToMappings tree = mappingsFromLocTree <$> over filteredLocsInTree rmOpts tree
   where
-    rmOpts (VirtualFileNode{..})
+    rmOpts VirtualFileNode{..}
       | Just VFForCLIOptions <- intent = Nothing  -- Nodes with default data are
                                                   -- by default not put in the
                                                   -- mappings
@@ -238,7 +238,7 @@ rscTreeToEmbeddedDataTree
   -> Maybe VirtualResourceTree
 rscTreeToEmbeddedDataTree = over filteredLocsInTree keepOpts
   where
-    keepOpts n@(VirtualFileNode{..})
+    keepOpts n@VirtualFileNode{..}
       | Just VFForCLIOptions <- intent = Just n
       | otherwise = Nothing
       where intent = vfileDescIntent $ getVirtualFileDescription vfnodeFile
@@ -264,12 +264,12 @@ embeddedDataTreeToJSONFields thisPath (LocationTree mbOpts sub) =
   where
     opts' = case mbOpts of
       VirtualFileNode{..} ->
-        case (vfnodeFile ^? vfileAsBidir) >>= getVFileAesonValue of
+        case (vfnodeFile ^? vfileAsBidir) >>= getConvertedEmbeddedValue of
           Just (Object o) -> o
           _               -> mempty
       _ -> mempty
     sub' = HM.fromList $
-      concat $ map (\(k,v) -> embeddedDataTreeToJSONFields (_ltpiName k) v) $ HM.toList sub
+      concatMap (\(k,v) -> embeddedDataTreeToJSONFields (_ltpiName k) v) $ HM.toList sub
 
 
 -- ** ResourceTreeAndMappings: join a virtual resource tree with the locations it
@@ -313,13 +313,18 @@ type ResourceTreeAndMappingsOverrides =
     -- The tree containing the options parsed by optparse-applicative
   )
 
+splitVarBinding :: String -> Either String (LocVariable, String)
+splitVarBinding (T.splitOn "=" . T.pack -> [T.unpack -> var, T.unpack -> val]) =
+  Right (LocVariable var,val)
+splitVarBinding _ = Left "Var binding must be of the form \"variable=value\""
+
 -- | Reads the data from the input config file. Constructs the parser for the
 -- command-line arguments. Combines both results to create the
 -- 'VirtualResourceTree' (and its mappings) the pipeline should run on.
 rscTreeConfigurationReader
   :: ResourceTreeAndMappings
   -> ConfigurationReader ResourceTreeAndMappings ResourceTreeAndMappingsOverrides
-rscTreeConfigurationReader (ResourceTreeAndMappings{rtamResourceTree=defTree}) =
+rscTreeConfigurationReader ResourceTreeAndMappings{rtamResourceTree=defTree} =
   ConfigurationReader overridesParser_ nullOverrides_ overrideCfgFromYamlFile_
   where
     overridesParser_ =
@@ -328,29 +333,27 @@ rscTreeConfigurationReader (ResourceTreeAndMappings{rtamResourceTree=defTree}) =
         treeOfOptsParser = traverseOf (traversed . _2 . _Just) parseOptions $
                            fmap nodeAndRecOfOptions defTree
         variablesParser = HM.fromList <$>
-          many (option (eitherReader varBinding)
+          many (option (eitherReader splitVarBinding)
                  (long "var"
                <> help "Set a variable already present in the config file"))
-        varBinding (T.splitOn "=" . T.pack -> [T.unpack -> var, T.unpack -> val]) =
-          Right (LocVariable var,val)
-        varBinding _ = Left "Var binding must be of the form \"variable=value\""
+
         mappingsParser =
           many (option (eitherReader locBinding)
                  (long "loc"
                <> help "Map a virtual file path to a physical location"))
         parseLocBinding vpath locOp loc = do
           p <- fromTextRepr vpath
-          l <- parseJSONEither $ String loc
+          l <- over _Left displayException $ Y.decodeEither' $ TE.encodeUtf8 loc
           return (p,locOp,l)
         locBinding (T.splitOn "+=" . T.pack -> [vpath,loc]) =
           parseLocBinding vpath AddLayer loc
-        locBinding (T.splitOn "=" . T.pack -> [vpath,loc]) =
+        locBinding (T.splitOn "="  . T.pack -> [vpath,loc]) =
           parseLocBinding vpath ReplaceLayers loc
         locBinding _ =
           Left "Location mapping must be of the form \"virtual_path(+)=physical_path\""
 
     nodeAndRecOfOptions :: VirtualFileNode -> (VirtualFileNode, Maybe DocRecOfOptions)
-    nodeAndRecOfOptions n@(VirtualFileNode{..}) = (n, vfnodeFile ^? vfileAsBidir . vfileRecOfOptions)
+    nodeAndRecOfOptions n@VirtualFileNode{..} = (n, (vfnodeFile ^? vfileAsBidir) >>= getConvertedEmbeddedValue)
     nodeAndRecOfOptions n = (n, Nothing)
     parseOptions :: RecOfOptions DocField -> Parser (RecOfOptions SourcedDocField)
     parseOptions (RecOfOptions r) = RecOfOptions <$>
@@ -387,25 +390,31 @@ rscTreeConfigurationReader (ResourceTreeAndMappings{rtamResourceTree=defTree}) =
       -> (LocationTreePath, (VirtualFileNode, Maybe (RecOfOptions SourcedDocField)))
       -> Either String VirtualFileNode
     replaceWithDataFromConfig (Just dataSectionContent)
-                              (LTP path, (node@(VirtualFileNode{..}), mbRecFromCLI)) =
+                              (LTP path, (node@VirtualFileNode{..}, mbRecFromCLI)) =
       let rebuildNode newF = VirtualFileNode{vfnodeFile = newF, ..}
       in case findInAesonVal path dataSectionContent of
-          Right v -> case mbRecFromCLI of
-            Just (RecOfOptions recFromCLI) -> do
-              -- YAML: yes, CLI: yes
-              recFromYaml <- tagWithYamlSource <$> parseJSONEither v
-                -- We merge the two configurations:
-              let newOpts = RecOfOptions $ rmTags $
-                    rzipWith chooseHighestPriority recFromYaml recFromCLI
-              return $ rebuildNode $ vfnodeFile & vfileAsBidir . vfileRecOfOptions .~ newOpts
-            Nothing ->
-              -- YAML: yes, CLI: no
-              rebuildNode <$> setVFileAesonValue vfnodeFile v
+          Right rawObjFromYaml ->
+            case mbRecFromCLI of
+              Just (RecOfOptions (recFromCLI :: Rec SourcedDocField rs)) -> do
+                -- YAML: yes, CLI: yes
+                RecOfOptions (recFromYaml::DocRec rs') <- getMergedLayersFromAesonValue vfnodeFile rawObjFromYaml
+                                                          (RecOfOptions::DocRec rs -> DocRecOfOptions)
+                case eqT :: Maybe (rs' :~: rs) of
+                  Nothing -> error "replaceWithDataFromConfig: Not the same record type has been returned \
+                                   \by getMergedLayersFromAesonValue"
+                  Just Refl -> do
+                    let recFromYaml' = tagWithYamlSource recFromYaml
+                    -- We merge the two configurations:
+                    rebuildNode <$> setConvertedEmbeddedValue vfnodeFile
+                      (RecOfOptions $ rmTags $ rzipWith chooseHighestPriority recFromYaml' recFromCLI)
+              Nothing -> do
+                -- YAML: yes, CLI: no
+                mergedDataFromYaml <- getMergedLayersFromAesonValue vfnodeFile rawObjFromYaml (id::Value -> Value)
+                rebuildNode <$> setConvertedEmbeddedValue vfnodeFile mergedDataFromYaml
           Left _ -> case mbRecFromCLI of
             Just (RecOfOptions recFromCLI) ->
               -- YAML: no, CLI: yes
-              return $ rebuildNode $
-                vfnodeFile & vfileAsBidir . vfileRecOfOptions .~ RecOfOptions (rmTags recFromCLI)
+              rebuildNode <$> setConvertedEmbeddedValue vfnodeFile (RecOfOptions (rmTags recFromCLI))
             Nothing ->
               -- YAML: no, CLI: no
               return node
@@ -418,6 +427,20 @@ rscTreeConfigurationReader (ResourceTreeAndMappings{rtamResourceTree=defTree}) =
         go _ _ = Left $ "rscTreeConfigurationReader: " ++
           (T.unpack $ toTextRepr $ LTP path) ++ " doesn't match any path in the Yaml config"
 
+    getMergedLayersFromAesonValue vf objFromYaml f = do
+      bidirVF <- case vf ^? vfileAsBidir of
+        Just f -> return f
+        Nothing -> Left $ "getMergedLayersFromAesonValue: " ++ showVFileOriginalPath vf
+                          ++ " contains embedded options: it should be bidirectional"
+      layersFromYaml <- case objFromYaml of
+        Object m
+          | Just v <- HM.lookup "$layers" m ->
+              case v of
+                Array layers -> mapM parseJSONEither $ foldr (:) [] layers
+                _ -> Left $ "If you specify data with $layers, $layers must contain an array."
+        _ -> (:[]) <$> parseJSONEither objFromYaml
+      tryMergeLayersForVFile bidirVF $ map f layersFromYaml
+
 -- ** Transforming a virtual resource tree to a physical resource tree (ie. a
 -- tree with physical locations attached)
 
@@ -429,7 +452,7 @@ applyOneRscMapping :: LocVariableMap -> [SomeLocWithVars m] -> VirtualFileNode -
 applyOneRscMapping variables configLayers mbVF mappingIsExplicit = buildPhysicalNode mbVF
   where
     configLayers' = map (\(SomeGLoc l) -> SomeGLoc $ spliceLocVariables variables l) configLayers
-    buildPhysicalNode (VirtualFileNode{..}) = PhysicalFileNode layers vfnodeFile
+    buildPhysicalNode VirtualFileNode{..} = PhysicalFileNode layers vfnodeFile
       where
         First defExt = vfnodeFile ^. vfileSerials . serialDefaultExt
         intent = vfileDescIntent $ getVirtualFileDescription vfnodeFile
@@ -458,7 +481,7 @@ getPhysicalResourceTreeFromMappings (ResourceTreeAndMappings tree mappings varia
 -- ** Transforming a physical resource tree to a data access tree (ie. a tree
 -- where each node is just a function that pulls or writes the relevant data)
 
-data TaskConstructionError =
+newtype TaskConstructionError =
   TaskConstructionError String
   deriving (Show)
 instance Exception TaskConstructionError
@@ -495,7 +518,7 @@ makeDataAccessor vpath (VFileImportance sevRead sevWrite sevError)
   DataAccessor{..}
   where
     daLocsAccessed = traverse (\(SomeGLoc loc) -> SomeGLoc <$> fillLoc' repetKeyMap loc) layers
-    daPerformWrite input = do
+    daPerformWrite input =
         forM_ writeLocs $ \(ToAtomicFn {-rkeys-} f, SomeGLoc loc) ->
           case cast (f input) of
             Nothing -> error "Some atomic serializer isn't converting to a lazy ByteString"
@@ -525,7 +548,7 @@ makeDataAccessor vpath (VFileImportance sevRead sevWrite sevError)
           (_, [x]) -> return x
           (LayeredReadWithNull, ls) -> return $ mconcat ls
           (_, []) -> throwWithPrefix $ vpath ++ " has no layers from which to read"
-          (LayeredRead, l:ls) -> return $ foldr (<>) l ls
+          (LayeredRead, l:ls) -> return $ foldl (<>) l ls
           (SingleLayerRead, ls) -> do
             logFM WarningS $ logStr $ vpath ++
               " doesn't support layered mapping. Using only result from last layer '"

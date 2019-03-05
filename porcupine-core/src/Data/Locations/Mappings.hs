@@ -3,7 +3,6 @@
 {-# LANGUAGE ExistentialQuantification  #-}
 {-# LANGUAGE FlexibleContexts           #-}
 {-# LANGUAGE FlexibleInstances          #-}
-{-# LANGUAGE FunctionalDependencies     #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE LambdaCase                 #-}
 {-# LANGUAGE MultiParamTypeClasses      #-}
@@ -27,6 +26,7 @@ module Data.Locations.Mappings
   , applyMappings
   ) where
 
+import           Control.Arrow                      ((***))
 import           Control.Lens
 import           Data.Aeson
 import qualified Data.HashMap.Strict                as HM
@@ -61,7 +61,7 @@ instance Semigroup (LocationMappings_ n) where
 
 instance (ToJSON n) => ToJSON (LocationMappings_ n) where
   toJSON (LocationMappings_ m) = Object $ HM.fromList $
-    map (\(k, v) -> (toTextRepr k, layersToJSON v)) $ HM.toList m
+    map (toTextRepr *** layersToJSON) $ HM.toList m
     where
       layersToJSON []     = Null
       layersToJSON [l]    = toJSON l
@@ -71,9 +71,9 @@ instance FromJSON LocationMappings where
   parseJSON (Object m) = LocationMappings_ . HM.fromList <$>
     mapM (\(k, v) -> (,) <$> fromTextRepr k <*> parseJSONLayers v) (HM.toList m)
     where
-      parseJSONLayers Null        = pure []
-      parseJSONLayers j@(Array{}) = parseJSON j
-      parseJSONLayers j           = (:[]) <$> parseJSON j
+      parseJSONLayers Null      = pure []
+      parseJSONLayers j@Array{} = parseJSON j
+      parseJSONLayers j         = (:[]) <$> parseJSON j
   parseJSON _ = mempty
 
 -- -- | Lists all the physical paths that have been associated to some virtual
@@ -257,4 +257,3 @@ applyMappings f mappings loctree = do
         (\rs -> (node, Just rs)) <$> mapM resolveLocShortcut shortcuts
   treeWithResolvedShortcuts <- traverse resolve treeWithShortcuts
   return $ propagateMappings f treeWithResolvedShortcuts
-

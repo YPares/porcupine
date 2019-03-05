@@ -20,7 +20,7 @@ import           Control.Monad
 import           Data.Aeson
 import           Data.Aeson.Types                         (Parser)
 import qualified Data.Text                                as T
-import           Prelude                                  hiding (id, (.))
+import           Prelude                                  hiding ((.))
 import           System.TaskPipeline.PTask
 import           System.TaskPipeline.Repetition.Internal
 import           System.TaskPipeline.Repetition.Streaming

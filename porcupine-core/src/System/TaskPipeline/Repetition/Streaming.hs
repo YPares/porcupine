@@ -1,7 +1,5 @@
-{-# LANGUAGE Arrows            #-}
-{-# LANGUAGE FlexibleContexts  #-}
-{-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE TupleSections     #-}
+{-# LANGUAGE FlexibleContexts #-}
+
 
 module System.TaskPipeline.Repetition.Streaming
   ( STask, ISTask, OSTask
@@ -12,11 +10,11 @@ module System.TaskPipeline.Repetition.Streaming
 
 import           Control.Arrow
 import           Control.Category
-import           Control.Lens                            hiding ((:>), (.=))
+import           Control.Lens                            hiding ((:>))
 import           Control.Monad
 import           Data.Locations
 import           Katip
-import           Prelude                                 hiding (id, (.))
+import           Prelude                                 hiding ((.))
 import           Streaming                               (Of (..), Stream)
 import qualified Streaming.Prelude                       as S
 import           System.TaskPipeline.PTask
@@ -123,4 +121,4 @@ streamToListTask :: (KatipContext m)
                  => PTask m
                           (Stream (Of t) m r)
                           [t]
-streamToListTask = unsafeLiftToPTask (S.toList_ . fmap (const ()))
+streamToListTask = unsafeLiftToPTask (S.toList_ . void)

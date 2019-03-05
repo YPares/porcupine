@@ -22,12 +22,12 @@ import           GHC.Generics
 import           Porcupine.Run
 import           Porcupine.Serials
 import           Porcupine.Tasks
-import           Prelude                       hiding (id, (.))
+import           Prelude                       hiding ((.))
 
 import           Data.Locations.Accessors.HTTP
 
 
-data Move = Move { name :: T.Text }
+newtype Move = Move { name :: T.Text }
   deriving (Generic, FromJSON)
 
 newtype Move' = Move' { move :: Move }
@@ -43,7 +43,7 @@ pokemonFile = dataSource ["Inputs", "Pokemon"]
                          (somePureDeserial JSONSerial)
 -- See https://pokeapi.co/api/v2/pokemon/25 for instance
 
-data Analysis = Analysis { moveCount :: Int }
+newtype Analysis = Analysis { moveCount :: Int }
   deriving (Generic, ToJSON)
 
 -- | How to write analysis
