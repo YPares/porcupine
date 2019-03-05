@@ -421,10 +421,10 @@ content are completed or overriden by the subsequent layers'. It all depends on 
 is read from your `VirtualFile`.
 
 In a similar fashion, if `B` is a Monoid (and if your `VirtualFile` is wrapped in `canBeUnmapped`),
-this authorizes you to map it to `null` in your config file, so we this file is "read", we just get
+this authorizes you to map it to `null` in your config file, so when this `VirtualFile` is "read", we just get
 a `mempty`.
 
-Layers also for for output files, although it's much simpler here: the data is just identically written to
+Layers also work for output files, although it's much simpler here: the data is just identically written to
 every layer. No requirements are therefore put on the type being written.
 
 ## Location accessors
@@ -436,8 +436,8 @@ resources can now be mapped to a new source of data. A very common source of dat
 for it is provided in `porcupine-http`. Support for Amazon S3 is also provided in `porcupine-s3`.
 
 The example [example-pokeapi](porcupine-http/examples/ExamplePokeAPI.hs) shows how to deal with some data from
-the [PokeAPI](https://pokeapi.co). You can see that the code of the pipeline looks exactly like that of `example1`,
-the only difference is the call to `runPipelineTask`:
+the [PokeAPI](https://pokeapi.co). You can see that the code of the pipeline is very much like that of `example1`,
+the major difference being the call to `runPipelineTask`:
 
 ```haskell
 main = runPipelineTask (FullConfig .......)
@@ -447,13 +447,13 @@ main = runPipelineTask (FullConfig .......)
 ```
 
 We explicitely state that we want to use the `#http` LocationAccessor (and that we want to run it with the
-`useHTTP` function, imported from `Data.Locations.Accessors.HTTP`). Note that you need to activate the
-`OverloadedLabels` GHC extension.
+`useHTTP` function, imported from `Data.Locations.Accessors.HTTP`) on top of the `baseContexts` (which provide
+access to local files and logging). Note that you need to activate the `OverloadedLabels` GHC extension.
 
 Note that _nothing_ in the code tells us where the data will actually be read. The connection between our dataSource
 and the REST API will be made in the [configuration file](porcupine-http/examples/example-pokeapi.yaml).
 
-## Control logging
+## Logging
 
 Porcupine uses `katip` to do logging. It's quite a versatile tool, and we
 benefit from it. By default, logging uses a custom readable format. You can
@@ -462,7 +462,3 @@ switch to more standard formats using:
 ```sh
 $ my-exe --log-format json
 ```
-
-## Create a custom serials bank
-
-## Adding pipeline wrappers
