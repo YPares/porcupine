@@ -33,7 +33,7 @@ import           GHC.Generics                    (Generic)
 import qualified Network.URL                     as URL
 import qualified System.Directory                as Dir (createDirectoryIfMissing)
 import qualified System.FilePath                 as Path
-import Debug.Trace
+
 
 -- | Each location bit can be a simple chunk of string, or a variable name
 -- waiting to be spliced in.
@@ -190,8 +190,8 @@ spliceLocVariables vars = fmap $ over locStringVariables $ \v -> case v of
 terminateLocWithVars :: (Traversable f) => f StringWithVars -> Either String (f String)
 terminateLocWithVars = traverse terminateStringWithVars
   where
-    terminateStringWithVars (StringWithVars [SWVB_Chunk s]) = trace ("OK: "++s) $ Right s
-    terminateStringWithVars locString = trace ("ERR: "++show locString) $ Left $
+    terminateStringWithVars (StringWithVars [SWVB_Chunk s]) = Right s
+    terminateStringWithVars locString = Left $
       "Variable(s) " ++ show (locString ^.. locStringVariables)
       ++ " in '" ++ show locString ++ "' haven't been given a value"
 
@@ -199,7 +199,11 @@ terminateLocWithVars = traverse terminateStringWithVars
 class (Monoid a) => IsLocString a where
   locStringAsRawString :: Iso' a String
   parseLocString       :: String -> Either String a
-  parseLocStringAndExt :: String -> Either String (LocFilePath a)
+
+parseLocStringAndExt :: (IsLocString a) => String -> Either String (LocFilePath a)
+parseLocStringAndExt s =
+  LocFilePath <$> parseLocString p <*> refuseVarRefs "extension" e
+    where (p, e) = splitExtension' s
 
 splitExtension' :: FilePath -> (FilePath, String)
 splitExtension' fp = let (f,e) = Path.splitExtension fp in
@@ -209,7 +213,6 @@ splitExtension' fp = let (f,e) = Path.splitExtension fp in
 instance IsLocString String where
   locStringAsRawString = id
   parseLocString = Right
-  parseLocStringAndExt fp = Right $ fp ^. from locFilePathAsRawFilePath
 
 parseStringWithVars :: String -> Either String StringWithVars
 parseStringWithVars s = (StringWithVars . reverse . map (over locBitContent reverse) . filter isFull)
@@ -237,9 +240,6 @@ instance IsLocString StringWithVars where
   locStringAsRawString = iso show from_
     where from_ s = StringWithVars [SWVB_Chunk s]
   parseLocString = parseStringWithVars
-  parseLocStringAndExt s =
-    LocFilePath <$> parseStringWithVars p <*> refuseVarRefs "extension" e
-    where (p, e) = splitExtension' s
 
 -- | The main way to parse an 'URLLikeLoc'.
 parseURLLikeLoc :: (IsLocString a) => String -> Either String (URLLikeLoc a)
@@ -247,7 +247,7 @@ parseURLLikeLoc "." = Right $ LocalFile $ LocFilePath ("." ^. from locStringAsRa
 parseURLLikeLoc litteralPath = do
   url <- maybe (Left $ "parseURLLikeLoc: Invalid URL '" ++ litteralPath ++ "'") Right $
              URL.importURL litteralPath
-  r <- case URL.url_type url of
+  case URL.url_type url of
     URL.Absolute h ->
        RemoteFile <$> (refuseVarRefs "protocol" $ getProtocol $ URL.protocol h)
                   <*> (refuseVarRefs "server" $ URL.host h)
@@ -257,7 +257,6 @@ parseURLLikeLoc litteralPath = do
                          mapMOf (traversed.both) parseLocString (URL.url_params url))
     URL.HostRelative -> LocalFile <$> (parseLocStringAndExt $ "/" ++ URL.url_path url)
     URL.PathRelative -> LocalFile <$> (parseLocStringAndExt $ URL.url_path url)
-  return $ trace (show r) r
   where getProtocol (URL.RawProt h)  = map toLower h
         getProtocol (URL.HTTP False) = "http"
         getProtocol (URL.HTTP True)  = "https"
