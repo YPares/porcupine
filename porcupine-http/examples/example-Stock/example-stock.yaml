@@ -1,0 +1,11 @@
+variables: {}
+data:
+  Settings:
+    idcompany: [aapl , fb , googl , aal]
+  Inputs: {}
+  Outputs: {}
+locations:
+  #/Inputs/Stock: _-{idcompany}.json
+  /Inputs/Stock: https://api.iextrading.com/1.0/stock/{idcompany}/batch?types=chart&range=1y
+  /: porcupine-http/examples/example-Stock/data
+  /Outputs/ModifiedStock: _-{idcompany}.json

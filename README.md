@@ -1,6 +1,6 @@
 # Porcupine
 
-[![CircleCI](https://circleci.com/gh/tweag/porcupine/tree/master.svg?style=svg)](https://circleci.com/gh/tweag/porcupine/tree/master)
+[![CircleCI](https://circleci.com/gh/tweag/porcupine/tree/master.svg?style=svg)](https://circleci.com/gh/tweag/porcupine/tree/master) [![Join the chat at https://gitter.im/tweag/porcupine](https://badges.gitter.im/tweag/porcupine.svg)](https://gitter.im/tweag/porcupine?utm_source=badge&utm_medium=badge&utm_campaign=pr-badge&utm_content=badge)
 
 Porcupine stands for _Portable & Customizable Pipeline_. It is a tool
 aimed at data scientists and numerical analysts, so that they can express
@@ -26,7 +26,7 @@ already have. A `SerialsFor A B` is a collection of `A -> i` and `i -> B`
 functions, where `i` can be any intermediary type, most often `ByteString`,
 `Data.Aeson.Value` or `Text`.
 
-`SerialsFor` is a [profunctor][profunctor]. That means that once you know how to
+`SerialsFor` is a [profunctor]. That means that once you know how to
 (de)serialize an `A` (ie. if you have a `SerialsFor A A`), then you can just use
 `dimap` to get a `SerialsFor B B` if you know how to convert `A` to & from
 `B`. Handling only one-way serialization or deserialization is perfectly
@@ -52,14 +52,14 @@ pipeline so that it can deal with more data sources.
 
 Every task in Porcupine exposes a resource tree. Resources are represented in
 porcupine by `VirtualFile`s, and a resource tree is a hierarchy (like a
-filesystem) of `VirtualFiles`. A `VirtualFile a b` just groups together a
-logical path and a `SerialsFor a b`, so it just something with an identifier
+filesystem) of `VirtualFiles`. A `VirtualFile A B` just groups together a
+logical path and a `SerialsFor A B`, so it is just something with an identifier
 (like `"/Inputs/Config"` or `"/Ouputs/Results"`) in which we can write a `A`
 and/or from which we can read a `B`. We say the path is "logical" because it
 doesn't necessary have to correspond to some physical path on the hard drive: in
 the end, the user of the task pipeline (the one who runs the executable) will
 bind each logical path to a physical location. Besides, a `VirtualFile` doesn't
-even have to correspond in the end to an actual file, as for instance you can
+even have to correspond in the end to an actual file, as for instance you could
 map an entry in a database to a `VirtualFile`. However, paths are a convenient
 and customary way to organise resources, and we can conveniently use them as a
 default layout for when your logical paths do correspond to actual paths on your
@@ -74,7 +74,7 @@ myInput :: VirtualFile Void MyConfig
 	-- MyConfig must be an instance of FromJSON here
 myInput = dataSource
             ["Inputs", "Config"] -- The logical path '/Inputs/Config'
-	        (somePureDeserial JSONSerial)
+	    (somePureDeserial JSONSerial)
 
 somePureDeserial :: (DeserializesWith s a) => s -> SerialsFor Void a
 dataSource :: [LocationTreePathItem] -> SerialsFor a b -> DataSource b
@@ -83,9 +83,11 @@ dataSource :: [LocationTreePathItem] -> SerialsFor a b -> DataSource b
 ## Tasks
 
 A `PTask` is an arrow, that is to say a computation with an input and an
-output. Here we just call these computation "tasks". PTasks run in a base monad
+output. Here we just call these computations "tasks". PTasks run in a base monad
 `m` that can depend on the application but that should always implement
 `KatipContext` (for logging), `MonadCatch`, `MonadResource` and `MonadUnliftIO`.
+However you usually don't have to worry about that, as porcupine takes care of these
+dependencies for you.
 
 This is how we create a task that reads the `myInput` VirtualFile we defined
 previously:
@@ -114,7 +116,7 @@ pipeline, your application just needs to call:
 
 ```haskell
 main :: IO ()
-main = runPipelineTask cfg mainTask ()
+main = runPipelineTask_ cfg mainTask
   where
     cfg = FullConfig "MyApp" "pipeline-config.yaml" "./default-root-dir"
 ```
@@ -151,7 +153,7 @@ overrides the value set in the yaml config file.
 
 # Philosophy of use
 
-Porcupine's intent is to make it easy to cleanly separate the work between 3
+Porcupine's intent is to make it easy to separate clearly the work between 3
 persons:
 
 - The _storage developer_ will be in charge of determining how the data gets read
@@ -163,13 +165,13 @@ persons:
   have to know how the data is represented, just that it exists. She just reuses
   the serials written by the storage developper and targets the _tasks_
   framework.
-- The _software architect_ work will start once we need to bump things up a
+- The _devops_ work will start once we need to bump things up a
   bit. Once we have iterated several times over our analyses and simulations and
   want to have things running in a bigger scale, then it's time for the pipeline
   to move from the scientist's puny laptop and go bigger. This is time to
   "patch" the pipeline, make it run in different context, in the cloud, behind a
   scheduler, as jobs in a task queue reading its inputs from all kinds of
-  databases. The software architect will target the _resource tree_ framework
+  databases. The devops will target the _resource tree_ framework
   (possibly without ever recompiling the pipeline, only by adjusting its
   configuration from the outside)
 

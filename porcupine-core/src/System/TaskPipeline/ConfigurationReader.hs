@@ -2,7 +2,6 @@
 {-# LANGUAGE GADTs             #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RecordWildCards   #-}
-{-# LANGUAGE TupleSections     #-}
 {-# OPTIONS_GHC -Wall          #-}
 
 module System.TaskPipeline.ConfigurationReader
@@ -75,7 +74,7 @@ genericAesonBasedConfigurationReader configFile shortcuts =
     (\origCfg overrides ->
        let (warnings, result) =
              overrideConfigFromKeyValues origCfg overrides
-       in (warnings, join $ parseJSONEither <$> result))
+       in (warnings, parseJSONEither =<< result))
   where
     genParser = foldr1 (liftA2 (++)) overrideArgs
     mkOption (l,s,h,f) = f <$>
@@ -138,7 +137,7 @@ checkTypeAndInsert :: [String]
                    -> T.Text
                    -> A.Value
                    -> HashMap.HashMap T.Text A.Value
-                   -> ([[Char]], A.Value)
+                   -> ([String], A.Value)
 checkTypeAndInsert w fullPath v' k v m =
   let i = A.Object $ HashMap.insert k v m
       t = jsonType v

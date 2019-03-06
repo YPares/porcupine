@@ -14,7 +14,6 @@
 {-# LANGUAGE RankNTypes                 #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
 {-# LANGUAGE StandaloneDeriving         #-}
-{-# LANGUAGE TupleSections              #-}
 {-# LANGUAGE TypeApplications           #-}
 {-# LANGUAGE TypeFamilies               #-}
 {-# LANGUAGE TypeOperators              #-}
@@ -183,6 +182,14 @@ instance (Show (f (s:|:a)), ShowPath s)
     PE (Right a) -> show a
     PE (Left r)  ->
       T.unpack (showPath (Proxy @s)) ++ " (empty: " ++ show r ++ ")\n"
+instance (Semigroup a) => Semigroup (PossiblyEmpty a) where
+  PE (Right x) <> PE (Right y) = PE $ Right $ x<>y
+  PE (Left _) <> PE (Right x) = PE $ Right x
+  PE (Right x) <> PE (Left _) = PE $ Right x
+  PE (Left x) <> PE (Left y) = PE $ Left $ max x y
+instance (Semigroup a) => Monoid (PossiblyEmpty a) where
+  mempty = PE (Left NoDefault)
+
 
 -- | Wraps a field and gives it some tag
 data Tagged tag a = Tagged { tagFromTagged   :: tag
@@ -197,6 +204,11 @@ instance (Ord a) => Ord (Tagged tag a) where
   Tagged _ a `compare` Tagged _ b = a `compare` b
 instance (Show a) => Show (Tagged tag a) where
   show (Tagged _ a) = show a
+-- | The tag is right-biased
+instance (Semigroup a) => Semigroup (Tagged tag a) where
+  Tagged _ x <> Tagged tag y = Tagged tag (x<>y)
+instance (Monoid tag, Monoid a) => Monoid (Tagged tag a) where
+  mempty = Tagged mempty mempty
 instance Functor (Tagged tag) where
   fmap f (Tagged d a) = Tagged d (f a)
 instance (Monoid tag) => Applicative (Tagged tag) where
@@ -227,6 +239,11 @@ deriving instance (Ord a) => Ord (Field (s:|:a))
 instance (Show t, ShowPath s) => Show (Field (s:|:t)) where
   show (Field x) =
     T.unpack (showPath (Proxy @s)) ++ " =: " ++ show x ++ "\n"
+
+instance (Semigroup t) => Semigroup (Field (s :|: t)) where
+  Field a <> Field b = Field $ a<>b
+instance (ShowPath s, Monoid t) => Monoid (Field (s :|: t)) where
+  mempty = Field mempty
 
 -- instance (Show (f (g a))) => Show (F.Compose f g a) where
 --   show (F.Compose x) = show x
@@ -314,7 +331,7 @@ instance (FromJSON t, FromJSON (Rec PossiblyEmptyField rs), ShowPath s)
                            then parsing <|> pure (Left MissingValueInJSON)
                            else parsing  -- But not values with a bad type
             where parsing = Right <$> parseJSON x
-                  x = maybe Null id mbX
+                  x = fromMaybe Null mbX
 
 -- | Just sets the docstrings to empty
 instance (RMap rs, FromJSON (Rec PossiblyEmptyField rs)) => FromJSON (Rec DocField rs) where
@@ -886,7 +903,7 @@ instance ( BuildRecFrom f rs (acc ++ '[s:|:a]) (FirstFieldSkipped rs)
       => BuildRecFrom f ((s:|:a) : rs) acc 'False where
   type RecCtor f ((s:|:a) : rs) acc 'False =
          a -> RecCtor f rs (acc ++ '[s:|:a]) (FirstFieldSkipped rs)
-  buildRecFrom_ acc (r :& rs) = \a -> buildRecFrom_ (acc <+> r =: a) rs
+  buildRecFrom_ acc (r :& rs) a = buildRecFrom_ (acc <+> r =: a) rs
    -- The append at the of the record makes it quadratic in comlexity. It's not
    -- great, it could me made to be linear.
   {-# INLINE buildRecFrom_ #-}

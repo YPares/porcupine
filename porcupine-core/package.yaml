@@ -45,6 +45,7 @@ dependencies:
   - streaming
   - streaming-bytestring
   - streaming-conduit
+  - streaming-utils
   - template-haskell
   - temporary
   - text
@@ -54,6 +55,7 @@ dependencies:
   - unliftio-core
   - unordered-containers
   - url
+  - zlib
   - vector
   - vinyl
   - void

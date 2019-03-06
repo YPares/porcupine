@@ -13,13 +13,13 @@ module Data.Locations.VirtualFile
   , VirtualFile(..), LayeredReadScheme(..)
   , BidirVirtualFile, DataSource, DataSink
   , VirtualFileIntent(..), VirtualFileDescription(..)
-  , DocRecOfOptions, RecOfOptions(..)
+  , RecOfOptions(..)
   , VFileImportance(..)
   , vfileSerials
   , vfileAsBidir, vfileImportance
   , vfileEmbeddedValue
-  , setVFileIntermediaryValue, setVFileAesonValue
-  , getVFileIntermediaryValue, getVFileAesonValue
+  , getConvertedEmbeddedValue, setConvertedEmbeddedValue
+  , tryMergeLayersForVFile
   , vfileOriginalPath, showVFileOriginalPath
   , vfileLayeredReadScheme
   , vfileVoided
@@ -27,19 +27,18 @@ module Data.Locations.VirtualFile
   , dataSource, dataSink, bidirVirtualFile
   , makeSink, makeSource
   , documentedFile
+  , withEmbeddedValue
   , usesLayeredMapping, canBeUnmapped, unmappedByDefault
   , getVirtualFileDescription
-  , vfileRecOfOptions
   ) where
 
 import           Control.Lens
 import           Data.Aeson                         (Value)
 import           Data.Default
-import           Data.DocRecord
-import           Data.DocRecord.OptParse            (RecordUsableWithCLI)
 import qualified Data.HashMap.Strict                as HM
 import qualified Data.HashSet                       as HS
 import           Data.List                          (intersperse)
+import           Data.List.NonEmpty                 (NonEmpty (..))
 import           Data.Locations.Loc
 import           Data.Locations.LocationTree
 import           Data.Locations.Mappings            (HasDefaultMappingRule (..),
@@ -49,6 +48,7 @@ import           Data.Maybe
 import           Data.Monoid                        (First (..))
 import           Data.Profunctor                    (Profunctor (..))
 import           Data.Representable
+import           Data.Semigroup                     (sconcat)
 import qualified Data.Text                          as T
 import           Data.Type.Equality
 import           Data.Typeable
@@ -83,6 +83,7 @@ instance Default VFileImportance where
 data VirtualFile a b = VirtualFile
   { _vfileOriginalPath      :: [LocationTreePathItem]
   , _vfileLayeredReadScheme :: LayeredReadScheme b
+  , _vfileEmbeddedValue     :: Maybe b
   , _vfileMappedByDefault   :: Bool
   , _vfileImportance        :: VFileImportance
   , _vfileDocumentation     :: Maybe T.Text
@@ -113,14 +114,14 @@ instance HasDefaultMappingRule (VirtualFile a b) where
 -- For now, given the requirement of PTask, VirtualFile has to be a Monoid
 -- because a Resource Tree also has to.
 instance Semigroup (VirtualFile a b) where
-  VirtualFile p u m i d s <> VirtualFile _ _ _ _ _ s' =
-    VirtualFile p u m i d (s<>s')
+  VirtualFile p l v m i d s <> VirtualFile _ _ _ _ _ _ s' =
+    VirtualFile p l v m i d (s<>s')
 instance Monoid (VirtualFile a b) where
-  mempty = VirtualFile [] SingleLayerRead True def Nothing mempty
+  mempty = VirtualFile [] SingleLayerRead Nothing True def Nothing mempty
 
 instance Profunctor VirtualFile where
-  dimap f g (VirtualFile p _ m i d s) =
-    VirtualFile p SingleLayerRead m i d $ dimap f g s
+  dimap f g (VirtualFile p _ v m i d s) =
+    VirtualFile p SingleLayerRead (g <$> v) m i d $ dimap f g s
 
 
 -- * Obtaining a description of how the 'VirtualFile' should be used
@@ -154,17 +155,17 @@ getVirtualFileDescription vf =
   VirtualFileDescription intent readableFromConfig writableInOutput exts
   where
     (SerialsFor
-      (SerialWriters toA toC)
-      (SerialReaders fromA fromS fromC fromV)
+      (SerialWriters toA)
+      (SerialReaders fromA fromS)
       prefExt
       _) = _vfileSerials vf
     intent
-      | First (Just _) <- fromC, First (Just _) <- fromV, First (Just _) <- toC = Just VFForCLIOptions
       | HM.null fromA && HM.null fromS && HM.null toA = Nothing
       | HM.null fromA && HM.null fromS = Just VFForWriting
       | HM.null toA = Just VFForReading
+      | Just _ <- vf ^. vfileEmbeddedValue = Just VFForCLIOptions
       | otherwise = Just VFForRW
-    extSet = HS.fromList . catMaybes . map snd . HM.keys
+    extSet = HS.fromList . mapMaybe snd . HM.keys
     otherExts = extSet toA <> extSet fromA <> extSet fromS
     exts = case prefExt of
              First (Just e) -> e:(HS.toList $ HS.delete e otherExts)
@@ -176,6 +177,11 @@ getVirtualFileDescription vf =
 -- | Just for logs and error messages
 showVFileOriginalPath :: VirtualFile a b -> String
 showVFileOriginalPath = T.unpack . toTextRepr .  LTP . _vfileOriginalPath
+
+-- | Embeds a value inside the 'VirtualFile'. This value will be considered the
+-- base layer if we read extra @b@'s from external physical files.
+withEmbeddedValue :: b -> VirtualFile a b -> VirtualFile a b
+withEmbeddedValue = set vfileEmbeddedValue . Just
 
 -- | Indicates that the file uses layered mapping
 usesLayeredMapping :: (Semigroup b) => VirtualFile a b -> VirtualFile a b
@@ -215,7 +221,7 @@ type DataSink a = VirtualFile a ()
 -- the data. You should prefer 'dataSink' and 'dataSource' for clarity when the
 -- file is meant to be readonly or writeonly.
 virtualFile :: [LocationTreePathItem] -> SerialsFor a b -> VirtualFile a b
-virtualFile path sers = VirtualFile path SingleLayerRead True def Nothing sers
+virtualFile path sers = VirtualFile path SingleLayerRead Nothing True def Nothing sers
 
 -- | Creates a virtual file from its virtual path and ways to deserialize the
 -- data.
@@ -234,7 +240,8 @@ bidirVirtualFile = virtualFile
 -- | Turns the 'VirtualFile' into a pure sink
 makeSink :: VirtualFile a b -> DataSink a
 makeSink vf = vf{_vfileSerials=eraseDeserials $ _vfileSerials vf
-                ,_vfileLayeredReadScheme=LayeredReadWithNull}
+                ,_vfileLayeredReadScheme=LayeredReadWithNull
+                ,_vfileEmbeddedValue=Nothing}
 
 -- | Turns the 'VirtualFile' into a pure source
 makeSource :: VirtualFile a b -> DataSource b
@@ -252,93 +259,64 @@ vfileAsBidir f vf = case eqT :: Maybe (a :~: b) of
   Just Refl -> f vf
   Nothing   -> pure vf
 
--- | If the 'VirtualFile' has an embedded value, traverses to it.
-vfileEmbeddedValue :: Lens' (VirtualFile a b) (Maybe b)
-vfileEmbeddedValue =
-  vfileSerials . serialReaders . serialReaderEmbeddedValue . lens (\(First x) -> x) (\_ x -> First x)
-
--- | If the 'VirtualFile' has an embedded value convertible to type @c@, we get
--- it.
-getVFileIntermediaryValue :: forall a c. (Typeable c)
-                          => VirtualFile a a
-                          -> Maybe c
-getVFileIntermediaryValue vf = let resTypeRep = typeOf (undefined :: c) in
-  case HM.lookup (resTypeRep,Nothing)
-                 (_serialWritersToAtomic $ _serialWriters $ _vfileSerials vf) of
-    Nothing -> Nothing
-    Just (ToAtomicFn toA) -> case cast (toA <$> vf ^. vfileEmbeddedValue) of
-      Nothing -> error $ "getVFileIntermediaryValue: Impossible to cast the value to type "
-        ++ show resTypeRep ++ ", however a conversion function was declared in the writers"
-      Just i  -> i
-
--- | If the 'VirtualFile' has an embedded value that can be turned into an Aeson
--- 'Value', we get it.
-getVFileAesonValue :: VirtualFile a a -> Maybe Value
-getVFileAesonValue = getVFileIntermediaryValue
-
--- | If the 'VirtualFile' can hold a embedded value convertible from type @c@,
--- we set it (or remove it if Nothing). Note that the conversion may fail, we
--- return Left if the VirtualFile couldn't be set.
-setVFileIntermediaryValue :: forall a b c. (Typeable c)
-                          => VirtualFile a b
-                          -> c
-                          -> Either String (VirtualFile a b)
-setVFileIntermediaryValue vf i = let inpTypeRep = typeOf (undefined :: c) in
-  case HM.lookup (inpTypeRep,Nothing)
-                 (_serialReadersFromAtomic $ _serialReaders $ _vfileSerials vf) of
-    Nothing -> Left $ "No conversion function is available to turn type " ++ show inpTypeRep
-               ++ "into the type expected by " ++ showVFileOriginalPath vf
-    Just (FromAtomicFn fromA) -> case cast i of
-      Nothing -> error $ "setVFileIntermediaryValue: Impossible to cast back the value from type "
-        ++ show inpTypeRep ++ ", however a conversion function was declared in the readers"
-      Just i' -> case fromA i' of
-        Left s    -> Left s
-        Right i'' -> Right $ vf & vfileEmbeddedValue .~ Just i''
-
--- | If the file can carry a defaut value convertible from aeson Value, we set
--- it.
-setVFileAesonValue :: VirtualFile a b -> Value -> Either String (VirtualFile a b)
-setVFileAesonValue = setVFileIntermediaryValue
-
-
--- * Compatibility layer with the doc records of options used by the
--- command-line parser
-
--- | Contains any set of options that should be exposed via the CLI
-data RecOfOptions field where
-  RecOfOptions :: (Typeable rs, RecordUsableWithCLI rs) => Rec field rs -> RecOfOptions field
-
-type DocRecOfOptions = RecOfOptions DocField
-
--- | If the file is bidirectional and has an embedded value that can be
--- converted to and from DocRecords (so that it can be read from config file AND
--- command-line), we traverse to it. Setting it changes the value embedded in
--- the file to reflect the new record of options. BEWARE not to change the
--- fields when setting the new doc record.
-vfileRecOfOptions :: forall a. Traversal' (VirtualFile a a) DocRecOfOptions
-vfileRecOfOptions f vf = case mbopts of
-  Just (WriteToConfigFn convert, defVal, convertBack) ->
-    rebuild convertBack <$> f (RecOfOptions $ convert defVal)
-  _ -> pure vf
-  where
-    serials = _vfileSerials vf
-    First mbopts = (,,)
-      <$> _serialWriterToConfig (_serialWriters serials)
-      <*> _serialReaderEmbeddedValue (_serialReaders serials)
-      <*> _serialReaderFromConfig (_serialReaders serials)
-
-    rebuild :: ReadFromConfigFn a -> DocRecOfOptions -> VirtualFile a a
-    rebuild (ReadFromConfigFn convertBack) (RecOfOptions r) =
-      let newVal = case cast r of
-            Nothing -> error "vfileRecOfOptions: record fields aren't compatible"
-            Just r' -> convertBack r'
-      in vf & vfileEmbeddedValue .~ Just newVal
-
 -- | Gives access to a version of the VirtualFile without type params. The
 -- original path isn't settable.
 vfileVoided :: Lens' (VirtualFile a b) (VirtualFile Void ())
-vfileVoided f (VirtualFile p l m i d s) =
-  rebuild <$> f (VirtualFile p SingleLayerRead m i d mempty)
+vfileVoided f (VirtualFile p l v m i d s) =
+  rebuild <$> f (VirtualFile p SingleLayerRead Nothing m i d mempty)
   where
-    rebuild (VirtualFile _ _ m' i' d' _) =
-      VirtualFile p l m' i' d' s
+    rebuild (VirtualFile _ _ _ m' i' d' _) =
+      VirtualFile p l v m' i' d' s
+
+-- | If the 'VirtualFile' has an embedded value convertible to type @i@, we get
+-- it.
+getConvertedEmbeddedValue
+  :: (Typeable i)
+  => BidirVirtualFile a
+  -> Maybe i
+getConvertedEmbeddedValue vf = do
+  toA <- getToAtomicFn (vf ^. vfileSerials)
+  toA <$> vf ^. vfileEmbeddedValue
+
+-- | If the 'VirtualFile' can hold a embedded value convertible from type @i@,
+-- we set it (or remove it if Nothing). Note that the conversion may fail, we
+-- return Left if the VirtualFile couldn't be set.
+setConvertedEmbeddedValue
+  :: forall a b i. (Typeable i)
+  => VirtualFile a b
+  -> i
+  -> Either String (VirtualFile a b)
+setConvertedEmbeddedValue vf i =
+  case getFromAtomicFn (vf ^. vfileSerials) of
+    Nothing -> Left $ showVFileOriginalPath vf ++
+               ": no conversion function is available to transform type " ++ show (typeOf (undefined :: i))
+    Just fromA -> do
+      i' <- fromA i
+      return $ vf & vfileEmbeddedValue .~ Just i'
+
+-- | Tries to convert each @i@ layer to and from type @b@ and find a
+-- Monoid/Semigroup instance for @b@ in the vfileLayeredReadScheme, so we can
+-- merge these layers. So if we have more that one layer, this will fail if the
+-- file doesn't use LayeredRead.
+tryMergeLayersForVFile
+  :: forall a i. (Typeable i)
+  => BidirVirtualFile a
+  -> [i]
+  -> Either String i
+tryMergeLayersForVFile _ [i] = return i
+tryMergeLayersForVFile vf layers = let ser = vf ^. vfileSerials in
+  case (,) <$> getFromAtomicFn ser <*> getToAtomicFn ser of
+    Nothing -> Left $ showVFileOriginalPath vf ++
+               ": no conversion functions are available to transform back and forth type "
+               ++ show (typeOf (undefined :: i))
+    Just (fromA, toA) -> do
+      newVal <- case (layers, vf^.vfileLayeredReadScheme) of
+        ([], LayeredReadWithNull) -> return mempty
+        ([], _) -> Left $ "tryMergeLayersForVFile: " ++ showVFileOriginalPath vf
+                   ++ " doesn't support mapping to no layers"
+        ([_], _) -> error "tryMergeLayersForVFile: Should have been handled by now"
+        (x:xs, LayeredRead) -> sconcat <$> traverse fromA (x:|xs)
+        (xs, LayeredReadWithNull) -> mconcat <$> traverse fromA xs
+        (_, _) -> Left $ "tryMergeLayersForVFile: " ++ showVFileOriginalPath vf
+                  ++ " cannot use several layers of data"
+      return $ toA newVal

@@ -16,6 +16,7 @@ dependencies:
   - transformers
   - safe-exceptions
   - http-conduit
+  - http-client
   - resourcet
   - bytestring
   - mime-types
@@ -31,9 +32,9 @@ library:
   source-dirs: src
 
 executables:
-  exampleHTTP:
+  example-pokeapi:
     source-dirs: examples
-    main: ExampleHTTP.hs
+    main: ExamplePokeAPI.hs
     dependencies:
       - porcupine-core
       - porcupine-http

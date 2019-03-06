@@ -9,7 +9,7 @@ module System.TaskPipeline.Repetition.Internal
   ) where
 
 import           Control.Category
-import           Control.Lens                       hiding ((:>), (.=))
+import           Control.Lens                       hiding ((:>))
 import           Control.Monad
 import           Data.Aeson
 import qualified Data.HashMap.Strict                as HM
@@ -74,7 +74,7 @@ makeRepeatable (RepInfo repetitionKey mbVerb) =
     ( fmap addKeyToVirtualFile reqTree
     , modifyingRuntimeState alterState id runnable )
   where
-    addKeyToVirtualFile (VirtualFileNode{..}) =
+    addKeyToVirtualFile VirtualFileNode{..} =
       VirtualFileNode
       {vfnodeFile = vfnodeFile &
         over (vfileSerials.serialRepetitionKeys) (repetitionKey:)

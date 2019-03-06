@@ -1,14 +1,14 @@
 {-# LANGUAGE Arrows                    #-}
 {-# LANGUAGE ExistentialQuantification #-}
 {-# LANGUAGE FlexibleContexts          #-}
-{-# LANGUAGE OverloadedStrings         #-}
-{-# LANGUAGE TupleSections             #-}
+
 
 module System.TaskPipeline.Repetition.Fold
   ( module Control.Arrow.FoldA
   , RepInfo(..)
   , HasTaskRepetitionIndex(..)
   , ptaskFold
+  , ptaskFold_
   , unsafeGeneralizeM
   , unsafeGeneralizeFnM
   , foldlTask
@@ -19,7 +19,7 @@ module System.TaskPipeline.Repetition.Fold
 import           Control.Arrow.FoldA
 import           Control.Lens                            hiding (Fold)
 import           Data.Locations
-import           Prelude                                 hiding (id, (.))
+import           Prelude                                 hiding (id)
 import           Streaming                               (Of (..), Stream)
 import qualified Streaming.Prelude                       as S
 import           System.TaskPipeline.PTask
@@ -62,6 +62,16 @@ ptaskFold step =
   FoldA (arr onInput >>> step) id id
   where
     onInput (Pair acc x) = (acc,x)
+
+-- | Creates a 'FoldA' that will never alter its accumulator's initial value,
+-- just pass it around
+ptaskFold_ :: PTask m (acc,input) ()
+           -> FoldA (PTask m) acc input ()
+ptaskFold_ task =
+  rmap (const ()) $
+  ptaskFold $ proc (acc,input) -> do
+    task -< (acc,input)
+    returnA -< acc
 
 newtype PairWithRepeatable x a = PWR { unPWR :: Pair x a }
 
@@ -107,7 +117,7 @@ foldlTask
   => RepInfo  -- ^ How to log the repeated task
   -> FoldA (PTask m) i a b
   -> PTask m (i,[a]) b
-foldlTask ri fld = arr (\(i,l) -> (i,S.each l))
+foldlTask ri fld = arr (second S.each)
             >>> foldStreamTask ri fld >>> arr fst
 
 -- | Allows to filter out some data before it is taken into account by the FoldA
@@ -118,7 +128,7 @@ premapMaybe :: (a -> Maybe a')
 premapMaybe f (FoldA step start done) = FoldA step' start done
   where
     step' = step & over ptaskRunnablePart
-      (\run -> proc (Pair acc input) -> do
+      (\run -> proc (Pair acc input) ->
           case f input of
             Nothing     -> returnA -< acc
             Just input' -> run -< Pair acc input')

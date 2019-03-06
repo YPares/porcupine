@@ -24,7 +24,7 @@ module System.TaskPipeline.PTask.Internal
   , ptrsFunflowRunConfig
   , ptrsDataAccessTree
   , splittedPTask
-  , runnablePTaskState
+  , runnablePTaskReaderState
   , makePTask
   , makePTask'
   , modifyingRuntimeState
@@ -63,9 +63,6 @@ import           Katip.Monadic
 import           Path
 import           System.TaskPipeline.ResourceTree
 
-
-type ReqTree = LocationTree VirtualFileNode
-type DataAccessTree m = LocationTree (DataAccessNode m)
 
 -- | PTask functions like mappingOverStream make necessary to recursively run
 -- some flows. Until we find a better solution than to run flows in flows, this
@@ -109,7 +106,7 @@ execRunnablePTask
   => RunnablePTask m a b -> PTaskState m -> a -> m b
 execRunnablePTask
   (AppArrow act)
-  st@(PTaskState{_ptrsFunflowRunConfig=FunflowRunConfig{..}})
+  st@PTaskState{_ptrsFunflowRunConfig=FunflowRunConfig{..}}
   input =
   flip evalStateT [] $
     runFlowEx _ffrcCoordinator _ffrcCoordinatorConfig
@@ -126,7 +123,7 @@ execRunnablePTask
 -- complete requirements of the pipeline.
 newtype PTask m a b = PTask
   (AppArrow
-    (Writer ReqTree)  -- The writer layer accumulates the requirements. It will
+    (Writer VirtualResourceTree)  -- The writer layer accumulates the requirements. It will
                       -- be used only as an applicative.
     (RunnablePTask m)
     a b)
@@ -225,17 +222,18 @@ runnableWithoutReqs = PTask . appArrow
 
 -- | An Iso to the requirements and the runnable part of a 'PTask'
 splittedPTask :: Iso (PTask m a b) (PTask m a' b')
-                     (ReqTree, RunnablePTask m a b)
-                     (ReqTree, RunnablePTask m a' b')
+                     (VirtualResourceTree, RunnablePTask m a b)
+                     (VirtualResourceTree, RunnablePTask m a' b')
 splittedPTask = iso to_ from_
   where
     to_ (PTask (AppArrow wrtrAct)) = swap $ runWriter wrtrAct
     from_ = PTask . AppArrow . writer . swap
     swap (a,b) = (b,a)
 
--- | Permits to apply a function to the state of a 'RunnablePTask' when in runs.
-runnablePTaskState :: Setter' (RunnablePTask m a b) (PTaskState m)
-runnablePTaskState = lens unAppArrow (const AppArrow) . setting local
+-- | Permits to apply a function to the Reader state of a 'RunnablePTask' when
+-- in runs.
+runnablePTaskReaderState :: Setter' (RunnablePTask m a b) (PTaskState m)
+runnablePTaskReaderState = lens unAppArrow (const AppArrow) . setting local
 
 -- | Makes a task from a tree of requirements and a function. The 'Properties'
 -- indicate whether we can cache this task.
@@ -269,7 +267,7 @@ withFunflowRunConfig ffPaths f = do
   storePath' <- parseAbsDir $ storePath ffPaths
   coordPath' <- parseAbsDir $ coordPath ffPaths
   let cacher = locationCacher $ remoteCacheLoc ffPaths
-  CS.withStore storePath' (\store -> do
+  CS.withStore storePath' (\store ->
     f $ FunflowRunConfig SQLite coordPath' store 23090341 cacher)
 
 -- | Given a 'KatipContext' and a 'DataAccessTree', gets the initial state to

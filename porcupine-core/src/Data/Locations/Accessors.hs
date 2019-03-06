@@ -12,8 +12,6 @@
 {-# LANGUAGE PatternSynonyms            #-}
 {-# LANGUAGE RankNTypes                 #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
-{-# LANGUAGE TupleSections              #-}
-{-# LANGUAGE TypeApplications           #-}
 {-# LANGUAGE TypeFamilies               #-}
 {-# LANGUAGE TypeOperators              #-}
 {-# LANGUAGE UndecidableInstances       #-}
@@ -50,6 +48,7 @@ import           Control.Monad.Trans.Resource
 import           Data.Aeson
 import qualified Data.ByteString.Lazy              as LBS
 import qualified Data.ByteString.Streaming         as BSS
+import qualified Data.HashMap.Strict               as HM
 import           Data.Locations.Loc
 import           Data.Locations.LogAndErrors
 import qualified Data.Text                         as T
@@ -281,6 +280,14 @@ baseContexts topNamespace =
 -- | The context in which aeson Values can be resolved to actual Locations
 type LocResolutionM m = ReaderT (AvailableAccessors m) m
 
+newtype ErrorsFromAccessors = ErrorsFromAccessors Object
+  deriving (ToObject, ToJSON)
+instance LogItem ErrorsFromAccessors where
+  payloadKeys _ _ = AllKeys
+
+errsFromAccs :: Object -> ErrorsFromAccessors
+errsFromAccs = ErrorsFromAccessors . HM.singleton "errorsFromAccessors" . Object
+
 -- | Finds in the accessors list a way to parse a list of JSON values that
 -- should correspond to some `LocOf l` type
 withParsedLocsWithVars
@@ -298,13 +305,14 @@ withParsedLocsWithVars aesonVals f = do
   where
     showJ = LT.unpack . LT.intercalate ", " . map (LTE.decodeUtf8 . encode)
     loop [] errCtxs =
-      katipAddContext (sl "errorsFromAccessors" errCtxs) $
+      katipAddContext (errsFromAccs errCtxs) $
       throwWithPrefix $ "Location(s) " ++ showJ aesonVals
       ++ " cannot be used by the location accessors in place."
     loop (SomeLocationAccessor (lbl :: Label l) : accs) errCtxs =
       case mapM fromJSON aesonVals of
         Success a -> f (a :: [LocWithVarsOf l])
-        Error e   -> loop accs (errCtxs <> sl (T.pack $ symbolVal lbl) e)
+        Error e   -> loop accs (errCtxs <>
+                                HM.singleton (T.pack $ symbolVal lbl) (String $ T.pack e))
 
 -- | Finds in the accessors list a way to parse a list of JSON values that
 -- should correspond to some `LocOf l` type
@@ -322,13 +330,14 @@ withParsedLocs aesonVals f = do
   where
     showJ = LT.unpack . LT.intercalate ", " . map (LTE.decodeUtf8 . encode)
     loop [] errCtxs =
-      katipAddContext (sl "errorsFromAccessors" errCtxs) $
+      katipAddContext (errsFromAccs errCtxs) $
       throwWithPrefix $ "Location(s) " ++ showJ aesonVals
       ++ " cannot be used by the location accessors in place."
     loop (SomeLocationAccessor (lbl :: Label l) : accs) errCtxs =
       case mapM fromJSON aesonVals of
         Success a -> f (a :: [LocOf l])
-        Error e   -> loop accs (errCtxs <> sl (T.pack $ symbolVal lbl) e)
+        Error e   -> loop accs (errCtxs <>
+                                HM.singleton (T.pack $ symbolVal lbl) (String $ T.pack e))
 
 -- | For locations which can be expressed as a simple String. The path will be
 -- used as a JSON string. Will fail if no accessor can handle the path.
