@@ -4,7 +4,7 @@
 
 Porcupine stands for _Portable & Customizable Pipeline_. It is a tool
 aimed at data scientists and numerical analysts, so that they can express
-general data manipulation and analysis tasks,
+in Haskell general data manipulation and analysis tasks,
 
 1. in a way that is agnostic from the source of the input data and
 from the destination of the end results,
