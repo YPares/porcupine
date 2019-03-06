@@ -60,7 +60,7 @@ stockToVegaLite stock =
       enc = encoding
           . position X [ PName "Date", PmType Temporal ]
           . position Y [ PName "Price", PmType Quantitative]
-  in (fromVL . toVegaLite) [ dat [], mark Line [], enc [] ]
+  in (fromVL . toVegaLite) [ dat [], width 800 , height 500 ,  mark Line [], enc [] ]
 
 stockSmoothed :: DataSink Stock
 stockSmoothed = dataSink ["Outputs", "StockSmoothed"]
@@ -87,7 +87,7 @@ msliding n p = case p of
 computeSmoothedCurve :: Stock -> Stock
 computeSmoothedCurve stock = Stock { chart = [ StockDaily { date = d , close = p} | (d,p) <- datePriceZipped ] } where
   price = getCloseStock stock
-  priceSmoothed = map ave (msliding 10 price)
+  priceSmoothed = map ave (msliding 1 price)
   datePriceZipped = zip (getDateStock stock) priceSmoothed
 
 analyseStock :: (LogThrow m) => PTask m () ()
