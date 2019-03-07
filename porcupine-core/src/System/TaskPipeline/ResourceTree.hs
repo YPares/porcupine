@@ -363,26 +363,39 @@ rscTreeConfigurationReader ResourceTreeAndMappings{rtamResourceTree=defTree} =
       -> Either String VirtualFileNode
     replaceWithDataFromConfig (Just dataSectionContent)
                               (LTP path, (node@VirtualFileNode{..}, mbRecFromCLI)) =
-      let rebuildNode newF = VirtualFileNode{vfnodeFile = newF, ..}
+      let rebuildNode :: (Typeable a', Typeable b')
+                      => VirtualFile a' b' -> VirtualFileNode
+          rebuildNode newF = VirtualFileNode{vfnodeFile = newF, ..}
+          err :: String -> Either String a
+          err s = Left $ "replaceWithDataFromConfig: " ++ showVFileOriginalPath vfnodeFile ++ ": " ++ s
       in case findInAesonVal path dataSectionContent of
           Right rawObjFromYaml ->
-            case mbRecFromCLI of
-              Just (RecOfOptions (recFromCLI :: Rec SourcedDocField rs)) -> do
+            case (mbRecFromCLI, vfnodeFile ^? vfileAsBidir) of
+              (Just _, Nothing) ->
+                err "that virtualfile contains an embedded record of options, yet it isn't bidirectional"
+              (Just (RecOfOptions (recFromCLI :: Rec SourcedDocField rs)), Just bidirVFile) -> do
                 -- YAML: yes, CLI: yes
-                RecOfOptions (recFromYaml::DocRec rs') <- getMergedLayersFromAesonValue vfnodeFile rawObjFromYaml
-                                                          (RecOfOptions::DocRec rs -> DocRecOfOptions)
+                  -- First we merge all the data present in the yaml:
+                mergedDataFromYaml <- getMergedLayersFromAesonValue bidirVFile rawObjFromYaml
+                                      (RecOfOptions::DocRec rs -> DocRecOfOptions)
+                  -- then we convert it back to a DocRec, as we need to override
+                  -- it from the CLI:
+                RecOfOptions (recFromYaml::DocRec rs') <- case getToAtomicFn (bidirVFile ^. vfileSerials) of
+                  Just toDocRec -> return (toDocRec mergedDataFromYaml :: DocRecOfOptions)
+                  Nothing -> err "that virtualfile contained an embedded record of options, yet it contained \
+                                 \no function to convert back to DocRecOfOptions"
                 case eqT :: Maybe (rs' :~: rs) of
-                  Nothing -> error "replaceWithDataFromConfig: Not the same record type has been returned \
-                                   \by getMergedLayersFromAesonValue"
+                  Nothing -> err "not the same record type has been returned \
+                                  \by getMergedLayersFromAesonValue"
                   Just Refl -> do
-                    let recFromYaml' = tagWithYamlSource recFromYaml
-                    -- We merge the two configurations:
-                    rebuildNode <$> setConvertedEmbeddedValue vfnodeFile
-                      (RecOfOptions $ rmTags $ rzipWith chooseHighestPriority recFromYaml' recFromCLI)
-              Nothing -> do
+                    -- finally, we merge CLI and YAML config and modify the
+                    -- node's embedded data:
+                    rebuildNode <$> setConvertedEmbeddedValue bidirVFile
+                      (RecOfOptions $ rmTags $ rzipWith chooseHighestPriority (tagWithYamlSource recFromYaml) recFromCLI)
+              (Nothing, _) -> do
                 -- YAML: yes, CLI: no
                 mergedDataFromYaml <- getMergedLayersFromAesonValue vfnodeFile rawObjFromYaml (id::Value -> Value)
-                rebuildNode <$> setConvertedEmbeddedValue vfnodeFile mergedDataFromYaml
+                return $ rebuildNode $ vfnodeFile & vfileEmbeddedValue .~ Just mergedDataFromYaml
           Left _ -> case mbRecFromCLI of
             Just (RecOfOptions recFromCLI) ->
               -- YAML: no, CLI: yes
@@ -400,10 +413,6 @@ rscTreeConfigurationReader ResourceTreeAndMappings{rtamResourceTree=defTree} =
           (T.unpack $ toTextRepr $ LTP path) ++ " doesn't match any path in the Yaml config"
 
     getMergedLayersFromAesonValue vf objFromYaml f = do
-      bidirVF <- case vf ^? vfileAsBidir of
-        Just f -> return f
-        Nothing -> Left $ "getMergedLayersFromAesonValue: " ++ showVFileOriginalPath vf
-                          ++ " contains embedded options: it should be bidirectional"
       layersFromYaml <- case objFromYaml of
         Object m
           | Just v <- HM.lookup "$layers" m ->
@@ -411,7 +420,7 @@ rscTreeConfigurationReader ResourceTreeAndMappings{rtamResourceTree=defTree} =
                 Array layers -> mapM parseJSONEither $ foldr (:) [] layers
                 _ -> Left $ "If you specify data with $layers, $layers must contain an array."
         _ -> (:[]) <$> parseJSONEither objFromYaml
-      tryMergeLayersForVFile bidirVF $ map f layersFromYaml
+      tryMergeLayersForVFile vf $ map f layersFromYaml
 
 -- ** Transforming a virtual resource tree to a physical resource tree (ie. a
 -- tree with physical locations attached)
