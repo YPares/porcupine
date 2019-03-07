@@ -1,10 +1,12 @@
-{-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE TupleSections     #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE OverloadedStrings          #-}
+{-# LANGUAGE TupleSections              #-}
 
 module System.TaskPipeline.Repetition
   ( module System.TaskPipeline.Repetition.Streaming
   , RepInfo(..), repIndex
   , HasTaskRepetitionIndex(..)
+  , OneOrSeveral(..)
   , parMapTask
   , parMapTask_
   , IndexRange(..)
@@ -80,30 +82,34 @@ instance (FromJSON i) => FromJSON (OneRange i) where
   parseJSON (Object o) = OneRange <$> o .: "lower" <*> o .: "upper"
   parseJSON o = OneIndex <$> parseJSON o
 
+-- | Allows to read from a JSON file either one @a@ or an array of @a@
+newtype OneOrSeveral a = OneOrSeveral {getOneOrSeveral :: [a]}
+
+instance (ToJSON a) => ToJSON (OneOrSeveral a) where
+  toJSON (OneOrSeveral [r]) = toJSON r
+  toJSON (OneOrSeveral rs)  = toJSON rs
+
+instance (FromJSON a) => FromJSON (OneOrSeveral a) where
+  parseJSON o@(Array _) = OneOrSeveral <$> parseJSON o
+  parseJSON o           = OneOrSeveral . (:[]) <$> parseJSON o
+
 -- | A simple index list that can be used in configuration, and from which a
 -- list of indices can be extracted. The JSON representation of it is more
 -- compact than that of [(i,i)], as ranges are represented by "a..b" strings
-newtype IndexRange i = IndexRange [OneRange i]
+newtype IndexRange i = IndexRange (OneOrSeveral (OneRange i))
+  deriving (FromJSON, ToJSON)
 
 -- | A range of just one index
 oneIndex :: i -> IndexRange i
-oneIndex i = IndexRange [OneIndex i]
+oneIndex i = IndexRange $ OneOrSeveral [OneIndex i]
 
 -- | A range of consecutive values
 oneRange :: i -> i -> IndexRange i
-oneRange a b = IndexRange [OneRange a b]
-
-instance (ToJSON i) => ToJSON (IndexRange i) where
-  toJSON (IndexRange [r]) = toJSON r
-  toJSON (IndexRange rs)  = toJSON rs
-
-instance (FromJSON i) => FromJSON (IndexRange i) where
-  parseJSON o@(Array _) = IndexRange <$> parseJSON o
-  parseJSON o           = IndexRange . (:[]) <$> parseJSON o
+oneRange a b = IndexRange $ OneOrSeveral [OneRange a b]
 
 -- | Gives a list of indices from an index range
 enumIndices :: (Enum i) => IndexRange i -> [i]
-enumIndices (IndexRange rs) = concatMap toL rs
+enumIndices (IndexRange (OneOrSeveral rs)) = concatMap toL rs
   where
     toL (OneIndex i)   = [i]
     toL (OneRange a b) = [a..b]
