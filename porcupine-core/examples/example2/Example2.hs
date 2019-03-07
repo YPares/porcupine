@@ -20,18 +20,15 @@ import qualified Streaming.Prelude           as S
 -- This example uses the porcupine to read a data that represents the evloution of a given stock in given data and
 -- gives back the average and standard deviation of the stock on that date.
 
-data Stockdaily = Stockdaily { date :: String , high :: Double , low :: Double} deriving (Generic)
+data Stockdaily = Stockdaily { date :: String , close :: Double} deriving (Generic)
 instance FromJSON Stockdaily
 
 data Stock = Stock { chart :: [Stockdaily] }
   deriving (Generic)
 instance FromJSON Stock
 
-getHighStock :: Stock -> [Double]
-getHighStock s = map high (chart s)
-
-getLowStock :: Stock -> [Double]
-getLowStock s = map low (chart s)
+getCloseStock :: Stock -> [Double]
+getCloseStock s = map close (chart s)
 
 getDateStock :: Stock -> [String]
 getDateStock s = map date (chart s)
@@ -70,7 +67,7 @@ msliding n p = case p of
 -- | The simple computation we want to perform
 computeSmoothedCurve :: Stock -> SlidingWindows
 computeSmoothedCurve s = SlidingWindows curve where
-  price = getLowStock s
+  price = getCloseStock s
   curve = map ave (msliding 10 price)
 
 putallStocks :: [SlidingWindows] -> Tabular [[Double]]
@@ -78,7 +75,7 @@ putallStocks s = Tabular Nothing (map smoothcurve s)
 
 analyseStocks :: (LogThrow m) => PTask m () ()
 analyseStocks =
-  arr (const (S.each ["aapl" , "fb" , "googl"])) >>> loadDataStream "company" stockFile
+  arr (const (S.each ["aapl"::String , "fb" , "googl"])) >>> loadDataStream "company" stockFile
    >>> arr (S.map (\(idx,stock) -> (idx, computeSmoothedCurve stock)))
    >>> unsafeLiftToPTask (S.toList_)
    >>> arr (map snd)

@@ -33,7 +33,7 @@ library:
 
 executables:
   example-pokeapi:
-    source-dirs: examples//example-Poke
+    source-dirs: examples/example-Poke
     main: ExamplePokeAPI.hs
     dependencies:
       - porcupine-core
