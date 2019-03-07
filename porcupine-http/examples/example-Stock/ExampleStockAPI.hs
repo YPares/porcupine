@@ -81,7 +81,7 @@ ave list = let s = sum list
 msliding :: Int -> [a] -> [[a]]
 msliding n p = case p of
   []     -> []
-  (x:xs) -> [take n p] ++ (msliding n xs)
+  (_:xs) -> [take n p] ++ (msliding n xs)
 
 -- | The simple computation we want to perform
 computeSmoothedCurve :: Stock -> Stock
