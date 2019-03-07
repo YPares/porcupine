@@ -6,8 +6,6 @@
 {-# LANGUAGE TypeApplications    #-}
 
 import           Data.Aeson
-import           Data.DocRecord
-import qualified Data.HashMap.Strict as HM
 import qualified Data.Text           as T
 import           GHC.Generics
 import           Porcupine.Run
@@ -30,9 +28,6 @@ instance FromJSON Stock
 getCloseStock :: Stock -> [Double]
 getCloseStock s = map close (chart s)
 
-getDateStock :: Stock -> [String]
-getDateStock s = map date (chart s)
-
 -- | How to load Stock prices
 stockFile :: DataSource Stock
 stockFile = dataSource ["Inputs", "Stock"]
@@ -41,13 +36,6 @@ stockFile = dataSource ["Inputs", "Stock"]
 
 -- We do sliding windows for smothing the curve
 data SlidingWindows = SlidingWindows { smoothcurve :: [Double] }
-  deriving (Generic)
-instance ToJSON SlidingWindows
-
--- | How to modify the data
-modifiedStock :: DataSink SlidingWindows
-modifiedStock = dataSink ["Outputs", "ModifiedStock"]
-                        (somePureSerial JSONSerial)
 
 globalMatrix :: DataSink (Tabular [[Double]])
 globalMatrix = dataSink [ "Outputs" , "globalData"]
@@ -61,7 +49,7 @@ ave list = let s = sum list
 msliding :: Int -> [a] -> [[a]]
 msliding n p = case p of
   []     -> []
-  (x:xs) -> [take n p] ++ (msliding n xs)
+  (_:xs) -> [take n p] ++ (msliding n xs)
 
 
 -- | The simple computation we want to perform
