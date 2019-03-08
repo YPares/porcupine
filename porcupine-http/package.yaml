@@ -12,6 +12,7 @@ ghc-options: -Wall
 dependencies:
   - aeson
   - base
+  - containers
   - transformers
   - safe-exceptions
   - http-conduit
@@ -31,9 +32,9 @@ library:
   source-dirs: src
 
 executables:
-  exampleHTTP:
-    source-dirs: examples
-    main: ExampleHTTP.hs
+  example-pokeapi:
+    source-dirs: examples/example-Poke
+    main: ExamplePokeAPI.hs
     dependencies:
       - porcupine-core
       - porcupine-http
@@ -41,3 +42,14 @@ executables:
       - aeson
       - unordered-containers
       - text
+  example-stock:
+    source-dirs: examples/example-Stock
+    main: ExampleStockAPI.hs
+    dependencies:
+      - porcupine-core
+      - porcupine-http
+      - docrecords
+      - aeson
+      - unordered-containers
+      - text
+      - hvega
