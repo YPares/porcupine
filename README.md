@@ -435,7 +435,7 @@ imported and declared at the time of `runPipelineTask`, and that's all. Just do 
 resources can now be mapped to a new source of data. A very common source of data is HTTP, and the `LocationAccessor`
 for it is provided in `porcupine-http`. Support for Amazon S3 is also provided in `porcupine-s3`.
 
-The example [example-pokeapi](porcupine-http/examples/ExamplePokeAPI.hs) shows how to deal with some data from
+The example [example-pokeapi](porcupine-http/examples/example-Poke/ExamplePokeAPI.hs) shows how to deal with some data from
 the [PokeAPI](https://pokeapi.co). You can see that the code of the pipeline is very much like that of `example1`,
 the major difference being the call to `runPipelineTask`:
 
