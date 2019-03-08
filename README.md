@@ -451,7 +451,7 @@ We explicitely state that we want to use the `#http` LocationAccessor (and that 
 access to local files and logging). Note that you need to activate the `OverloadedLabels` GHC extension.
 
 Note that _nothing_ in the code tells us where the data will actually be read. The connection between our dataSource
-and the REST API will be made in the [configuration file](porcupine-http/examples/example-pokeapi.yaml).
+and the REST API will be made in the [configuration file](porcupine-http/examples/example-Poke/example-pokeapi.yaml).
 
 ## Logging
 
