@@ -62,7 +62,7 @@ mainTask =
   >>> parMapTask_ (repIndex "userId") analyseOneUser
 
 main :: IO ()
-main = runPipelineTask (FullConfig "example1" "porcupine.yaml" "porcupine-core/examples/data")
+main = runPipelineTask (FullConfig "example1" "porcupine-example1.yaml" "porcupine-core/examples/example1/data")
                           -- The CLI/Yaml configuration to use (prog name,
                           -- default config file to create, and default root to
                           -- use for the resource tree)

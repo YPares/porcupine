@@ -17,7 +17,6 @@
 
 import           Data.Aeson
 import           Data.DocRecord
-import qualified Data.HashMap.Strict           as HM
 import qualified Data.Text                     as T
 import           GHC.Generics
 import           Porcupine.Run
@@ -76,7 +75,9 @@ mainTask =
   >>> parMapTask_ (repIndex "pokemonId") analyseOnePokemon
 
 main :: IO ()
-main = runPipelineTask (FullConfig "exampleHTTP" "exampleHTTP.yaml" "exampleHTTP_files")
+main = runPipelineTask (FullConfig "example-pokeapi"
+                                   "porcupine-http/examples/example-Poke/example-pokeapi.yaml"
+                                   "example-pokeapi_files")
                        (  #http <-- useHTTP
                             -- We just add #http on top of the baseContexts.
                        :& baseContexts "")
