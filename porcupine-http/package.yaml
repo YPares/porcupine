@@ -33,7 +33,7 @@ library:
 
 executables:
   example-pokeapi:
-    source-dirs: examples
+    source-dirs: examples/example-Poke
     main: ExamplePokeAPI.hs
     dependencies:
       - porcupine-core
@@ -42,3 +42,14 @@ executables:
       - aeson
       - unordered-containers
       - text
+  example-stock:
+    source-dirs: examples/example-Stock
+    main: ExampleStockAPI.hs
+    dependencies:
+      - porcupine-core
+      - porcupine-http
+      - docrecords
+      - aeson
+      - unordered-containers
+      - text
+      - hvega
