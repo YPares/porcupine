@@ -569,6 +569,10 @@ instance Semigroup (SerialsFor a b) where
 instance Monoid (SerialsFor a b) where
   mempty = SerialsFor mempty mempty mempty []
 
+-- | Changes the serialization function used by default
+setDefaultSerial :: FileExt -> SerialsFor a b -> SerialsFor a b
+setDefaultSerial = set serialDefaultExt . First . Just
+
 -- | Packs together ways to serialize and deserialize some data @a@
 someBidirSerial :: (SerializesWith s a, DeserializesWith s a) => s -> BidirSerials a
 someBidirSerial s =

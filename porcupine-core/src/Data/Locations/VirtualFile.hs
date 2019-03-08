@@ -278,8 +278,8 @@ getConvertedEmbeddedValue vf = do
   toA <- getToAtomicFn (vf ^. vfileSerials)
   toA <$> vf ^. vfileEmbeddedValue
 
--- | If the 'VirtualFile' can hold a embedded value convertible from type @i@,
--- we set it (or remove it if Nothing). Note that the conversion may fail, we
+-- | If the 'VirtualFile' can hold a embedded value of type @a@ that's
+-- convertible from type @i@, we set it. Note that the conversion may fail, we
 -- return Left if the VirtualFile couldn't be set.
 setConvertedEmbeddedValue
   :: forall a b i. (Typeable i)
@@ -299,24 +299,22 @@ setConvertedEmbeddedValue vf i =
 -- merge these layers. So if we have more that one layer, this will fail if the
 -- file doesn't use LayeredRead.
 tryMergeLayersForVFile
-  :: forall a i. (Typeable i)
-  => BidirVirtualFile a
+  :: forall a b i. (Typeable i)
+  => VirtualFile a b
   -> [i]
-  -> Either String i
-tryMergeLayersForVFile _ [i] = return i
+  -> Either String b
 tryMergeLayersForVFile vf layers = let ser = vf ^. vfileSerials in
-  case (,) <$> getFromAtomicFn ser <*> getToAtomicFn ser of
+  case getFromAtomicFn ser of
     Nothing -> Left $ showVFileOriginalPath vf ++
                ": no conversion functions are available to transform back and forth type "
                ++ show (typeOf (undefined :: i))
-    Just (fromA, toA) -> do
-      newVal <- case (layers, vf^.vfileLayeredReadScheme) of
+    Just fromA -> do
+      case (layers, vf^.vfileLayeredReadScheme) of
         ([], LayeredReadWithNull) -> return mempty
         ([], _) -> Left $ "tryMergeLayersForVFile: " ++ showVFileOriginalPath vf
                    ++ " doesn't support mapping to no layers"
-        ([_], _) -> error "tryMergeLayersForVFile: Should have been handled by now"
+        ([x], _) -> fromA x
         (x:xs, LayeredRead) -> sconcat <$> traverse fromA (x:|xs)
         (xs, LayeredReadWithNull) -> mconcat <$> traverse fromA xs
         (_, _) -> Left $ "tryMergeLayersForVFile: " ++ showVFileOriginalPath vf
                   ++ " cannot use several layers of data"
-      return $ toA newVal
