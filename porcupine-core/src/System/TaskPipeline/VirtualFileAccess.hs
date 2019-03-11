@@ -20,6 +20,7 @@ module System.TaskPipeline.VirtualFileAccess
   , tryLoadDataStream
   , writeData
   , writeDataStream
+  , writeDataList
   , writeEffData
   , writeDataFold
 
@@ -132,19 +133,31 @@ writeEffData vf =
   >>> accessVirtualFile (DoWrite id) [] vf
   >>> unsafeLiftToPTask runES
 
--- | The simplest way to consume a stream of data inside a pipeline. Just write
--- it to repeated occurences of a 'VirtualFile'. If this VirtualFile is not
--- mapped to any physical file (this can be authorized if the VirtualFile
--- 'canBeUnmapped'), then the input stream's effects will not be executed. This
--- is why its end result must be a Monoid. See
+-- | Like 'writeDataList', but takes a stream as an input instead of a list. If
+-- the VirtualFile is not mapped to any physical file (this can be authorized if
+-- the VirtualFile 'canBeUnmapped'), then the input stream's effects will not be
+-- executed. This is why its end result must be a Monoid. See
 -- System.TaskPipeline.Repetition.Fold for more complex ways to consume a
 -- Stream.
-writeDataStream :: (Show idx, LogThrow m, Typeable a, Typeable b, Monoid r)
-                => LocVariable
-                -> VirtualFile a b -- ^ Used as a 'DataSink'
-                -> PTask m (Stream (Of (idx, a)) m r) r
+writeDataStream
+  :: (Show idx, LogThrow m, Typeable a, Typeable b, Monoid r)
+  => LocVariable
+  -> VirtualFile a b -- ^ Used as a 'DataSink'
+  -> PTask m (Stream (Of (idx, a)) m r) r
 writeDataStream lv vf =
       arr StreamES
+  >>> accessVirtualFile' (DoWrite id) lv vf
+  >>> unsafeLiftToPTask runES
+
+-- | The simplest way to consume a stream of data inside a pipeline. Just write
+-- it to repeated occurences of a 'VirtualFile'.
+writeDataList
+  :: (Show idx, LogThrow m, Typeable a, Typeable b)
+  => LocVariable
+  -> VirtualFile a b -- ^ Used as a 'DataSink'
+  -> PTask m [(idx, a)] ()
+writeDataList lv vf =
+      arr (ListES . map return)
   >>> accessVirtualFile' (DoWrite id) lv vf
   >>> unsafeLiftToPTask runES
 
