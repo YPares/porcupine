@@ -16,6 +16,7 @@ module System.TaskPipeline.VirtualFileAccess
     -- * High-level API
   , loadData
   , loadDataStream
+  , loadDataList
   , tryLoadDataStream
   , writeData
   , writeDataStream
@@ -76,21 +77,36 @@ loadData vf =
 -- | Loads a stream of repeated occurences of a VirtualFile, from a stream of
 -- indices. The process is lazy: the data will actually be read when the
 -- resulting stream is consumed.
-loadDataStream :: forall idx m a b r.
-                  (Show idx, LogThrow m, Typeable a, Typeable b, Monoid r)
-               => LocVariable
-               -> VirtualFile a b -- ^ Used as a 'DataSource'
-               -> PTask m (Stream (Of idx) m r) (Stream (Of (idx, b)) m r)
+loadDataStream
+  :: (Show idx, LogThrow m, Typeable a, Typeable b, Monoid r)
+  => LocVariable
+  -> VirtualFile a b -- ^ Used as a 'DataSource'
+  -> PTask m (Stream (Of idx) m r) (Stream (Of (idx, b)) m r)
 loadDataStream lv vf =
       arr (StreamES . S.map (,error "loadDataStream: THIS IS VOID"))
   >>> accessVirtualFile' (DoRead id) lv vf
   >>> arr streamFromES
 
+-- | Loads as a list repeated occurences of a VirtualFile, from a list of
+-- indices. BEWARE: the process is _strict_: every file will be loaded in
+-- memory, and the list returned is fully evaluated. So you should not use
+-- 'loadDataList' if the number of files to read is too huge.
+loadDataList
+  :: (Show idx, LogThrow m, Typeable a, Typeable b)
+  => LocVariable
+  -> VirtualFile a b -- ^ Used as a 'DataSource'
+  -> PTask m [idx] [(idx, b)]
+loadDataList lv vf =
+      arr (ListES . map (return . (,error "loadDataList: THIS IS VOID")))
+  >>> accessVirtualFile' (DoRead id) lv vf
+  >>> unsafeLiftToPTask (sequence . getListFromES)
+
 -- | Like 'loadDataStream', but won't stop on a failure on a single file
-tryLoadDataStream :: (Exception e, Show idx, LogCatch m, Typeable a, Typeable b, Monoid r)
-                  => LocVariable
-                  -> VirtualFile a b -- ^ Used as a 'DataSource'
-                  -> PTask m (Stream (Of idx) m r) (Stream (Of (idx, Either e b)) m r)
+tryLoadDataStream
+  :: (Exception e, Show idx, LogCatch m, Typeable a, Typeable b, Monoid r)
+  => LocVariable
+  -> VirtualFile a b -- ^ Used as a 'DataSource'
+  -> PTask m (Stream (Of idx) m r) (Stream (Of (idx, Either e b)) m r)
 tryLoadDataStream lv vf =
        arr (StreamES . S.map (,error "loadDataStream: THIS IS VOID"))
   >>> accessVirtualFile' (DoRead try) lv vf
