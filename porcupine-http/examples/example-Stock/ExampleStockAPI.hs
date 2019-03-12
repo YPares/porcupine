@@ -1,3 +1,4 @@
+{-# LANGUAGE Arrows                #-}
 {-# LANGUAGE DataKinds             #-}
 {-# LANGUAGE DeriveAnyClass        #-}
 {-# LANGUAGE DeriveGeneric         #-}
@@ -7,18 +8,17 @@
 {-# LANGUAGE OverloadedStrings     #-}
 {-# LANGUAGE ScopedTypeVariables   #-}
 {-# LANGUAGE TypeApplications      #-}
-{-# LANGUAGE Arrows #-}
 
 import           Data.Aeson
 import           Data.DocRecord
-import qualified Data.Text           as T
+import qualified Data.Text                     as T
 import           GHC.Generics
 import           Porcupine.Run
 import           Porcupine.Serials
 import           Porcupine.Tasks
 -- import qualified Streaming.Prelude   as S
 
-import           Prelude hiding ((.) , id)
+import           Prelude                       hiding (id, (.))
 
 import           Data.Locations.Accessors.HTTP
 import           Graphics.Vega.VegaLite
