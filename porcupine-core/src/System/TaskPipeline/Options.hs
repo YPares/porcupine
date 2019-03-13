@@ -10,6 +10,7 @@ module System.TaskPipeline.Options
     getOptions
   , getOption
   , optionsVirtualFile
+  , optionVirtualFile
   -- * Re-exports from docrecords
   , DocRec, Rec(..), (^^.), (^^?), (^^?!), (=:)
   , PathWithType(..)
@@ -26,19 +27,8 @@ import           GHC.TypeLits                          (KnownSymbol)
 import           System.TaskPipeline.PTask
 import           System.TaskPipeline.VirtualFileAccess
 
-import           Prelude                               hiding (id)
+import           Prelude                               hiding (id, (.))
 
-
--- | Add a set of options (as a DocRec) to the 'LocationTree', in order to
--- expose them to the user, and returns the final values of these options
-getOptions
-  :: (LogThrow m, Typeable rs, RecordUsableWithCLI rs)
-  => [LocationTreePathItem]  -- ^ The path for the options in the LocationTree
-  -> DocRec rs               -- ^ The DocRec containing the fields with their
-                             -- docs and default values
-  -> PTask m () (DocRec rs)  -- ^ A PTask that returns the new options values,
-                             -- overriden by the user
-getOptions path defOpts = loadData $ optionsVirtualFile path defOpts
 
 -- | Creates a 'VirtualFile' from a default set of options (as a DocRec). To be
 -- used with 'loadData'.
@@ -54,6 +44,28 @@ optionsVirtualFile path defOpts =
          someBidirSerial (OptionsSerial id id :: OptionsSerial (DocRec rs))
       <> someBidirSerial YAMLSerial
 
+-- | Just like 'optionsVirtualFile', but for a single field
+optionVirtualFile
+  :: (KnownSymbol s, Typeable t, ToJSON t, FieldFromCLI ('[s] :|: t))
+  => [LocationTreePathItem] -- ^ The path for the option field in the LocationTree
+  -> DocField ('[s] :|: t)  -- ^ The field, usually with default value (created
+                            -- with 'docField')
+  -> BidirVirtualFile t
+optionVirtualFile path field =
+  dimap (field =:) (^^?! field) $
+    optionsVirtualFile path (field :& RNil)
+
+-- | Add a set of options (as a DocRec) to the 'LocationTree', in order to
+-- expose them to the user, and returns the final values of these options
+getOptions
+  :: (LogThrow m, Typeable rs, RecordUsableWithCLI rs)
+  => [LocationTreePathItem]  -- ^ The path for the options in the LocationTree
+  -> DocRec rs               -- ^ The DocRec containing the fields with their
+                             -- docs and default values
+  -> PTask m () (DocRec rs)  -- ^ A PTask that returns the new options values,
+                             -- overriden by the user
+getOptions path = loadData . optionsVirtualFile path
+
 -- | Just like 'getOptions', but for a single field.
 getOption
   :: (LogThrow m, KnownSymbol s, Typeable t, ToJSON t, FieldFromCLI ('[s] :|: t))
@@ -61,7 +73,4 @@ getOption
   -> DocField ('[s] :|: t)   -- ^ The field (created with 'docField')
   -> PTask m () t            -- ^ A PTask that returns the new option,
                              -- overriden by the user
-getOption path field =
-  getOptions path record >>> arr (^^?! field)
-  where
-    record = field :& RNil
+getOption path = loadData . optionVirtualFile path

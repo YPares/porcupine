@@ -1,20 +1,22 @@
 # Porcupine
 
-[![CircleCI](https://circleci.com/gh/tweag/porcupine/tree/master.svg?style=svg)](https://circleci.com/gh/tweag/porcupine/tree/master) [![Join the chat at https://gitter.im/tweag/porcupine](https://badges.gitter.im/tweag/porcupine.svg)](https://gitter.im/tweag/porcupine?utm_source=badge&utm_medium=badge&utm_campaign=pr-badge&utm_content=badge)
+[![CircleCI](https://circleci.com/gh/tweag/porcupine/tree/master.svg?style=svg)](https://circleci.com/gh/tweag/porcupine/tree/master)
+[![Join the chat at
+https://gitter.im/tweag/porcupine](https://badges.gitter.im/tweag/porcupine.svg)](https://gitter.im/tweag/porcupine?utm_source=badge&utm_medium=badge&utm_campaign=pr-badge&utm_content=badge)
 
-Porcupine stands for _Portable & Customizable Pipeline_. It is a tool
-aimed at data scientists and numerical analysts, so that they can express
-in Haskell general data manipulation and analysis tasks,
+Porcupine stands for _Portable & Customizable Pipeline_. It is a tool aimed at
+data scientists and numerical analysts, so that they can express in Haskell
+general data manipulation and analysis tasks,
 
-1. in a way that is agnostic from the source of the input data and
-from the destination of the end results,
+1. in a way that is agnostic from the source of the input data and from the
+destination of the end results,
 2. such that a pipeline can be re-executed in a different environment and on
 different data without recompiling, by just a shift in its configuration,
-3. while maintaining composability (any task can always be reused as
-a subtask of a greater task pipeline).
+3. while maintaining composability (any task can always be reused as a subtask
+of a greater task pipeline).
 
-Porcupine provides three core abstractions: _serials_, _tasks_ and
-_resource trees_.
+Porcupine provides three core abstractions: _serials_, _tasks_ and _resource
+trees_.
 
 ## Serials
 
@@ -86,8 +88,8 @@ A `PTask` is an arrow, that is to say a computation with an input and an
 output. Here we just call these computations "tasks". PTasks run in a base monad
 `m` that can depend on the application but that should always implement
 `KatipContext` (for logging), `MonadCatch`, `MonadResource` and `MonadUnliftIO`.
-However you usually don't have to worry about that, as porcupine takes care of these
-dependencies for you.
+However you usually don't have to worry about that, as porcupine takes care of
+these dependencies for you.
 
 This is how we create a task that reads the `myInput` VirtualFile we defined
 previously:
@@ -156,24 +158,24 @@ overrides the value set in the yaml config file.
 Porcupine's intent is to make it easy to separate clearly the work between 3
 persons:
 
-- The _storage developer_ will be in charge of determining how the data gets read
-  and written in the end. He will target the _serials_ framework, and propose
-  new datatypes (data frames, matrices, vectors, trees, etc.) and ways to write
-  and read them to the various storage technologies.
-- The _scientist_ will determine how to carry out the data analyses, extract some
-  sense out of the data, run simulations based on that data, etc. He doesn't
-  have to know how the data is represented, just that it exists. She just reuses
-  the serials written by the storage developper and targets the _tasks_
-  framework.
-- The _devops_ work will start once we need to bump things up a
-  bit. Once we have iterated several times over our analyses and simulations and
-  want to have things running in a bigger scale, then it's time for the pipeline
-  to move from the scientist's puny laptop and go bigger. This is time to
-  "patch" the pipeline, make it run in different context, in the cloud, behind a
-  scheduler, as jobs in a task queue reading its inputs from all kinds of
-  databases. The devops will target the _resource tree_ framework
-  (possibly without ever recompiling the pipeline, only by adjusting its
-  configuration from the outside)
+- The _storage developer_ will be in charge of determining how the data gets
+  read and written in the end. He will target the _serials_ framework, and
+  propose new datatypes (data frames, matrices, vectors, trees, etc.) and ways
+  to write and read them to the various storage technologies.
+- The _scientist_ will determine how to carry out the data analyses, extract
+  some sense out of the data, run simulations based on that data, etc. He
+  doesn't have to know how the data is represented, just that it exists. She
+  just reuses the serials written by the storage developper and targets the
+  _tasks_ framework.
+- The _devops_ work will start once we need to bump things up a bit. Once we
+  have iterated several times over our analyses and simulations and want to have
+  things running in a bigger scale, then it's time for the pipeline to move from
+  the scientist's puny laptop and go bigger. This is time to "patch" the
+  pipeline, make it run in different context, in the cloud, behind a scheduler,
+  as jobs in a task queue reading its inputs from all kinds of databases. The
+  devops will target the _resource tree_ framework (possibly without ever
+  recompiling the pipeline, only by adjusting its configuration from the
+  outside)
 
 Of course, these people can be the same person, and you don't need to plan on
 runnning anything in the cloud to start benefiting from porcupine. But we want
@@ -242,12 +244,12 @@ Another option you have is leave the yaml file like it is and just run:
 stack exec example1 -- --users "[0..10,50..60,90..100]"
 ```
 
-Most of the options you can see under `data:` in a pipeline's configuration will also have a CLI flag
-counterpart. Run the executable with `--help` to see them.
+Most of the options you can see under `data:` in a pipeline's configuration will
+also have a CLI flag counterpart. Run the executable with `--help` to see them.
 
-Back to the yaml file now. You see the `locations:` section. Look at the `/:` location, it's the
-default root under which every file we be looked for and written, and `example1`
-by default binds it to `porcupine-core/examples/data`.
+Back to the yaml file now. You see the `locations:` section. Look at the `/:`
+location, it's the default root under which every file we be looked for and
+written, and `example1` by default binds it to `porcupine-core/examples/data`.
 
 Let's have a look at the other two lines:
 
@@ -275,8 +277,8 @@ syntax of the mappings probably requires a bit of explaining:
   under which we will look for the file is to be derived from the rest of the
   bindings:
     - `/Inputs/User` is "located" under the virtual folder `/Inputs`
-	- `/Inputs` isn't explicitly mapped to any physical folder here. However,
-	    it is itself "located" under `/`
+	- `/Inputs` isn't explicitly mapped to any physical folder here. However, it
+	    is itself "located" under `/`
 	- `/` is bound to a physical folder, `porcupine-core/examples/data`
 	- then `/Inputs` is bound to `porcupine-core/examples/data/Inputs`
 	- and `/Inputs/User` is bound to
@@ -308,9 +310,9 @@ We declare our source, our sink, a pure function to conduct the analysis, and
 then a very simple pipeline that will bind all of that together.
 
 At this point, if we were to directly run `analyseOneUser` as a task, we
-wouldn't be able to make it run over _all_ the users. As is, it would try to access
-`porcupine-core/examples/data/Inputs/User.json` (notice the variable `{userId}`
-is missing) and write `Outputs/Analysis.json`.
+wouldn't be able to make it run over _all_ the users. As is, it would try to
+access `porcupine-core/examples/data/Inputs/User.json` (notice the variable
+`{userId}` is missing) and write `Outputs/Analysis.json`.
 
 This is not what we want. That's why we'll declare another task on top of that:
 
@@ -388,21 +390,24 @@ tasks.
 
 ## Configuration, data embedded in config file, and external input files/resources
 
-Let's say you have a pipeline that needs an input file to do some simulation, and a record
-of options controlling the way the simulation happens (which solver to use, which parameters
-to give it, etc). What exactly is the _input_ and what exactly is the _configuration_ here?
-One could argue that both could be considered input, or that both could be considered configuration.
-Our rule of the thumb in porcupine is that everything than can be given a default value and a
-help string should be displayed in the yaml configuration file (like the `users` field in example1),
-and should generate a CLI flag to be able to alter it on the fly. Everything else should just
-be looked in external files. _But these are just the default behaviours._
+Let's say you have a pipeline that needs an input file to do some simulation,
+and a record of options controlling the way the simulation happens (which solver
+to use, which parameters to give it, etc). What exactly is the _input_ and what
+exactly is the _configuration_ here?  One could argue that both could be
+considered input, or that both could be considered configuration.  Our rule of
+the thumb in porcupine is that everything than can be given a default value and
+a help string should be displayed in the yaml configuration file (like the
+`users` field in example1), and should generate a CLI flag to be able to alter
+it on the fly. Everything else should just be looked in external files. _But
+these are just the default behaviours._
 
-Our goal is that there should be the fewest possible differences between a pipeline's inputs and its
-configuration. Every call to `getOption(s)` will internally declare a
-VirtualFile, and is only a thin layer on top of `loadData`. That means that a
-record of options passed to `getOptions` will be treated like any other input,
-and can perfectly be moved to a dedicated JSON or YAML file instead of being
-stored in the `data:` section of the pipeline configuration file.
+Our goal is that there should be the fewest possible differences between a
+pipeline's inputs and its configuration. Every call to `getOption(s)` will
+internally declare a VirtualFile, and is only a thin layer on top of
+`loadData`. That means that a record of options passed to `getOptions` will be
+treated like any other input, and can perfectly be moved to a dedicated JSON or
+YAML file instead of being stored in the `data:` section of the pipeline
+configuration file.
 
 Conversely, any `VirtualFile` that uses the JSONSerial can be directly embedded
 in the `data:` section. Don't forget in that case to map that VirtualFile to
@@ -411,33 +416,39 @@ file that doesn't exist.
 
 ## Location layers
 
-Every VirtualFile (be it read from embedded data of from external files) can be read from
-_several_ sources instead of one. That requires one thing though: that the type `B` you read
-from a `VirtualFile A B` is an instance of Semigroup (and that your VirtualFile is wrapped in
-`usesLayeredMapping` so it knows about that). This way, porcupine has a way to merge all
-these inputs into just one resource. It can come very handy, and can be used depending on your
-pipeline to organize your input resources into several layers, "stacked" so that the first layers'
-content are completed or overriden by the subsequent layers'. It all depends on which instance of Semigroup
-is read from your `VirtualFile`.
+Every VirtualFile (be it read from embedded data of from external files) can be
+read from _several_ sources instead of one. That requires one thing though: that
+the type `B` you read from a `VirtualFile A B` is an instance of Semigroup (and
+that your VirtualFile is wrapped in `usesLayeredMapping` so it knows about
+that). This way, porcupine has a way to merge all these inputs into just one
+resource. It can come very handy, and can be used depending on your pipeline to
+organize your input resources into several layers, "stacked" so that the first
+layers' content are completed or overriden by the subsequent layers'. It all
+depends on which instance of Semigroup is read from your `VirtualFile`.
 
-In a similar fashion, if `B` is a Monoid (and if your `VirtualFile` is wrapped in `canBeUnmapped`),
-this authorizes you to map it to `null` in your config file, so when this `VirtualFile` is "read", we just get
-a `mempty`.
+In a similar fashion, if `B` is a Monoid (and if your `VirtualFile` is wrapped
+in `canBeUnmapped`), this authorizes you to map it to `null` in your config
+file, so when this `VirtualFile` is "read", we just get a `mempty`.
 
-Layers also work for output files, although it's much simpler here: the data is just identically written to
-every layer. No requirements are therefore put on the type being written.
+Layers also work for output files, although it's much simpler here: the data is
+just identically written to every layer. No requirements are therefore put on
+the type being written.
 
 ## Location accessors
 
-For now, the examples we saw only deal with local resources. Porcupine features an extensible API to
-declare other possible sources, via the `LocationAccessor` class. Each location accessor just needs to be
-imported and declared at the time of `runPipelineTask`, and that's all. Just do it and your whole pipeline's
-resources can now be mapped to a new source of data. A very common source of data is HTTP, and the `LocationAccessor`
-for it is provided in `porcupine-http`. Support for Amazon S3 is also provided in `porcupine-s3`.
+For now, the examples we saw only deal with local resources. Porcupine features
+an extensible API to declare other possible sources, via the `LocationAccessor`
+class. Each location accessor just needs to be imported and declared at the time
+of `runPipelineTask`, and that's all. Just do it and your whole pipeline's
+resources can now be mapped to a new source of data. A very common source of
+data is HTTP, and the `LocationAccessor` for it is provided in
+`porcupine-http`. Support for Amazon S3 is also provided in `porcupine-s3`.
 
-The example [example-pokeapi](porcupine-http/examples/example-Poke/ExamplePokeAPI.hs) shows how to deal with some data from
-the [PokeAPI](https://pokeapi.co). You can see that the code of the pipeline is very much like that of `example1`,
-the major difference being the call to `runPipelineTask`:
+The example
+[example-pokeapi](porcupine-http/examples/example-Poke/ExamplePokeAPI.hs) shows
+how to deal with some data from the [PokeAPI](https://pokeapi.co). You can see
+that the code of the pipeline is very much like that of `example1`, the major
+difference being the call to `runPipelineTask`:
 
 ```haskell
 main = runPipelineTask (FullConfig .......)
@@ -446,12 +457,15 @@ main = runPipelineTask (FullConfig .......)
                        mainTask ()
 ```
 
-We explicitely state that we want to use the `#http` LocationAccessor (and that we want to run it with the
-`useHTTP` function, imported from `Data.Locations.Accessors.HTTP`) on top of the `baseContexts` (which provide
-access to local files and logging). Note that you need to activate the `OverloadedLabels` GHC extension.
+We explicitely state that we want to use the `#http` LocationAccessor (and that
+we want to run it with the `useHTTP` function, imported from
+`Data.Locations.Accessors.HTTP`) on top of the `baseContexts` (which provide
+access to local files and logging). Note that you need to activate the
+`OverloadedLabels` GHC extension.
 
-Note that _nothing_ in the code tells us where the data will actually be read. The connection between our dataSource
-and the REST API will be made in the [configuration file](porcupine-http/examples/example-Poke/example-pokeapi.yaml).
+Note that _nothing_ in the code tells us where the data will actually be
+read. The connection between our dataSource and the REST API will be made in the
+[configuration file](porcupine-http/examples/example-Poke/example-pokeapi.yaml).
 
 ## Logging
 
