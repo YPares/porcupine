@@ -368,7 +368,11 @@ handleOptions progName (BaseInputConfig mbCfgFile mbCfg defCfg) cliOverriding mb
     dispErr err = error $
       (if nullOverrides cliOverriding overrides
        then "C"
-       else "Overriden c") ++ "onfig from " <> show mbCfgFile <> " is not valid:\n  " ++ err
+       else "Overriden c") ++ "onfig" <> shownFile <> " is not valid:\n  " ++ err
+      where
+        shownFile = case mbCfgFile of
+          Just f  -> " from " <> show f
+          Nothing -> ""
 
 mergeWithDefault :: [T.Text] -> Y.Value -> Y.Value -> ([PostParsingAction], Y.Value)
 mergeWithDefault path (Object o1) (Object o2) =
