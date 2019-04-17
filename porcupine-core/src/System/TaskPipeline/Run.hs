@@ -114,8 +114,7 @@ runPipelineCommandOnPTask ptask input cmd physTree ffPaths = do
     RunPipeline -> do
       dataTree <- traverse resolveDataAccess physTree
       withPTaskState ffPaths dataTree $ \initState -> do
-        $(logTM) DebugS $ logStr $ "Using funflow store in '" ++ storePath ffPaths
-              ++ "' and coordinator '" ++ coordPath ffPaths ++ "'."
+        $(logTM) DebugS $ logStr $ "Using the following funflow paths: " ++ show ffPaths
         execRunnablePTask runnable initState input
     ShowLocTree mode -> do
       liftIO $ putStrLn $ case mode of
@@ -129,7 +128,7 @@ getFunflowPaths = do
   FunflowPaths
     <$> (fromMaybe (pwd </> "_funflow/store") <$> lookupEnv' "FUNFLOW_STORE")
     <*> (fromMaybe (pwd </> "_funflow/coordinator.db") <$> lookupEnv' "FUNFLOW_COORDINATOR")
-    <*> (lookupEnv' "FUNFLOW_REMOTE_CACHE" >>= traverse resolvePathToSomeLoc)
+    <*> (lookupEnv' "FUNFLOW_REMOTE_CACHE" >>= traverse resolveYamlDocToSomeLoc)
   where
     lookupEnv' = liftIO . lookupEnv
 

@@ -257,6 +257,7 @@ data FunflowPaths m = FunflowPaths
   { storePath      :: FilePath
   , coordPath      :: FilePath
   , remoteCacheLoc :: Maybe (SomeLoc m) }
+  deriving (Show)
 
 withFunflowRunConfig
   :: (LogMask m)

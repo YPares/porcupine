@@ -36,7 +36,7 @@ module Data.Locations.Accessors
   , baseContexts
   , pattern L
   , splitAccessorsFromArgRec
-  , withParsedLocs, withParsedLocsWithVars, resolvePathToSomeLoc
+  , withParsedLocs, withParsedLocsWithVars, resolvePathToSomeLoc, resolveYamlDocToSomeLoc
   , writeLazyByte, readLazyByte, readText, writeText
   ) where
 
@@ -57,6 +57,7 @@ import qualified Data.Text.Lazy                    as LT
 import qualified Data.Text.Lazy.Encoding           as LTE
 import           Data.Vinyl
 import           Data.Vinyl.Functor
+import qualified Data.Yaml                         as Y
 import           GHC.TypeLits
 import           Katip
 import           System.Directory                  (createDirectoryIfMissing,
@@ -338,6 +339,17 @@ withParsedLocs aesonVals f = do
         Success a -> f (a :: [LocOf l])
         Error e   -> loop accs (errCtxs <>
                                 HM.singleton (T.pack $ symbolVal lbl) (String $ T.pack e))
+
+-- | The string will be parsed as a YAML value. It can be a simple string or the
+-- representation used by some location acccessor. Every accessor will be
+-- tried. Will fail if no accessor can handle the YAML value.
+resolveYamlDocToSomeLoc
+  :: (LogThrow m)
+  => String
+  -> LocResolutionM m (SomeLoc m)
+resolveYamlDocToSomeLoc doc = do
+  val <- Y.decodeThrow $ TE.encodeUtf8 $ T.pack doc
+  withParsedLocs [val] $ \[l] -> return $ SomeGLoc l
 
 -- | For locations which can be expressed as a simple String. The path will be
 -- used as a JSON string. Will fail if no accessor can handle the path.
