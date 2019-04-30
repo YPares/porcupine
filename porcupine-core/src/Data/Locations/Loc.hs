@@ -290,7 +290,8 @@ instance (IsLocString a) => ToJSON (URLLikeLoc a) where
 
 -- | The equivalent of </> from `filepath` package on 'LocFilePath's
 appendToLocFilePathAsSubdir :: (IsLocString a) => LocFilePath a -> String -> LocFilePath a
-fp `appendToLocFilePathAsSubdir` s = fp <> (('/':s) ^. from locFilePathAsRawFilePath)
+fp `appendToLocFilePathAsSubdir` s = view (from locFilePathAsRawFilePath) $
+    (fp^.locFilePathAsRawFilePath) Path.</> s
 
 -- | Appends a path to a location. The Loc is considered to be a folder, so its
 -- possible extension will be /ignored/.
