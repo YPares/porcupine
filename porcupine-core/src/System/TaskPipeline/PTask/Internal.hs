@@ -1,3 +1,4 @@
+{-# LANGUAGE Arrows                     #-}
 {-# LANGUAGE ConstraintKinds            #-}
 {-# LANGUAGE ExistentialQuantification  #-}
 {-# LANGUAGE FlexibleContexts           #-}
