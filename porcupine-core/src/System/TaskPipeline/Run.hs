@@ -19,6 +19,7 @@ module System.TaskPipeline.Run
   , baseContexts
   , runPipelineTask
   , runPipelineTask_
+  , runPipelineTaskWithExceptionHandlers
   , runPipelineCommandOnPTask
   ) where
 
@@ -69,15 +70,33 @@ runPipelineTask
   -> i                 -- ^ The pipeline task input
   -> IO o -- , RscAccessTree (ResourceTreeNode m))
                        -- ^ The pipeline task output and the final LocationTree
-runPipelineTask cliUsage accessors ptask input = do
-  let -- cliUsage' = pipelineConfigMethodChangeResult cliUsage
-      tree = ptask ^. ptaskRequirements
-  catch
+runPipelineTask = runPipelineTaskWithExceptionHandlers []
+
+runPipelineTaskWithExceptionHandlers
+  :: (AcceptableArgsAndContexts args ctxs m)
+  => [Handler IO o] -- ^ Exception handlers in case the pipeline raises
+                    -- an exception.
+                    -- Uncatched exceptions will be printed on stderr and
+                    -- cause the executable to exit with status code 1
+  -> PipelineConfigMethod o  -- ^ Whether to use the CLI and load the yaml
+                             -- config or not
+  -> Rec (FieldWithAccessors (ReaderSoup ctxs)) args  -- ^ The location
+                                                      -- accessors to use
+  -> PTask (ReaderSoup ctxs) i o  -- ^ The whole pipeline task to run
+  -> i                 -- ^ The pipeline task input
+  -> IO o -- , RscAccessTree (ResourceTreeNode m))
+                       -- ^ The pipeline task output and the final LocationTree
+runPipelineTaskWithExceptionHandlers exceptionHandlers cliUsage accessors ptask input = do
+  let
+    tree = ptask ^. ptaskRequirements
+    defaultExceptionHandler :: SomeException -> IO a
+    defaultExceptionHandler (SomeException e) = do
+      putStrLn $ displayException e
+      exitWith $ ExitFailure 1
+  catches
     (bindResourceTreeAndRun cliUsage accessors tree $
       runPipelineCommandOnPTask ptask input)
-    (\(SomeException e) -> do
-        putStrLn $ displayException e
-        exitWith $ ExitFailure 1)
+    (exceptionHandlers ++ [Handler defaultExceptionHandler])
 
 -- | Like 'runPipelineTask' if the task is self-contained and doesn't have a
 -- specific input and you don't need any specific LocationAccessor aside
