@@ -551,7 +551,6 @@ makeDataAccessor vpath (VFileImportance sevRead sevWrite sevError clockAccess)
                   timeAccess "Wrote" sevWrite (show loc') $
                     withException runWrite $ \ioError ->
                       logFM sevError $ logStr $ displayException (ioError :: IOException)
-                  -- logFM sevWrite $ logStr $ "Wrote '" ++ show loc' ++ "'"
     daPerformRead = do
         dataFromLayers <- forM readLocs (\(FromStreamFn {-rkeys-} (f :: Stream (Of i) m () -> m (Of b ())), SomeGLoc loc) ->
           case eqT :: Maybe (i :~: Strict.ByteString) of
@@ -563,7 +562,6 @@ makeDataAccessor vpath (VFileImportance sevRead sevWrite sevError clockAccess)
                   let runRead = readBSS loc' (f . BSS.toChunks)
                   (r :> ()) <- timeAccess "Read" sevRead (show loc') $ withException runRead $ \ioError ->
                     logFM sevError $ logStr $ displayException (ioError :: IOException)
-                  -- logFM sevRead $ logStr $ "Read '" ++ show loc' ++ "'"
                   return r)
         let embeddedValAndLayers = maybe id (:) mbDefVal dataFromLayers
         case (readScheme, embeddedValAndLayers) of

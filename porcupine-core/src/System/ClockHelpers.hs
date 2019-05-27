@@ -9,10 +9,10 @@ module System.ClockHelpers
   , clockM
   ) where
 
-import Control.Monad.IO.Class
-import Data.Aeson
-import Katip
-import System.Clock
+import           Control.Monad.IO.Class
+import           Data.Aeson
+import           Katip
+import           System.Clock
 
 
 clockM :: (MonadIO m) => m a -> m (a, TimeSpec)
@@ -22,7 +22,7 @@ clockM act = f <$> time <*> act <*> time
     f start res end = (res, end `diffTimeSpec` start)
 
 showTimeSpec :: TimeSpec -> String
-showTimeSpec ts = show (fromIntegral (toNanoSecs ts) / (10**9)) ++ "s"
+showTimeSpec ts = show (fromIntegral (toNanoSecs ts) / (10**9) :: Double) ++ "s"
 
 -- To be able to use TimeSpec as part of katip contexts (katipAddContext)
 instance ToJSON TimeSpec
