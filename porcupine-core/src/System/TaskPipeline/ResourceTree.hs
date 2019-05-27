@@ -531,7 +531,8 @@ makeDataAccessor vpath (VFileImportance sevRead sevWrite sevError clockAccess)
     timeAccess prefix sev loc action
       | clockAccess = do
           (r, time) <- clockM action
-          logFM sev $ logStr $ prefix ++ " '" ++ loc ++ "' in " ++ showTimeSpec time
+          katipAddContext time $
+            logFM sev $ logStr $ prefix ++ " '" ++ loc ++ "' in " ++ showTimeSpec time
           return r
       | otherwise = do
           r <- action

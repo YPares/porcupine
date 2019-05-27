@@ -217,10 +217,10 @@ namePTask :: (KatipContext m) => String -> PTask m a b -> PTask m a b
 namePTask ns task =
   addNamespaceToTask ns $
     clockPTask task
-    >>> (proc (output,time) -> do
-            logTask -< (InfoS,
-                        "Finished task '" ++ ns ++ "' in " ++ showTimeSpec time)
-            returnA -< output)
+    >>> unsafeLiftToPTask (\(output, time) -> do
+          katipAddContext time $
+            logFM InfoS $ logStr $ "Finished task '" ++ ns ++ "' in " ++ showTimeSpec time
+          return output)
 
 -- | Moves the 'LocationTree' associated to the task deeper in the final
 -- tree. This can be used to solve conflicts between tasks that have
