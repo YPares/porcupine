@@ -91,6 +91,7 @@ import           GHC.Generics                            (Generic)
 import           Katip
 import           Options.Applicative
 import           Streaming
+import           System.ClockHelpers
 import           System.TaskPipeline.ConfigurationReader
 
 
@@ -522,10 +523,20 @@ makeDataAccessor
   -> [(FromStreamFn b, SomeLocWithVars m)] -- ^ Layers to read from
   -> LocVariableMap  -- ^ The map of the values of the repetition indices
   -> DataAccessor m a b
-makeDataAccessor vpath (VFileImportance sevRead sevWrite sevError)
+makeDataAccessor vpath (VFileImportance sevRead sevWrite sevError clockAccess)
                  layers mbDefVal readScheme writeLocs readLocs repetKeyMap =
   DataAccessor{..}
   where
+    timeAccess :: String -> Severity -> String -> m t -> m t
+    timeAccess prefix sev loc action
+      | clockAccess = do
+          (r, time) <- clockM action
+          logFM sev $ logStr $ prefix ++ " '" ++ loc ++ "' in " ++ showTimeSpec time
+          return r
+      | otherwise = do
+          r <- action
+          logFM sev $ logStr $ prefix ++ " '" ++ loc ++ "'"
+          return r
     daLocsAccessed = traverse (\(SomeGLoc loc) -> SomeGLoc <$> fillLoc' repetKeyMap loc) layers
     daPerformWrite input =
         forM_ writeLocs $ \(ToAtomicFn {-rkeys-} f, SomeGLoc loc) ->
@@ -536,9 +547,10 @@ makeDataAccessor vpath (VFileImportance sevRead sevWrite sevError)
               katipAddNamespace "dataAccessor" $ katipAddNamespace "writer" $
                 katipAddContext (DAC (toJSON loc) {-rkeys-}mempty repetKeyMap (toJSON loc')) $ do
                   let runWrite = writeBSS loc' (BSS.fromLazy bs)
-                  withException runWrite $ \ioError ->
-                    logFM sevError $ logStr $ displayException (ioError :: IOException)
-                  logFM sevWrite $ logStr $ "Wrote '" ++ show loc' ++ "'"
+                  timeAccess "Wrote" sevWrite (show loc') $
+                    withException runWrite $ \ioError ->
+                      logFM sevError $ logStr $ displayException (ioError :: IOException)
+                  -- logFM sevWrite $ logStr $ "Wrote '" ++ show loc' ++ "'"
     daPerformRead = do
         dataFromLayers <- forM readLocs (\(FromStreamFn {-rkeys-} (f :: Stream (Of i) m () -> m (Of b ())), SomeGLoc loc) ->
           case eqT :: Maybe (i :~: Strict.ByteString) of
@@ -548,9 +560,9 @@ makeDataAccessor vpath (VFileImportance sevRead sevWrite sevError)
               katipAddNamespace "dataAccessor" $ katipAddNamespace "reader" $
                 katipAddContext (DAC (toJSON loc) {-rkeys-}mempty repetKeyMap (toJSON loc')) $ do
                   let runRead = readBSS loc' (f . BSS.toChunks)
-                  (r :> ()) <- withException runRead $ \ioError ->
+                  (r :> ()) <- timeAccess "Read" sevRead (show loc') $ withException runRead $ \ioError ->
                     logFM sevError $ logStr $ displayException (ioError :: IOException)
-                  logFM sevRead $ logStr $ "Read '" ++ show loc' ++ "'"
+                  -- logFM sevRead $ logStr $ "Read '" ++ show loc' ++ "'"
                   return r)
         let embeddedValAndLayers = maybe id (:) mbDefVal dataFromLayers
         case (readScheme, embeddedValAndLayers) of

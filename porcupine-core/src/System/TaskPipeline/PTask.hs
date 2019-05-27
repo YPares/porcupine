@@ -35,7 +35,6 @@ module System.TaskPipeline.PTask
   , addNamespaceToTask
   , namePTask
   , logTask
-  , showTimeSpec
   ) where
 
 import           Prelude                            hiding (id, (.))
@@ -52,7 +51,7 @@ import           Data.Locations
 import           Data.Locations.LogAndErrors
 import           Data.String
 import           Katip
-import           System.Clock
+import           System.ClockHelpers
 import           System.TaskPipeline.PTask.Internal
 import           System.TaskPipeline.ResourceTree
 
@@ -149,9 +148,6 @@ clockPTask'
   :: (NFData b, KatipContext m) => PTask m a b -> PTask m a (b, TimeSpec)
 clockPTask' task = clockPTask $
   task >>> unsafeRunIOTask (evaluate . force)
-
-showTimeSpec :: TimeSpec -> String
-showTimeSpec (TimeSpec s ns) = show s ++ "s," ++ show ns ++ "ns"
 
 -- | Logs a message during the pipeline execution
 logTask :: (KatipContext m) => PTask m (Severity, String) ()

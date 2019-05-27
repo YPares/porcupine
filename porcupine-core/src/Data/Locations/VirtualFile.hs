@@ -30,6 +30,7 @@ module Data.Locations.VirtualFile
   , withEmbeddedValue
   , usesLayeredMapping, canBeUnmapped, unmappedByDefault
   , getVirtualFileDescription
+  , clockVFileAccesses
   ) where
 
 import           Control.Lens
@@ -71,12 +72,14 @@ data LayeredReadScheme b where
 data VFileImportance = VFileImportance
   { _vfiReadSuccess  :: Severity
   , _vfiWriteSuccess :: Severity
-  , _vfiError        :: Severity }
+  , _vfiError        :: Severity
+  , _vfiClockAccess  :: Bool }
+  deriving (Show)
 
 makeLenses ''VFileImportance
 
 instance Default VFileImportance where
-  def = VFileImportance DebugS NoticeS ErrorS
+  def = VFileImportance DebugS NoticeS ErrorS False
 
 -- | A virtual file in the location tree to which we can write @a@ and from
 -- which we can read @b@.
@@ -318,3 +321,8 @@ tryMergeLayersForVFile vf layers = let ser = vf ^. vfileSerials in
         (xs, LayeredReadWithNull) -> mconcat <$> traverse fromA xs
         (_, _) -> Left $ "tryMergeLayersForVFile: " ++ showVFileOriginalPath vf
                   ++ " cannot use several layers of data"
+
+-- | Sets vfileImportance . vfiClockAccess to True. This way each access to the
+-- file will be clocked and logged.
+clockVFileAccesses :: VirtualFile a b -> VirtualFile a b
+clockVFileAccesses = vfileImportance . vfiClockAccess .~ True
