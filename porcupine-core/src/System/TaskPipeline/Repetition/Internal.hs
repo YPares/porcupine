@@ -32,16 +32,12 @@ data RepInfo = RepInfo
   -- ^ The minimal vebosity level at which to display the value associated with
   -- the repetition index in the logger context. Nothing if we don't want to add
   -- context.
-  , repInfoClock   :: Maybe Severity
-  -- ^ Tells whether we should clock and log the time taken by each repetition,
-  -- and if yes at which severity level we should log it.
   } deriving (Eq, Show)
 
 -- | Creates a 'RepetitionInfo' that will log the repetition index at verbosity
--- level 1 and above, measure the time each repetition takes and log about it at
--- InfoS level.
+-- level 1 and above
 repIndex :: LocVariable -> RepInfo
-repIndex lv = RepInfo lv (Just V1) Nothing
+repIndex lv = RepInfo lv (Just V1)
 
 -- | Logging context for repeated tasks
 data TaskRepetitionContext = TRC
@@ -74,23 +70,12 @@ makeRepeatable
   => RepInfo
   -> PTask m a b
   -> PTask m a b
-makeRepeatable (RepInfo repetitionKey mbVerb mbClock) task =
+makeRepeatable (RepInfo repetitionKey mbVerb) =
   over splittedPTask
     (\(reqTree, runnable) ->
       ( fmap addKeyToVirtualFile reqTree
       , modifyingRuntimeState alterState id runnable ))
-    clockedTask
   where
-    clockedTask = case mbClock of
-      Nothing -> task
-      Just sev -> proc a -> do
-        (b, time) <- clockPTask task -< a
-        logTask -< (sev,
-                    "Finished iteration " ++
-                    unLocVariable repetitionKey ++ "=" ++ getTaskRepetitionIndex a
-                    ++ " in " ++ showTimeSpec time)
-        returnA -< b
-
     addKeyToVirtualFile VirtualFileNode{..} =
       VirtualFileNode
       {vfnodeFile = vfnodeFile &
