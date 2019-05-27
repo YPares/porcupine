@@ -15,16 +15,16 @@ import Katip
 import System.Clock
 
 
-showTimeSpec :: TimeSpec -> String
-showTimeSpec (TimeSpec s ns) = show s ++ "s," ++ show ns ++ "ns"
-  -- Ugly, change that
-
 clockM :: (MonadIO m) => m a -> m (a, TimeSpec)
 clockM act = f <$> time <*> act <*> time
   where
     time = liftIO $ getTime Realtime
     f start res end = (res, end `diffTimeSpec` start)
 
+showTimeSpec :: TimeSpec -> String
+showTimeSpec ts = show (fromIntegral (toNanoSecs ts) / (10**9)) ++ "s"
+
+-- To be able to use TimeSpec as part of katip contexts (katipAddContext)
 instance ToJSON TimeSpec
 instance ToObject TimeSpec
 instance LogItem TimeSpec where
