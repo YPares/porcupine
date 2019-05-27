@@ -41,7 +41,7 @@ data RepInfo = RepInfo
 -- level 1 and above, measure the time each repetition takes and log about it at
 -- InfoS level.
 repIndex :: LocVariable -> RepInfo
-repIndex lv = RepInfo lv (Just V1) (Just InfoS)
+repIndex lv = RepInfo lv (Just V1) Nothing
 
 -- | Logging context for repeated tasks
 data TaskRepetitionContext = TRC

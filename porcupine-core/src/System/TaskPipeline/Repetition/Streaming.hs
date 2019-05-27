@@ -69,7 +69,7 @@ mappingOverStream
                        -- LocationTree given to X.
 mappingOverStream repetitionKey mbVerb =
     over ptaskRunnablePart mappingRunnableOverStream
-  . makeRepeatable (RepInfo repetitionKey mbVerb (Just InfoS))
+  . makeRepeatable (RepInfo repetitionKey mbVerb Nothing)
 
 {-# DEPRECATED mappingOverStream "Prefer the FoldA API to repeat tasks and consume streams" #-}
 
