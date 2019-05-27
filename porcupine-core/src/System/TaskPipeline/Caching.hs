@@ -88,7 +88,8 @@ unsafeLiftToPTaskAndWrite props inputHashablePart vf action = proc input -> do
       Cache key sv rv ->
         let key' salt = key salt . getH
             sv' (Left e) = error $
-              "cacheWithVFile: An exception occured during the cached function: " ++ displayException e
+              "unsafeLiftToPTaskAndWrite: An exception occured during the cached function: "
+              ++ displayException e
             sv' (Right x) = sv x
             rv' = Right . rv
         in Cache key' sv' rv'
