@@ -59,7 +59,7 @@ extra-deps:
     - core
     - amazonka-s3
 - git: https://github.com/tweag/funflow
-  commit: 8089be47b5a075d6092c0dd4e0e0fc50b79c7d44
+  commit: 35e93f549191733079faebce0e4cbef738f03bee  # Branch 'remote-cache'
   subdirs:
     - funflow
 
