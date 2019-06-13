@@ -42,14 +42,18 @@ instance (KatipContext m)
         (copy
           (rootLoc `addSubdirToLoc` hashToFilePath from_)
           (rootLoc `addSubdirToLoc` hashToFilePath to_))
-  pull (LocationCacher (SomeGLoc rootLoc)) = Remote.pullAsArchive $ \hash -> do
-    let loc = rootLoc `addSubdirToLoc` hashToFilePath hash
-    katipAddNamespace "remoteCacher" $ logFM DebugS $ logStr $
-      "Reading from file " ++ show loc
-    readResult <- tryS $ readLazyByte loc
-    pure $ case readResult of
-      Right bs -> Remote.PullOK bs
-      Left err -> Remote.PullError err
+  pull (LocationCacher (SomeGLoc rootLoc)) = Remote.pullAsArchive $ \hash ->
+    katipAddNamespace "remoteCacher" $ do
+      let loc = rootLoc `addSubdirToLoc` hashToFilePath hash
+      readResult <- tryS $ readLazyByte loc
+      case readResult of
+        Right bs -> do
+          logFM DebugS $ logStr $ "Found in remote cache " ++ show loc
+          return $ Remote.PullOK bs
+        Left err -> do
+          katipAddContext (sl "errorFromRemoteCache" err) $
+            logFM DebugS $ logStr $ "Not in remote cache " ++ show loc
+          return $ Remote.PullError err
 
 locationCacher :: Maybe (SomeLoc m) -> Maybe (LocationCacher m)
 locationCacher = fmap LocationCacher

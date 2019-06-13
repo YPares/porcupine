@@ -1,3 +1,4 @@
+{-# LANGUAGE Arrows          #-}
 {-# LANGUAGE RecordWildCards #-}
 {-# OPTIONS_GHC -fno-warn-name-shadowing #-}
 
@@ -34,7 +35,7 @@ data RepInfo = RepInfo
   } deriving (Eq, Show)
 
 -- | Creates a 'RepetitionInfo' that will log the repetition index at verbosity
--- level 1 and above.
+-- level 1 and above
 repIndex :: LocVariable -> RepInfo
 repIndex lv = RepInfo lv (Just V1)
 
@@ -65,14 +66,15 @@ instance (Show i) => HasTaskRepetitionIndex (i,a) where
 -- VirtualFiles accessed by this task. The second one controls whether we want
 -- to add to the logging context which repetition is currently running.
 makeRepeatable
-  :: (HasTaskRepetitionIndex a, Monad m)
+  :: (HasTaskRepetitionIndex a, KatipContext m)
   => RepInfo
   -> PTask m a b
   -> PTask m a b
 makeRepeatable (RepInfo repetitionKey mbVerb) =
-  over splittedPTask $ \(reqTree, runnable) ->
-    ( fmap addKeyToVirtualFile reqTree
-    , modifyingRuntimeState alterState id runnable )
+  over splittedPTask
+    (\(reqTree, runnable) ->
+      ( fmap addKeyToVirtualFile reqTree
+      , modifyingRuntimeState alterState id runnable ))
   where
     addKeyToVirtualFile VirtualFileNode{..} =
       VirtualFileNode

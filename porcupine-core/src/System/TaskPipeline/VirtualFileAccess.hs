@@ -16,9 +16,11 @@ module System.TaskPipeline.VirtualFileAccess
     -- * High-level API
   , loadData
   , loadDataStream
+  , loadDataList
   , tryLoadDataStream
   , writeData
   , writeDataStream
+  , writeDataList
   , writeEffData
   , writeDataFold
 
@@ -76,21 +78,36 @@ loadData vf =
 -- | Loads a stream of repeated occurences of a VirtualFile, from a stream of
 -- indices. The process is lazy: the data will actually be read when the
 -- resulting stream is consumed.
-loadDataStream :: forall idx m a b r.
-                  (Show idx, LogThrow m, Typeable a, Typeable b, Monoid r)
-               => LocVariable
-               -> VirtualFile a b -- ^ Used as a 'DataSource'
-               -> PTask m (Stream (Of idx) m r) (Stream (Of (idx, b)) m r)
+loadDataStream
+  :: (Show idx, LogThrow m, Typeable a, Typeable b, Monoid r)
+  => LocVariable
+  -> VirtualFile a b -- ^ Used as a 'DataSource'
+  -> PTask m (Stream (Of idx) m r) (Stream (Of (idx, b)) m r)
 loadDataStream lv vf =
       arr (StreamES . S.map (,error "loadDataStream: THIS IS VOID"))
   >>> accessVirtualFile' (DoRead id) lv vf
   >>> arr streamFromES
 
+-- | Loads as a list repeated occurences of a VirtualFile, from a list of
+-- indices. BEWARE: the process is _strict_: every file will be loaded in
+-- memory, and the list returned is fully evaluated. So you should not use
+-- 'loadDataList' if the number of files to read is too huge.
+loadDataList
+  :: (Show idx, LogThrow m, Typeable a, Typeable b)
+  => LocVariable
+  -> VirtualFile a b -- ^ Used as a 'DataSource'
+  -> PTask m [idx] [(idx, b)]
+loadDataList lv vf =
+      arr (ListES . map (return . (,error "loadDataList: THIS IS VOID")))
+  >>> accessVirtualFile' (DoRead id) lv vf
+  >>> unsafeLiftToPTask (sequence . getListFromES)
+
 -- | Like 'loadDataStream', but won't stop on a failure on a single file
-tryLoadDataStream :: (Exception e, Show idx, LogCatch m, Typeable a, Typeable b, Monoid r)
-                  => LocVariable
-                  -> VirtualFile a b -- ^ Used as a 'DataSource'
-                  -> PTask m (Stream (Of idx) m r) (Stream (Of (idx, Either e b)) m r)
+tryLoadDataStream
+  :: (Exception e, Show idx, LogCatch m, Typeable a, Typeable b, Monoid r)
+  => LocVariable
+  -> VirtualFile a b -- ^ Used as a 'DataSource'
+  -> PTask m (Stream (Of idx) m r) (Stream (Of (idx, Either e b)) m r)
 tryLoadDataStream lv vf =
        arr (StreamES . S.map (,error "loadDataStream: THIS IS VOID"))
   >>> accessVirtualFile' (DoRead try) lv vf
@@ -116,19 +133,31 @@ writeEffData vf =
   >>> accessVirtualFile (DoWrite id) [] vf
   >>> unsafeLiftToPTask runES
 
--- | The simplest way to consume a stream of data inside a pipeline. Just write
--- it to repeated occurences of a 'VirtualFile'. If this VirtualFile is not
--- mapped to any physical file (this can be authorized if the VirtualFile
--- 'canBeUnmapped'), then the input stream's effects will not be executed. This
--- is why its end result must be a Monoid. See
+-- | Like 'writeDataList', but takes a stream as an input instead of a list. If
+-- the VirtualFile is not mapped to any physical file (this can be authorized if
+-- the VirtualFile 'canBeUnmapped'), then the input stream's effects will not be
+-- executed. This is why its end result must be a Monoid. See
 -- System.TaskPipeline.Repetition.Fold for more complex ways to consume a
 -- Stream.
-writeDataStream :: (Show idx, LogThrow m, Typeable a, Typeable b, Monoid r)
-                => LocVariable
-                -> VirtualFile a b -- ^ Used as a 'DataSink'
-                -> PTask m (Stream (Of (idx, a)) m r) r
+writeDataStream
+  :: (Show idx, LogThrow m, Typeable a, Typeable b, Monoid r)
+  => LocVariable
+  -> VirtualFile a b -- ^ Used as a 'DataSink'
+  -> PTask m (Stream (Of (idx, a)) m r) r
 writeDataStream lv vf =
       arr StreamES
+  >>> accessVirtualFile' (DoWrite id) lv vf
+  >>> unsafeLiftToPTask runES
+
+-- | The simplest way to consume a stream of data inside a pipeline. Just write
+-- it to repeated occurences of a 'VirtualFile'.
+writeDataList
+  :: (Show idx, LogThrow m, Typeable a, Typeable b)
+  => LocVariable
+  -> VirtualFile a b -- ^ Used as a 'DataSink'
+  -> PTask m [(idx, a)] ()
+writeDataList lv vf =
+      arr (ListES . map return)
   >>> accessVirtualFile' (DoWrite id) lv vf
   >>> unsafeLiftToPTask runES
 

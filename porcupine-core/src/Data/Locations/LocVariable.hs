@@ -9,6 +9,6 @@ import           Data.String
 
 
 -- | Just a variable name
-newtype LocVariable = LocVariable String
+newtype LocVariable = LocVariable { unLocVariable :: String }
   deriving (IsString, Show, ToJSON, FromJSON, Eq, Hashable
            ,FromJSONKey, ToJSONKey, Store)

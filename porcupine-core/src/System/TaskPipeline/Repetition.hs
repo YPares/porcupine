@@ -30,7 +30,7 @@ import           System.TaskPipeline.Repetition.Streaming
 
 -- | Makes a 'PTask' repeatable and maps it in parallel over a list.
 parMapTask
-  :: (HasTaskRepetitionIndex a, Monad m)
+  :: (HasTaskRepetitionIndex a, KatipContext m)
   => RepInfo
   -> PTask m a b
   -> PTask m [a] [b]
@@ -41,7 +41,7 @@ parMapTask ri =
 -- ignores the end result. See 'RepInfo' for how these indices are
 -- used. See 'parMapTask' for a more complete version.
 parMapTask_
-  :: (Show idx, Monad m)
+  :: (Show idx, KatipContext m)
   => RepInfo
   -> PTask m () b
   -> PTask m [idx] ()

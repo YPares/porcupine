@@ -1,3 +1,4 @@
+{-# LANGUAGE Arrows                     #-}
 {-# LANGUAGE ConstraintKinds            #-}
 {-# LANGUAGE ExistentialQuantification  #-}
 {-# LANGUAGE FlexibleContexts           #-}
@@ -18,7 +19,7 @@ module System.TaskPipeline.PTask.Internal
   , RunnablePTask
   , FunflowRunConfig(..)
   , CanRunPTask
-  , FunflowPaths(..)
+  , FunflowOpts(..)
   , ptrsKatipContext
   , ptrsKatipNamespace
   , ptrsFunflowRunConfig
@@ -72,7 +73,7 @@ data FunflowRunConfig m = forall c rc. (Coordinator c, Remote.Cacher m rc) => Fu
   { _ffrcCoordinator       :: !c
   , _ffrcCoordinatorConfig :: !(Config c)
   , _ffrcContentStore      :: !CS.ContentStore
-  , _ffrcFlowIdentity      :: !Int
+  , _ffrcFlowIdentity      :: !(Maybe Int)
   , _ffrcRemoteCache       :: !rc
   }
 
@@ -253,27 +254,29 @@ makePTask :: (KatipContext m)
           -> PTask m a b
 makePTask = makePTask' def
 
-data FunflowPaths m = FunflowPaths
+data FunflowOpts m = FunflowOpts
   { storePath      :: FilePath
   , coordPath      :: FilePath
+  , flowIdentity   :: Maybe Int
   , remoteCacheLoc :: Maybe (SomeLoc m) }
+  deriving (Show)
 
 withFunflowRunConfig
   :: (LogMask m)
-  => FunflowPaths m
+  => FunflowOpts m
   -> (FunflowRunConfig m -> m r)
   -> m r
-withFunflowRunConfig ffPaths f = do
-  storePath' <- parseAbsDir $ storePath ffPaths
-  coordPath' <- parseAbsDir $ coordPath ffPaths
-  let cacher = locationCacher $ remoteCacheLoc ffPaths
+withFunflowRunConfig ffopts f = do
+  storePath' <- parseAbsDir $ storePath ffopts
+  coordPath' <- parseAbsDir $ coordPath ffopts
+  let cacher = locationCacher $ remoteCacheLoc ffopts
   CS.withStore storePath' (\store ->
-    f $ FunflowRunConfig SQLite coordPath' store 23090341 cacher)
+    f $ FunflowRunConfig SQLite coordPath' store (flowIdentity ffopts) cacher)
 
 -- | Given a 'KatipContext' and a 'DataAccessTree', gets the initial state to
 -- give to 'execRunnablePTask'
 withPTaskState :: (LogMask m)
-               => FunflowPaths m
+               => FunflowOpts m
                -> DataAccessTree m
                -> (PTaskState m -> m r) -> m r
 withPTaskState ffPaths tree f =

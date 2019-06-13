@@ -19,6 +19,7 @@ module System.TaskPipeline.Run
   , baseContexts
   , runPipelineTask
   , runPipelineTask_
+  , runPipelineTaskWithExceptionHandlers
   , runPipelineCommandOnPTask
   ) where
 
@@ -69,15 +70,33 @@ runPipelineTask
   -> i                 -- ^ The pipeline task input
   -> IO o -- , RscAccessTree (ResourceTreeNode m))
                        -- ^ The pipeline task output and the final LocationTree
-runPipelineTask cliUsage accessors ptask input = do
-  let -- cliUsage' = pipelineConfigMethodChangeResult cliUsage
-      tree = ptask ^. ptaskRequirements
-  catch
+runPipelineTask = runPipelineTaskWithExceptionHandlers []
+
+runPipelineTaskWithExceptionHandlers
+  :: (AcceptableArgsAndContexts args ctxs m)
+  => [Handler IO o] -- ^ Exception handlers in case the pipeline raises
+                    -- an exception.
+                    -- Uncatched exceptions will be printed on stderr and
+                    -- cause the executable to exit with status code 1
+  -> PipelineConfigMethod o  -- ^ Whether to use the CLI and load the yaml
+                             -- config or not
+  -> Rec (FieldWithAccessors (ReaderSoup ctxs)) args  -- ^ The location
+                                                      -- accessors to use
+  -> PTask (ReaderSoup ctxs) i o  -- ^ The whole pipeline task to run
+  -> i                 -- ^ The pipeline task input
+  -> IO o -- , RscAccessTree (ResourceTreeNode m))
+                       -- ^ The pipeline task output and the final LocationTree
+runPipelineTaskWithExceptionHandlers exceptionHandlers cliUsage accessors ptask input = do
+  let
+    tree = ptask ^. ptaskRequirements
+    defaultExceptionHandler :: SomeException -> IO a
+    defaultExceptionHandler (SomeException e) = do
+      putStrLn $ displayException e
+      exitWith $ ExitFailure 1
+  catches
     (bindResourceTreeAndRun cliUsage accessors tree $
       runPipelineCommandOnPTask ptask input)
-    (\(SomeException e) -> do
-        putStrLn $ displayException e
-        exitWith $ ExitFailure 1)
+    (exceptionHandlers ++ [Handler defaultExceptionHandler])
 
 -- | Like 'runPipelineTask' if the task is self-contained and doesn't have a
 -- specific input and you don't need any specific LocationAccessor aside
@@ -103,9 +122,9 @@ runPipelineCommandOnPTask
   -> i
   -> PipelineCommand o --, RscAccessTree (ResourceTreeNode m))
   -> PhysicalResourceTree m
-  -> FunflowPaths m
+  -> FunflowOpts m
   -> m o --, RscAccessTree (PhysicalTreeNode m)
-runPipelineCommandOnPTask ptask input cmd physTree ffPaths = do
+runPipelineCommandOnPTask ptask input cmd physTree ffopts = do
   let (virtualTree, runnable) = ptask ^. splittedPTask
   -- virtualTree is the bare tree of VirtualFiles straight from the
   -- pipeline. physTree is virtualTree after configuration, with embedded data
@@ -113,9 +132,14 @@ runPipelineCommandOnPTask ptask input cmd physTree ffPaths = do
   case cmd of
     RunPipeline -> do
       dataTree <- traverse resolveDataAccess physTree
-      withPTaskState ffPaths dataTree $ \initState -> do
-        $(logTM) DebugS $ logStr $ "Using funflow store in '" ++ storePath ffPaths
-              ++ "' and coordinator '" ++ coordPath ffPaths ++ "'."
+      withPTaskState ffopts dataTree $ \initState -> do
+        $(logTM) NoticeS $ logStr $ case flowIdentity ffopts of
+          Just i -> "Using funflow store at '" ++ storePath ffopts ++ "' with identity "
+            ++ show i ++ "." ++
+            (case remoteCacheLoc ffopts of
+               Just l -> "Using remote cache at " ++ show l
+               _      -> "")
+          Nothing -> "FUNFLOW_IDENTITY not specified. The cache will not be used."
         execRunnablePTask runnable initState input
     ShowLocTree mode -> do
       liftIO $ putStrLn $ case mode of
@@ -123,27 +147,50 @@ runPipelineCommandOnPTask ptask input cmd physTree ffPaths = do
         FullMappings -> prettyLocTree physTree
       return mempty
 
-getFunflowPaths :: (MonadIO m, LogThrow m) => LocResolutionM m (FunflowPaths m)
-getFunflowPaths = do
+storeVar,remoteCacheVar,identityVar,coordVar :: String
+storeVar       = "FUNFLOW_STORE"
+remoteCacheVar = "FUNFLOW_REMOTE_CACHE"
+coordVar       = "FUNFLOW_COORDINATOR"
+identityVar    = "FUNFLOW_IDENTITY"
+
+-- | Reads the relevant environment variables to construct the set of parameters
+-- necessary to initialize funflow
+getFunflowOpts :: (MonadIO m, LogThrow m) => LocResolutionM m (FunflowOpts m)
+getFunflowOpts = do
   pwd <- liftIO getWorkingDirectory
-  FunflowPaths
-    <$> (fromMaybe (pwd </> "_funflow/store") <$> lookupEnv' "FUNFLOW_STORE")
-    <*> (fromMaybe (pwd </> "_funflow/coordinator.db") <$> lookupEnv' "FUNFLOW_COORDINATOR")
-    <*> (lookupEnv' "FUNFLOW_REMOTE_CACHE" >>= traverse resolvePathToSomeLoc)
+  givenStore <- lookupEnv' storeVar
+  opts <- FunflowOpts
+        (fromMaybe (pwd </> "_funflow/store") givenStore)
+    <$> (fromMaybe (pwd </> "_funflow/coordinator.db") <$> lookupEnv' coordVar)
+    <*> (lookupEnv' identityVar >>= parseIdentity)
+    <*> (lookupEnv' remoteCacheVar >>= traverse resolveYamlDocToSomeLoc)
+  case (flowIdentity opts, givenStore, remoteCacheLoc opts) of
+    (Nothing, Just _, _) -> warnAboutIdentity storeVar
+    (Nothing, _, Just _) -> warnAboutIdentity remoteCacheVar
+    _                    -> return ()
+  return opts
   where
     lookupEnv' = liftIO . lookupEnv
+    parseIdentity Nothing = return Nothing
+    parseIdentity (Just "") = return Nothing
+    parseIdentity (Just s) = case reads s of
+      [(i,_)] -> return $ Just i
+      _       -> fail $ identityVar ++ " isn't a valid integer"
+    warnAboutIdentity var = $(logTM) WarningS $ logStr $
+      var ++ " has been given but no " ++ identityVar ++
+      " has been provided. Caching will NOT be performed."
 
 -- | Resolve all the JSON values in the mappings and paths from environment (for
 -- funflow) to locations tied to their respective LocationAccessors
-getPhysTreeAndFFPaths
+getPhysTreeAndFFOpts
   :: (MonadIO m, LogThrow m)
   => ResourceTreeAndMappings
   -> AvailableAccessors m
-  -> m (PhysicalResourceTree m, FunflowPaths m)
-getPhysTreeAndFFPaths rtam accessors =
+  -> m (PhysicalResourceTree m, FunflowOpts m)
+getPhysTreeAndFFOpts rtam accessors =
   flip runReaderT accessors $
     (,) <$> getPhysicalResourceTreeFromMappings rtam
-        <*> getFunflowPaths
+        <*> getFunflowOpts
 
 -- | Runs the cli if using FullConfig, binds every location in the resource tree
 -- to its final value/path, and passes the continuation the bound resource tree.
@@ -154,13 +201,13 @@ bindResourceTreeAndRun
   -> VirtualResourceTree    -- ^ The tree to look for DocRecOfoptions in
   -> (PipelineCommand r
       -> PhysicalResourceTree (ReaderSoup ctxs)
-      -> FunflowPaths (ReaderSoup ctxs)
+      -> FunflowOpts (ReaderSoup ctxs)
       -> ReaderSoup ctxs r)
              -- ^ What to do with the tree
   -> IO r
 bindResourceTreeAndRun (NoConfig _ root) accessorsRec tree f =
   consumeSoup argsRec $ do
-    (physTree, ffPaths) <- getPhysTreeAndFFPaths rtam accessors
+    (physTree, ffPaths) <- getPhysTreeAndFFOpts rtam accessors
     f RunPipeline physTree ffPaths
   where
     rtam = ResourceTreeAndMappings tree (Left root) mempty
@@ -194,5 +241,5 @@ bindResourceTreeAndRun (FullConfig progName defConfigFileURL defRoot) accessorsR
       in
       consumeSoup argsRec' $ do
         unPreRun performConfigWrites
-        (physTree, ffPaths) <- getPhysTreeAndFFPaths rtam accessors
+        (physTree, ffPaths) <- getPhysTreeAndFFOpts rtam accessors
         f cmd physTree ffPaths

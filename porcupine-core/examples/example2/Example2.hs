@@ -6,12 +6,12 @@
 {-# LANGUAGE TypeApplications    #-}
 
 import           Data.Aeson
-import qualified Data.Text           as T
+import qualified Data.Text         as T
 import           GHC.Generics
 import           Porcupine.Run
 import           Porcupine.Serials
 import           Porcupine.Tasks
-import qualified Streaming.Prelude           as S
+import qualified Streaming.Prelude as S
 
 
 

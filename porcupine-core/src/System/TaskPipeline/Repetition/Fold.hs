@@ -80,7 +80,7 @@ instance (HasTaskRepetitionIndex a)
   getTaskRepetitionIndex (PWR (Pair _ a)) = getTaskRepetitionIndex a
 
 -- | Just before running the fold, we have to make the step part repeatable
-makeStepRepeatable :: (HasTaskRepetitionIndex a, Monad m)
+makeStepRepeatable :: (HasTaskRepetitionIndex a, KatipContext m)
                    => RepInfo
                    -> PTask m (Pair acc a) b
                    -> PTask m (Pair acc a) b

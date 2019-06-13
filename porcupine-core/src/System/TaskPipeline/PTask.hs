@@ -20,7 +20,7 @@ module System.TaskPipeline.PTask
   , Severity(..)
   , CanRunPTask
   , Properties
-  , tryPTask, throwPTask, clockPTask
+  , tryPTask, throwPTask, clockPTask, clockPTask'
   , catchAndLog, throwStringPTask
   , ptaskOnJust, ptaskOnRight
   , unsafeLiftToPTask, unsafeLiftToPTask', unsafeRunIOTask
@@ -33,6 +33,7 @@ module System.TaskPipeline.PTask
   , addContextToTask
   , addStaticContextToTask
   , addNamespaceToTask
+  , namePTask
   , logTask
   ) where
 
@@ -50,7 +51,7 @@ import           Data.Locations
 import           Data.Locations.LogAndErrors
 import           Data.String
 import           Katip
-import           System.Clock
+import           System.ClockHelpers
 import           System.TaskPipeline.PTask.Internal
 import           System.TaskPipeline.ResourceTree
 
@@ -131,17 +132,22 @@ unsafeLiftToPTask' props = makePTask' props mempty . const
 instance NFData SomeException where
   rnf e = rnf $ displayException e
 
--- | Measures the time taken by a 'PTask'
+-- | Measures the time taken by a 'PTask'.
 clockPTask
-  :: (NFData b, KatipContext m) => PTask m a b -> PTask m a (b, TimeSpec)
+  :: (KatipContext m) => PTask m a b -> PTask m a (b, TimeSpec)
 clockPTask task = proc input -> do
-  start <- unsafeRunIOTask $ const $ getTime Realtime -< ()
+  start <- time -< ()
   output <- task -< input
-  (output', end) <- unsafeRunIOTask timeEnd -< output
-  returnA -< (output', end `diffTimeSpec` start)
-  where timeEnd x = do
-          x' <- evaluate $ force x
-          (x',) <$> getTime Realtime
+  end <- time -< ()
+  returnA -< (output, end `diffTimeSpec` start)
+  where
+    time = unsafeRunIOTask $ const $ getTime Realtime
+
+-- | Measures the time taken by a 'PTask' and the deep evaluation of its result.
+clockPTask'
+  :: (NFData b, KatipContext m) => PTask m a b -> PTask m a (b, TimeSpec)
+clockPTask' task = clockPTask $
+  task >>> unsafeRunIOTask (evaluate . force)
 
 -- | Logs a message during the pipeline execution
 logTask :: (KatipContext m) => PTask m (Severity, String) ()
@@ -193,9 +199,28 @@ addStaticContextToTask item =
 -- 'addStaticContextToTask', the namespace is meant to be static, that's why we
 -- give it as a parameter to 'addNamespaceToTask', instead of creating a PTask
 -- that expects the namespace as an input.
+--
+-- NOTE: Prefer the use of 'namePTask', which records the time spent within the
+-- task. Directly use 'addNamespaceToTask' only if that time tracking hurts
+-- performance.
 addNamespaceToTask :: String -> PTask m a b -> PTask m a b
 addNamespaceToTask ns =
-  over (ptaskReaderState . ptrsKatipNamespace) (<> (fromString ns))
+    over (ptaskReaderState . ptrsKatipNamespace) (<> fromString ns)
+
+-- | This gives the task a name, making porcupine aware that this task should be
+-- considered a entity by itself. This has a few effects:
+--
+-- change the logging output by wrapping it in a namespace (as per
+-- 'addNamespaceToTask') and measure and log (InfoS level) the time spent within
+-- that task
+namePTask :: (KatipContext m) => String -> PTask m a b -> PTask m a b
+namePTask ns task =
+  addNamespaceToTask ns $
+    clockPTask task
+    >>> unsafeLiftToPTask (\(output, time) -> do
+          katipAddContext time $
+            logFM InfoS $ logStr $ "Finished task '" ++ ns ++ "' in " ++ showTimeSpec time
+          return output)
 
 -- | Moves the 'LocationTree' associated to the task deeper in the final
 -- tree. This can be used to solve conflicts between tasks that have

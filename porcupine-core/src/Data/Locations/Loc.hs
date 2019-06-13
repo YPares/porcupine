@@ -8,6 +8,7 @@
 {-# LANGUAGE FlexibleInstances     #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE NamedFieldPuns        #-}
+{-# LANGUAGE RecordWildCards       #-}
 {-# LANGUAGE StaticPointers        #-}
 {-# LANGUAGE TemplateHaskell       #-}
 {-# LANGUAGE TypeSynonymInstances  #-}
@@ -154,8 +155,8 @@ instance (IsLocString a) => Show (URLLikeLoc a) where
 
 locFilePath :: Lens' (URLLikeLoc a) (LocFilePath a)
 locFilePath f (LocalFile fp)                  = LocalFile <$> f fp
-locFilePath f rf@RemoteFile{rfLocFilePath=fp} =
-  (\fp' -> rf{rfLocFilePath=fp'}) <$> f fp
+locFilePath f RemoteFile{rfLocFilePath=fp,..} =
+  (\fp' -> RemoteFile{rfLocFilePath=fp',..}) <$> f fp
 
 -- | A 'URLLikeLoc' that might contain some names holes, called variables, that we
 -- have first to replace by a value before we can get a definite physical
@@ -289,7 +290,8 @@ instance (IsLocString a) => ToJSON (URLLikeLoc a) where
 
 -- | The equivalent of </> from `filepath` package on 'LocFilePath's
 appendToLocFilePathAsSubdir :: (IsLocString a) => LocFilePath a -> String -> LocFilePath a
-fp `appendToLocFilePathAsSubdir` s = fp <> (('/':s) ^. from locFilePathAsRawFilePath)
+fp `appendToLocFilePathAsSubdir` s = view (from locFilePathAsRawFilePath) $
+    (fp^.locFilePathAsRawFilePath) Path.</> s
 
 -- | Appends a path to a location. The Loc is considered to be a folder, so its
 -- possible extension will be /ignored/.
