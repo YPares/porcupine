@@ -1,6 +1,6 @@
 package(default_visibility=["//visibility:public"])
 
-load("//:simwork/simwork_binary.bzl", "haskell_benchmark", "jinko_haskell_library")
+load("//simwork:simwork_binary.bzl", "haskell_benchmark", "jinko_haskell_library")
 load("@io_tweag_rules_haskell//haskell:haskell.bzl", "haskell_library")
 
 alias(name="pipeline-tools", actual=":porcupine-core")
