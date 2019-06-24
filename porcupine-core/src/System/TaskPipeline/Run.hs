@@ -18,7 +18,9 @@ module System.TaskPipeline.Run
   , (<--)
   , baseContexts
   , runPipelineTask
+  , runLocalPipelineTask
   , runPipelineTask_
+  , simpleRunPTask
   , runPipelineTaskWithExceptionHandlers
   , runPipelineCommandOnPTask
   ) where
@@ -98,15 +100,33 @@ runPipelineTaskWithExceptionHandlers exceptionHandlers cliUsage accessors ptask 
       runPipelineCommandOnPTask ptask input)
     (exceptionHandlers ++ [Handler defaultExceptionHandler])
 
--- | Like 'runPipelineTask' if the task is self-contained and doesn't have a
--- specific input and you don't need any specific LocationAccessor aside
--- "resource".
+-- | Like 'runPipelineTask' if you don't need any specific LocationAccessor
+-- aside "resource" (accessor local files).
+runLocalPipelineTask
+  :: PipelineConfigMethod o
+  -> PTask (ReaderSoup BasePorcupineContexts) i o
+  -> i
+  -> IO o
+runLocalPipelineTask cliUsage =
+  runPipelineTask cliUsage (baseContexts $ cliUsage ^. pipelineConfigMethodProgName)
+
+-- | Runs a PTask without any configuration, only local files accesses, and
+-- using PWD as the root location for all files read and written.
+simpleRunPTask
+  :: PTask (ReaderSoup BasePorcupineContexts) i o
+  -> i
+  -> IO o
+simpleRunPTask = runLocalPipelineTask (NoConfig "simpleRunPTask" ".")
+
+-- | A simpler 'runLocalPipelineTask' for when you task just expects no input
+--
+-- DEPRECATED
 runPipelineTask_
   :: PipelineConfigMethod o
   -> PTask (ReaderSoup BasePorcupineContexts) () o
   -> IO o
-runPipelineTask_ cliUsage ptask =
-  runPipelineTask cliUsage (baseContexts $ cliUsage ^. pipelineConfigMethodProgName) ptask ()
+runPipelineTask_ cliUsage ptask = runLocalPipelineTask cliUsage ptask ()
+-- TODO: Remove runPipelineTask_ from porcupine, it doesn't belong to the API
 
 -- pipelineConfigMethodChangeResult
 --   :: PipelineConfigMethod o
