@@ -18,7 +18,9 @@ module System.TaskPipeline.Run
   , (<--)
   , baseContexts
   , runPipelineTask
+  , runLocalPipelineTask
   , runPipelineTask_
+  , simpleRunPTask
   , runPipelineTaskWithExceptionHandlers
   , runPipelineCommandOnPTask
   ) where
@@ -34,7 +36,6 @@ import           Data.Vinyl.Derived                 (HasField, rlensf)
 import           Katip
 import           Prelude                            hiding ((.))
 import           System.Environment                 (lookupEnv)
-import           System.Exit
 import           System.FilePath                    ((</>))
 import           System.Posix.Directory             (getWorkingDirectory)
 import           System.TaskPipeline.CLI
@@ -76,8 +77,6 @@ runPipelineTaskWithExceptionHandlers
   :: (AcceptableArgsAndContexts args ctxs m)
   => [Handler IO o] -- ^ Exception handlers in case the pipeline raises
                     -- an exception.
-                    -- Uncatched exceptions will be printed on stderr and
-                    -- cause the executable to exit with status code 1
   -> PipelineConfigMethod o  -- ^ Whether to use the CLI and load the yaml
                              -- config or not
   -> Rec (FieldWithAccessors (ReaderSoup ctxs)) args  -- ^ The location
@@ -87,26 +86,39 @@ runPipelineTaskWithExceptionHandlers
   -> IO o -- , RscAccessTree (ResourceTreeNode m))
                        -- ^ The pipeline task output and the final LocationTree
 runPipelineTaskWithExceptionHandlers exceptionHandlers cliUsage accessors ptask input = do
-  let
-    tree = ptask ^. ptaskRequirements
-    defaultExceptionHandler :: SomeException -> IO a
-    defaultExceptionHandler (SomeException e) = do
-      putStrLn $ displayException e
-      exitWith $ ExitFailure 1
+  let tree = ptask ^. ptaskRequirements
   catches
     (bindResourceTreeAndRun cliUsage accessors tree $
       runPipelineCommandOnPTask ptask input)
-    (exceptionHandlers ++ [Handler defaultExceptionHandler])
+    exceptionHandlers
 
--- | Like 'runPipelineTask' if the task is self-contained and doesn't have a
--- specific input and you don't need any specific LocationAccessor aside
--- "resource".
+-- | Like 'runPipelineTask' if you don't need any specific LocationAccessor
+-- aside "resource" (accessor for local files).
+runLocalPipelineTask
+  :: PipelineConfigMethod o
+  -> PTask (ReaderSoup BasePorcupineContexts) i o
+  -> i
+  -> IO o
+runLocalPipelineTask cliUsage =
+  runPipelineTask cliUsage (baseContexts $ cliUsage ^. pipelineConfigMethodProgName)
+
+-- | Runs a PTask without any configuration, only local files accesses, and
+-- using PWD as the root location for all files read and written.
+simpleRunPTask
+  :: PTask (ReaderSoup BasePorcupineContexts) i o
+  -> i
+  -> IO o
+simpleRunPTask = runLocalPipelineTask (NoConfig "simpleRunPTask" ".")
+
+-- | A simpler 'runLocalPipelineTask' for when you task just expects no input.
+--
+-- DEPRECATED
 runPipelineTask_
   :: PipelineConfigMethod o
   -> PTask (ReaderSoup BasePorcupineContexts) () o
   -> IO o
-runPipelineTask_ cliUsage ptask =
-  runPipelineTask cliUsage (baseContexts $ cliUsage ^. pipelineConfigMethodProgName) ptask ()
+runPipelineTask_ cliUsage ptask = runLocalPipelineTask cliUsage ptask ()
+-- TODO: Remove runPipelineTask_ from porcupine, it doesn't belong to the API
 
 -- pipelineConfigMethodChangeResult
 --   :: PipelineConfigMethod o
