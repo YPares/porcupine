@@ -47,7 +47,7 @@ A few notes:
 */
 
 let
-  porcupinePackages = {
+  porcupineSources = {
     docrecords = ./docrecords;
     reader-soup = ./reader-soup;
     porcupine-core = ./porcupine-core;
@@ -82,7 +82,7 @@ overlayHaskell = _:pkgs:
           # Check are failing for funflow, this should be investigated
           pkgs.haskell.lib.dontCheck (super.callCabal2nix "funflow" "${funflowSource}/funflow" {});
     };
-    }).extend (pkgs.haskell.lib.packageSourceOverrides porcupinePackages);
+    }).extend (pkgs.haskell.lib.packageSourceOverrides porcupineSources);
 };
 
 # Nixpkgs clone
@@ -94,15 +94,17 @@ pkgs = import ./nixpkgs.nix {
   overlays = [ overlayHaskell ];
 };
 
+porcupinePkgs = builtins.mapAttrs (x: _: pkgs.haskellPackages.${x}) porcupineSources;
+
 # The final shell
 shell = pkgs.haskellPackages.shellFor {
-  packages = p: [p.docrecords p.reader-soup p.porcupine-core p.porcupine-s3 p.porcupine-http];
+  packages = _: builtins.attrValues porcupinePkgs;
 
   # Generates the cabal and cabal project file
   shellHook =
   ''
     echo "packages:" > cabal.project
-    for i in ${toString (builtins.attrNames porcupinePackages)}
+    for i in ${toString (builtins.attrNames porcupineSources)}
     do
       hpack $i
       echo "    $i" >> cabal.project
@@ -115,4 +117,4 @@ shell = pkgs.haskellPackages.shellFor {
 in
 {
   inherit shell;
-} // (builtins.mapAttrs (x: _: pkgs.haskellPackages.${x}) porcupinePackages)
+} // porcupinePkgs
