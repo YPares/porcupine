@@ -4,7 +4,7 @@ Workflow:
 ### Global
 
 ```
-$ nix-shell -A shell
+$ nix-shell
 ```
 
 This will open a nix-shell with all the dependencies for all the
@@ -115,4 +115,4 @@ shell = pkgs.haskellPackages.shellFor {
 in
 {
   inherit shell;
-} // (builtins.mapAttrs (x: y: builtins.getAttr x pkgs.haskellPackages) porcupinePackages)
+} // (builtins.mapAttrs (x: _: pkgs.haskellPackages.${x}) porcupinePackages)
