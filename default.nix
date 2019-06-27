@@ -99,7 +99,8 @@ porcupinePkgs = builtins.mapAttrs (x: _: pkgs.haskellPackages.${x}) porcupineSou
 # The final shell
 shell = pkgs.haskellPackages.shellFor {
   packages = _: builtins.attrValues porcupinePkgs;
-
+  nativeBuildInputs = [pkgs.cabal-install];
+  withHoogle = true;
   # Generates the cabal and cabal project file
   shellHook =
   ''
