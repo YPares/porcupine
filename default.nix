@@ -57,7 +57,9 @@ let
 
 overlayHaskell = _:pkgs:
 {
-  haskellPackages = (pkgs.haskellPackages.override {
+  haskellPackages =
+  let inherit (pkgs.haskell.lib) doJailbreak dontCheck packageSourceOverrides; in
+  (pkgs.haskellPackages.override {
     overrides = self: super: rec {
 
       # A few package version override.
@@ -67,10 +69,10 @@ overlayHaskell = _:pkgs:
       network = super.network_3_1_0_0;
       socks = super.socks_0_6_0;
       connection = super.connection_0_3_0;
-      streaming-conduit = pkgs.haskell.lib.doJailbreak super.streaming-conduit;
+      streaming-conduit = doJailbreak super.streaming-conduit;
 
       # checks take too long, so they are disabled
-      hedis = pkgs.haskell.lib.dontCheck super.hedis_0_12_5;
+      hedis = dontCheck super.hedis_0_12_5;
 
       funflow = let
         funflowRev = "f0e0238aba688637fb6487a7ff4e24f2ae312a1d";
@@ -80,9 +82,9 @@ overlayHaskell = _:pkgs:
           };
         in
           # Check are failing for funflow, this should be investigated
-          pkgs.haskell.lib.dontCheck (super.callCabal2nix "funflow" "${funflowSource}/funflow" {});
+          dontCheck (super.callCabal2nix "funflow" "${funflowSource}/funflow" {});
     };
-    }).extend (pkgs.haskell.lib.packageSourceOverrides porcupineSources);
+    }).extend (packageSourceOverrides porcupineSources);
 };
 
 # Nixpkgs clone
