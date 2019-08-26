@@ -15,12 +15,15 @@ module Data.Locations.LogAndErrors
 
 import           Control.Exception.Safe
 import qualified Data.Text              as T
+import           GHC.Stack
 import           Katip
 
 
 -- | An error when running a pipeline of tasks
 newtype TaskRunError = TaskRunError String
-  deriving (Show)
+
+instance Show TaskRunError where
+  show (TaskRunError s) = s
 
 instance Exception TaskRunError where
   displayException (TaskRunError s) = s
@@ -33,7 +36,7 @@ getTaskErrorPrefix = do
     _  -> return $ T.unpack $ T.intercalate "." ns <> ": "
 
 -- | Just an alias for monads that can throw errors and log them
-type LogThrow m = (KatipContext m, MonadThrow m)
+type LogThrow m = (KatipContext m, MonadThrow m, HasCallStack)
 
 -- | Just an alias for monads that can throw,catch errors and log them
 type LogCatch m = (KatipContext m, MonadCatch m)
