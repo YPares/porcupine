@@ -7,6 +7,7 @@
 {-# LANGUAGE OverloadedStrings     #-}
 {-# LANGUAGE ScopedTypeVariables   #-}
 {-# LANGUAGE TypeApplications      #-}
+{-# LANGUAGE TupleSections         #-}
 
 -- The same example than example1 in 'porcupine-core', but with http access
 -- enabled by 'runPipelineTask'. Don't forget to map locations to http urls in
@@ -22,7 +23,8 @@ import           GHC.Generics
 import           Porcupine.Run
 import           Porcupine.Serials
 import           Porcupine.Tasks
-import           Prelude                       hiding ((.))
+import           Prelude                       hiding (id, (.))
+-- import           Graphics.Vega.VegaLite
 
 import           Data.Locations.Accessors.HTTP
 
@@ -59,20 +61,21 @@ analyzePokemon = Analysis . length . moves
 -- This task may look very opaque from the outside, having no parameters and no
 -- return value. But we will be able to reuse it over different users without
 -- having to change it at all.
-analyseOnePokemon :: (LogThrow m) => PTask m () ()
+analyseOnePokemon :: (LogThrow m) => PTask m a Pokemon
 analyseOnePokemon =
-  loadData pokemonFile >>> arr analyzePokemon >>> writeData analysisFile
+  loadData pokemonFile >>> (arr analyzePokemon >>> writeData analysisFile) &&& id >>> arr snd
 
 mainTask :: (LogThrow m) => PTask m () ()
 mainTask =
   -- First we get the ids of the users that we want to analyse. We need only one
   -- field that will contain a range of values, see IndexRange. By default, this
   -- range contains just one value, zero.
-  getOption ["Settings"] (docField @"pokemonIds" (oneIndex (1::Int)) "The indice of the pokemon to load")
+  getOption ["Settings"] (docField @"pokemonIds" (oneIndex (1::Int)) "The indices of the pokemon to load")
   -- We turn the range we read into a full lazy list:
-  >>> arr enumIndices
+  >>> arr enumTRIndices
   -- Then we just map over these ids and call analyseOnePokemon each time:
-  >>> parMapTask_ (repIndex "pokemonId") analyseOnePokemon
+  >>> parMapTask (repIndex "pokemonId") analyseOnePokemon
+  >>> (arr $ const ())
 
 main :: IO ()
 main = runPipelineTask (FullConfig "example-pokeapi"

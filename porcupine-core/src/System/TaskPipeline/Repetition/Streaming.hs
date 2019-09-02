@@ -54,7 +54,7 @@ type OSTask m a b =
 -- Calls to 'mappingOverStream' can be nested, this way the underlying VirtualFiles
 -- will have one 'RepetitionKey' per loop (from outermost loop to innermost).
 mappingOverStream
-  :: (HasTaskRepetitionIndex a, CanRunPTask m)
+  :: (HasTRIndex a, CanRunPTask m)
   => LocVariable       -- ^ A variable name, used as a key to indicate which
                        -- repetition we're at. Used in the logger context and
                        -- exposed in the yaml file for each VirtualFile that

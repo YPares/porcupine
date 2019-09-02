@@ -42,6 +42,7 @@ executables:
       - aeson
       - unordered-containers
       - text
+      - hvega
   example-stock:
     source-dirs: examples/example-Stock
     main: ExampleStockAPI.hs

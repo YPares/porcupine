@@ -62,6 +62,10 @@ overlayHaskell = _:pkgs:
       url = "https://github.com/tweag/funflow/archive/${funflowRev}.tar.gz";
       sha256 = "0gxws140rk4aqy00zja527nv87bnm2blp8bikmdy4a2wyvyc7agv";
     };
+    hvegaSource = pkgs.fetchzip {
+      url = "http://hackage.haskell.org/package/hvega-0.3.0.1/hvega-0.3.0.1.tar.gz";
+      sha256 = "03hnb7abk1jpiidabgdbvbdl736frgpzfk9wv94028i5vkxkgg1x";
+    };
 
     inherit (pkgs.haskell.lib) doJailbreak dontCheck packageSourceOverrides;
   in {
@@ -80,8 +84,9 @@ overlayHaskell = _:pkgs:
 
         # checks take too long, so they are disabled
         hedis = dontCheck super.hedis_0_12_5;
+        hvega = self.callCabal2nix "hvega" hvegaSource {};
 
-        funflow = dontCheck (super.callCabal2nix "funflow" "${funflowSource}/funflow" {});
+        funflow = dontCheck (self.callCabal2nix "funflow" "${funflowSource}/funflow" {});
                   # Check are failing for funflow, this should be investigated
       };
       }).extend (packageSourceOverrides porcupineSources);

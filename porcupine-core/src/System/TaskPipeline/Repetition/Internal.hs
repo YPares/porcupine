@@ -1,10 +1,12 @@
 {-# LANGUAGE Arrows          #-}
 {-# LANGUAGE RecordWildCards #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# OPTIONS_GHC -fno-warn-name-shadowing #-}
 
 module System.TaskPipeline.Repetition.Internal
   ( RepInfo(..)
-  , HasTaskRepetitionIndex(..)
+  , TRIndex(..)
+  , HasTRIndex(..)
   , repIndex
   , makeRepeatable
   ) where
@@ -15,6 +17,7 @@ import           Control.Monad
 import           Data.Aeson
 import qualified Data.HashMap.Strict                as HM
 import           Data.Locations
+import           Data.String                        (IsString(..))
 import           Katip
 import           Prelude                            hiding (id, (.))
 import           System.TaskPipeline.PTask
@@ -52,12 +55,23 @@ instance LogItem TaskRepetitionContext where
   payloadKeys v (TRC _ _ v') | v >= v' = AllKeys
                              | otherwise = SomeKeys []
 
--- | The class of every data that can be repeated
-class HasTaskRepetitionIndex a where
-  getTaskRepetitionIndex :: a -> String
+-- | Task Repetition Index. Is given to functions that repeat tasks for each
+-- iteration.
+newtype TRIndex = TRIndex { unTRIndex :: String }
+  deriving (FromJSON, ToJSON)
 
-instance (Show i) => HasTaskRepetitionIndex (i,a) where
-  getTaskRepetitionIndex (i,_) = show i
+instance IsString TRIndex where
+  fromString = TRIndex
+
+-- | The class of every data that can be repeated
+class HasTRIndex a where
+  getTRIndex :: a -> TRIndex
+
+instance HasTRIndex TRIndex where
+  getTRIndex = id
+
+instance (HasTRIndex i) => HasTRIndex (i,a) where
+  getTRIndex (i,_) = getTRIndex i
 
 -- | Turns a task into one that can be called several times, each time with a
 -- different index value @i@. This index will be used to alter every path
@@ -66,7 +80,7 @@ instance (Show i) => HasTaskRepetitionIndex (i,a) where
 -- VirtualFiles accessed by this task. The second one controls whether we want
 -- to add to the logging context which repetition is currently running.
 makeRepeatable
-  :: (HasTaskRepetitionIndex a, KatipContext m)
+  :: (HasTRIndex a, KatipContext m)
   => RepInfo
   -> PTask m a b
   -> PTask m a b
@@ -87,7 +101,7 @@ makeRepeatable (RepInfo repetitionKey mbVerb) =
         over ptrsKatipContext alterContext
       . over (ptrsDataAccessTree.traversed) addKeyValToDataAccess
       where
-        idxStr = getTaskRepetitionIndex input
+        idxStr = unTRIndex $ getTRIndex input
         newCtxItem = TRC repetitionKey idxStr <$> mbVerb
         alterContext ctx = case newCtxItem of
           Nothing   -> ctx

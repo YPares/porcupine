@@ -45,7 +45,7 @@ getDateStock s = map date (chart s)
 -- | How to load Stock prices
 stockFile :: DataSource Stock
 stockFile = dataSource ["Inputs", "Stock"]
-                      (somePureDeserial JSONSerial)
+                       (somePureDeserial JSONSerial)
 
 -- As an example, we have donwloaded the Apple stock information from
 -- https://api.iextrading.com/1.0/stock/aapl/batch?types=chart&range=1y
@@ -64,11 +64,11 @@ stockToVegaLite stock =
 
 stockSmoothed :: DataSink Stock
 stockSmoothed = dataSink ["Outputs", "StockSmoothed"]
-                        (somePureSerial JSONSerial)
+                         (somePureSerial JSONSerial)
 
 stockVegaLite :: DataSink VLSpec
-stockVegaLite = dataSink ["VegaLite", "StockSmoothedVegaLite"]
-                        (somePureSerial JSONSerial)
+stockVegaLite = dataSink ["Outputs", "StockSmoothedVegaLite"]
+                         (somePureSerial JSONSerial)
 
 -- We do sliding windows for smothing the curve
 
@@ -101,16 +101,10 @@ analyseStock =
    -- >>> (writeData stockSmoothed *** writeData stockVegaLite)
    -- >>> arr (const ())
 
-newtype IdCompany = IdCompany String
-  deriving (Generic)
-instance Show IdCompany where
-  show (IdCompany s) = s
-instance ToJSON IdCompany
-instance FromJSON IdCompany
-
 mainTask :: (LogThrow m) => PTask m () ()
 mainTask =
-  getOption ["Settings"] (docField @"idcompany" [IdCompany "aapl"] "The NASDAQ of the company to load")
+  getOption ["Settings"]
+    (docField @"idcompany" ["aapl"::TRIndex] "The NASDAQ of the company to load")
   >>> parMapTask_ (repIndex "idcompany") analyseStock
 
 

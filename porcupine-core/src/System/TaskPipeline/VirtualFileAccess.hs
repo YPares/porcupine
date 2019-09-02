@@ -59,6 +59,7 @@ import           Streaming                           (Of (..), Stream)
 import qualified Streaming.Prelude                   as S
 import           System.TaskPipeline.PTask
 import           System.TaskPipeline.PTask.Internal
+import           System.TaskPipeline.Repetition.Internal
 import qualified System.TaskPipeline.Repetition.Fold as F
 import           System.TaskPipeline.ResourceTree
 
@@ -71,7 +72,7 @@ loadData
   => VirtualFile a b -- ^ Use as a 'DataSource'
   -> PTask m ignored b  -- ^ The resulting task. Ignores its input.
 loadData vf =
-      arr (\_ -> SingletonES $ return ([] :: [Int], error "loadData: THIS IS VOID"))
+      arr (\_ -> SingletonES $ return ([] :: [TRIndex], error "loadData: THIS IS VOID"))
   >>> accessVirtualFile (DoRead id) [] vf
   >>> unsafeLiftToPTask (fmap snd . getSingletonFromES)
 
@@ -79,7 +80,7 @@ loadData vf =
 -- indices. The process is lazy: the data will actually be read when the
 -- resulting stream is consumed.
 loadDataStream
-  :: (Show idx, LogThrow m, Typeable a, Typeable b, Monoid r)
+  :: (HasTRIndex idx, LogThrow m, Typeable a, Typeable b, Monoid r)
   => LocVariable
   -> VirtualFile a b -- ^ Used as a 'DataSource'
   -> PTask m (Stream (Of idx) m r) (Stream (Of (idx, b)) m r)
@@ -93,7 +94,7 @@ loadDataStream lv vf =
 -- memory, and the list returned is fully evaluated. So you should not use
 -- 'loadDataList' if the number of files to read is too huge.
 loadDataList
-  :: (Show idx, LogThrow m, Typeable a, Typeable b)
+  :: (HasTRIndex idx, LogThrow m, Typeable a, Typeable b)
   => LocVariable
   -> VirtualFile a b -- ^ Used as a 'DataSource'
   -> PTask m [idx] [(idx, b)]
@@ -104,7 +105,7 @@ loadDataList lv vf =
 
 -- | Like 'loadDataStream', but won't stop on a failure on a single file
 tryLoadDataStream
-  :: (Exception e, Show idx, LogCatch m, Typeable a, Typeable b, Monoid r)
+  :: (Exception e, HasTRIndex idx, LogCatch m, Typeable a, Typeable b, Monoid r)
   => LocVariable
   -> VirtualFile a b -- ^ Used as a 'DataSource'
   -> PTask m (Stream (Of idx) m r) (Stream (Of (idx, Either e b)) m r)
@@ -129,7 +130,7 @@ writeEffData
   => VirtualFile a b  -- ^ Used as a 'DataSink'
   -> PTask m (m a) ()
 writeEffData vf =
-      arr (SingletonES . (fmap ([] :: [Int],)))
+      arr (SingletonES . (fmap ([] :: [TRIndex],)))
   >>> accessVirtualFile (DoWrite id) [] vf
   >>> unsafeLiftToPTask runES
 
@@ -140,7 +141,7 @@ writeEffData vf =
 -- System.TaskPipeline.Repetition.Fold for more complex ways to consume a
 -- Stream.
 writeDataStream
-  :: (Show idx, LogThrow m, Typeable a, Typeable b, Monoid r)
+  :: (HasTRIndex idx, LogThrow m, Typeable a, Typeable b, Monoid r)
   => LocVariable
   -> VirtualFile a b -- ^ Used as a 'DataSink'
   -> PTask m (Stream (Of (idx, a)) m r) r
@@ -152,7 +153,7 @@ writeDataStream lv vf =
 -- | The simplest way to consume a stream of data inside a pipeline. Just write
 -- it to repeated occurences of a 'VirtualFile'.
 writeDataList
-  :: (Show idx, LogThrow m, Typeable a, Typeable b)
+  :: (HasTRIndex idx, LogThrow m, Typeable a, Typeable b)
   => LocVariable
   -> VirtualFile a b -- ^ Used as a 'DataSink'
   -> PTask m [(idx, a)] ()
@@ -238,15 +239,15 @@ instance (Monoid r) => EffectSeqFromList (StreamES r) where
 
 -- | Like 'accessVirtualFile', but uses only one repetition variable
 accessVirtualFile' :: forall seq idx m a b b'.
-                      (Show idx, LogThrow m, Typeable a, Typeable b
+                      (HasTRIndex idx, LogThrow m, Typeable a, Typeable b
                       ,EffectSeq seq)
                    => AccessToPerform m b b'
                    -> LocVariable
                    -> VirtualFile a b -- ^ Used as a 'DataSource'
                    -> PTask m (seq m (idx, a)) (seq m (idx, b'))
-accessVirtualFile' access repIndex vf =
+accessVirtualFile' access repIndex_ vf =
       arr (mapES $ \(i, a) -> ([i], a))
-  >>> accessVirtualFile access [repIndex] vf
+  >>> accessVirtualFile access [repIndex_] vf
   >>> arr (mapES $ first head)
 
 toAccessTypes :: AccessToPerform m b b' -> [VFNodeAccessType]
@@ -261,7 +262,7 @@ toAccessTypes ac = case ac of
 -- indices.
 accessVirtualFile
   :: forall m a b b' seq idx.
-     (LogThrow m, Typeable a, Typeable b, Show idx
+     (LogThrow m, Typeable a, Typeable b, HasTRIndex idx
      ,EffectSeq seq)
   => AccessToPerform m b b'
   -> [LocVariable]  -- ^ The list of repetition indices. Can be empty if the
@@ -287,7 +288,7 @@ accessVirtualFile accessToDo repIndices vfile =
         DoWriteAndRead wrap -> wrap $ daPerformWrite da input >> daPerformRead da
       where
         da = accessFn lvMap
-        lvMap = HM.fromList $ zip repIndices $ map show ixVals
+        lvMap = HM.fromList $ zip repIndices $ map (unTRIndex . getTRIndex) ixVals
     vfile' = case repIndices of
       [] -> vfile
       _  -> vfile & over (vfileSerials.serialRepetitionKeys) (repIndices++)

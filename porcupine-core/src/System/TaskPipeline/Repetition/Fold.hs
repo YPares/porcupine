@@ -6,7 +6,8 @@
 module System.TaskPipeline.Repetition.Fold
   ( module Control.Arrow.FoldA
   , RepInfo(..)
-  , HasTaskRepetitionIndex(..)
+  , TRIndex(..)
+  , HasTRIndex(..)
   , ptaskFold
   , ptaskFold_
   , unsafeGeneralizeM
@@ -75,12 +76,12 @@ ptaskFold_ task =
 
 newtype PairWithRepeatable x a = PWR { unPWR :: Pair x a }
 
-instance (HasTaskRepetitionIndex a)
-      => HasTaskRepetitionIndex (PairWithRepeatable x a) where
-  getTaskRepetitionIndex (PWR (Pair _ a)) = getTaskRepetitionIndex a
+instance (HasTRIndex a)
+      => HasTRIndex (PairWithRepeatable x a) where
+  getTRIndex (PWR (Pair _ a)) = getTRIndex a
 
 -- | Just before running the fold, we have to make the step part repeatable
-makeStepRepeatable :: (HasTaskRepetitionIndex a, KatipContext m)
+makeStepRepeatable :: (HasTRIndex a, KatipContext m)
                    => RepInfo
                    -> PTask m (Pair acc a) b
                    -> PTask m (Pair acc a) b
@@ -90,7 +91,7 @@ makeStepRepeatable ri step =
 -- | Consumes a Stream with a 'FoldA' created with 'ptaskFold', 'generalizeA',
 -- 'unsafeGeneralizeM', or a composition of such folds.
 foldStreamTask
-  :: (HasTaskRepetitionIndex a, KatipContext m)
+  :: (HasTRIndex a, KatipContext m)
   => RepInfo  -- ^ How to log the repeated task
   -> FoldA (PTask m) i a b
   -> PTask m (i, Stream (Of a) m r) (b, r)
@@ -113,7 +114,7 @@ foldStreamTask ri (FoldA step_ start done) =
 
 -- | Consumes a list with a 'FoldA' over 'PTask'
 foldlTask
-  :: (HasTaskRepetitionIndex a, KatipContext m)
+  :: (HasTRIndex a, KatipContext m)
   => RepInfo  -- ^ How to log the repeated task
   -> FoldA (PTask m) i a b
   -> PTask m (i,[a]) b
