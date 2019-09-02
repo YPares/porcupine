@@ -43,7 +43,7 @@ parMapTask ri =
 -- ignores the end result. See 'RepInfo' for how these indices are
 -- used. See 'parMapTask' for a more complete version.
 parMapTask_
-  :: (Show idx, KatipContext m)
+  :: (HasTRIndex idx, KatipContext m)
   => RepInfo
   -> PTask m () b
   -> PTask m [idx] ()

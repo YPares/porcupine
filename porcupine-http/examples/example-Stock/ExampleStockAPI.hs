@@ -101,17 +101,10 @@ analyseStock =
    -- >>> (writeData stockSmoothed *** writeData stockVegaLite)
    -- >>> arr (const ())
 
-newtype IdCompany = IdCompany String
-  deriving (Generic)
-instance Show IdCompany where
-  show (IdCompany s) = s
-instance ToJSON IdCompany
-instance FromJSON IdCompany
-
 mainTask :: (LogThrow m) => PTask m () ()
 mainTask =
   getOption ["Settings"]
-    (docField @"idcompany" [IdCompany "aapl"] "The NASDAQ of the company to load")
+    (docField @"idcompany" ["aapl"::TRIndex] "The NASDAQ of the company to load")
   >>> parMapTask_ (repIndex "idcompany") analyseStock
 
 

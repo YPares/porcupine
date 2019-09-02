@@ -1,5 +1,6 @@
 {-# LANGUAGE Arrows          #-}
 {-# LANGUAGE RecordWildCards #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# OPTIONS_GHC -fno-warn-name-shadowing #-}
 
 module System.TaskPipeline.Repetition.Internal
@@ -57,6 +58,7 @@ instance LogItem TaskRepetitionContext where
 -- | Task Repetition Index. Is given to functions that repeat tasks for each
 -- iteration.
 newtype TRIndex = TRIndex { unTRIndex :: String }
+  deriving (FromJSON, ToJSON)
 
 instance IsString TRIndex where
   fromString = TRIndex
@@ -68,8 +70,8 @@ class HasTRIndex a where
 instance HasTRIndex TRIndex where
   getTRIndex = id
 
-instance (Show i) => HasTRIndex (i,a) where
-  getTRIndex (i,_) = TRIndex $ show i
+instance (HasTRIndex i) => HasTRIndex (i,a) where
+  getTRIndex (i,_) = getTRIndex i
 
 -- | Turns a task into one that can be called several times, each time with a
 -- different index value @i@. This index will be used to alter every path
