@@ -59,7 +59,7 @@ computeSmoothedCurve s = curve
 
 analyseStocks :: (LogThrow m) => PTask m () ()
 analyseStocks =
-   arr (const ["aapl"::String, "fb" , "googl"])  -- We want the stocks for some
+   arr (const ["aapl"::TRIndex, "fb" , "googl"])  -- We want the stocks for some
                                                  -- fixed set of companies
    >>> loadDataList "company" stockFile
    >>> arr (Tabular Nothing . map (\(_idx,stock) -> computeSmoothedCurve stock))
