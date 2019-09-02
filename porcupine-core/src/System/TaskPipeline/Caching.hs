@@ -35,10 +35,11 @@ unsafeLiftToPTaskAndWrite_
                                  -- hash on locations so the task is repeated if
                                  -- we bind to new locations.
   -> VirtualFile b ignored       -- ^ The VirtualFile to write
-  -> (a -> m b)                  -- ^ The function to lift.
+  -> (a -> m b)                  -- ^ The function to lift. Won't be executed if
+                                 -- the file isn't mapped
   -> PTask m a ()
 unsafeLiftToPTaskAndWrite_ props vf f =
-  unsafeLiftToPTaskAndWrite props id vf $ fmap (,()) . f
+  unsafeLiftToPTaskAndWrite props id vf (fmap (,()) . f) (const $ return ())
 {-# INLINE unsafeLiftToPTaskAndWrite_ #-}
 
 
@@ -57,14 +58,18 @@ unsafeLiftToPTaskAndWrite
                                  -- transform it into a hashable intermediate
                                  -- representation (like aeson Value). Else just
                                  -- use 'id'
-  -> VirtualFile b ignored       -- ^ The VirtualFile to write
+  -> VirtualFile b ignored       -- ^ The VirtualFile to write. If the file
+                                 -- isn't mapped, the action won't be performed,
+                                 -- and the task will return the default result.
   -> (a -> m (b,c))              -- ^ The function to lift. First item of the
                                  -- returned tuple will be written to the
                                  -- VirtualFile. The second will be returned by
                                  -- the task, so it must be loadable from the
                                  -- store.
+  -> (a -> m c)                  -- ^ Called when the VirtualFile isn't mapped,
+                                 -- and therefore no @b@ needs to be computed
   -> PTask m a c
-unsafeLiftToPTaskAndWrite props inputHashablePart vf action = proc input -> do
+unsafeLiftToPTaskAndWrite props inputHashablePart vf action actionWhenNotMapped = proc input -> do
   accessor <- getVFileDataAccessor [ATWrite] vf -< ()
   locs <- throwStringPTask -< daLocsAccessed accessor
   throwPTask <<< unsafeLiftToPTask' props' cached -< (input,map locToJ locs,accessor)
@@ -72,6 +77,7 @@ unsafeLiftToPTaskAndWrite props inputHashablePart vf action = proc input -> do
     locToJ :: SomeLoc m -> Value
     locToJ (SomeGLoc l) = toJSON l
 
+    cached (input,[],_) = Right <$> actionWhenNotMapped input
     cached (input,_,accessor) = do
       res <- SE.try $ action input
       case res of

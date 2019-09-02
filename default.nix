@@ -47,44 +47,44 @@ A few notes:
 */
 
 let
-  porcupineSources = {
-    docrecords = ./docrecords;
-    reader-soup = ./reader-soup;
-    porcupine-core = ./porcupine-core;
-    porcupine-s3 = ./porcupine-s3;
-    porcupine-http = ./porcupine-http;
-  };
+porcupineSources = {
+  docrecords = ./docrecords;
+  reader-soup = ./reader-soup;
+  porcupine-core = ./porcupine-core;
+  porcupine-s3 = ./porcupine-s3;
+  porcupine-http = ./porcupine-http;
+};
 
 overlayHaskell = _:pkgs:
-{
-  haskellPackages =
-  let inherit (pkgs.haskell.lib) doJailbreak dontCheck packageSourceOverrides; in
-  (pkgs.haskellPackages.override {
-    overrides = self: super: rec {
-
-      # A few package version override.
-      # Hopefully a future nixpkgs update will make them as default
-      # so they will be in the binary cache.
-      network-bsd = super.network-bsd_2_8_1_0;
-      network = super.network_3_1_0_0;
-      socks = super.socks_0_6_0;
-      connection = super.connection_0_3_0;
-      streaming-conduit = doJailbreak super.streaming-conduit;
-
-      # checks take too long, so they are disabled
-      hedis = dontCheck super.hedis_0_12_5;
-
-      funflow = let
-        funflowRev = "f0e0238aba688637fb6487a7ff4e24f2ae312a1d";
-        funflowSource = pkgs.fetchzip {
-          url = "https://github.com/tweag/funflow/archive/${funflowRev}.tar.gz";
-          sha256 = "0gxws140rk4aqy00zja527nv87bnm2blp8bikmdy4a2wyvyc7agv";
-          };
-        in
-          # Check are failing for funflow, this should be investigated
-          dontCheck (super.callCabal2nix "funflow" "${funflowSource}/funflow" {});
+  let
+    funflowRev = "f0e0238aba688637fb6487a7ff4e24f2ae312a1d";
+    funflowSource = pkgs.fetchzip {
+      url = "https://github.com/tweag/funflow/archive/${funflowRev}.tar.gz";
+      sha256 = "0gxws140rk4aqy00zja527nv87bnm2blp8bikmdy4a2wyvyc7agv";
     };
-    }).extend (packageSourceOverrides porcupineSources);
+
+    inherit (pkgs.haskell.lib) doJailbreak dontCheck packageSourceOverrides;
+  in {
+  haskellPackages =
+    (pkgs.haskellPackages.override {
+      overrides = self: super: rec {
+
+        # A few package version override.
+        # Hopefully a future nixpkgs update will make them as default
+        # so they will be in the binary cache.
+        network-bsd = super.network-bsd_2_8_1_0;
+        network = super.network_3_1_0_0;
+        socks = super.socks_0_6_0;
+        connection = super.connection_0_3_0;
+        streaming-conduit = doJailbreak super.streaming-conduit;
+
+        # checks take too long, so they are disabled
+        hedis = dontCheck super.hedis_0_12_5;
+
+        funflow = dontCheck (super.callCabal2nix "funflow" "${funflowSource}/funflow" {});
+                  # Check are failing for funflow, this should be investigated
+      };
+      }).extend (packageSourceOverrides porcupineSources);
 };
 
 # Nixpkgs clone
