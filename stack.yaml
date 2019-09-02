@@ -51,6 +51,7 @@ extra-deps:
 - streaming-conduit-0.1.2.2
 - streaming-utils-0.2.0.0
 - json-stream-0.4.2.4
+- hvega-0.3.0.1
 # - vinyl-0.10.0.1
 - hedis-0.12.5@sha256:5e3f47b935a48e57c44197f715a26d88a33c46c045a8c19d75b0d7ebc4ae3cbe
 # - git: https://github.com/brendanhay/amazonka
