@@ -22,7 +22,7 @@ import           Porcupine.Run
 import           Porcupine.Serials
 import           Porcupine.Tasks
 import           Prelude                       hiding (id, (.))
-import           Graphics.Vega.VegaLite
+import           Graphics.Vega.VegaLite        as VL
 
 import           Data.Locations.Accessors.HTTP
 
@@ -51,15 +51,17 @@ analysisFile :: DataSink Analysis
 analysisFile = dataSink ["Outputs", "Analysis"]
                         (somePureSerial JSONSerial)
 
-vegaSummarySink :: DataSink VegaLite
-vegaSummarySink = lmap fromVL $ dataSink ["Outputs", "VegaSummary"]
-                  (somePureSerial JSONSerial)
+vlSummarySink :: DataSink VegaLite
+vlSummarySink = dataSink ["Outputs", "Summary"]
+              (lmap VL.toHtml (somePureSerial $ PlainTextSerial $ Just "html")
+               <>
+               lmap VL.fromVL (somePureSerial JSONSerial))
 
 analyzePokemon :: Pokemon -> Analysis
 analyzePokemon = Analysis . length . pkMoves
 
-writeVegaSummary :: (LogThrow m) => PTask m [Pokemon] ()
-writeVegaSummary = proc pkmn -> do
+writeSummary :: (LogThrow m) => PTask m [Pokemon] ()
+writeSummary = proc pkmn -> do
   let dat = dataFromColumns []
           . dataColumn "name" (Strings $ map pkName pkmn)
           . dataColumn "numMoves" (Numbers $ map (fromIntegral . length . pkMoves) pkmn)
@@ -69,7 +71,7 @@ writeVegaSummary = proc pkmn -> do
           . position Y [ PName "numMoves", PmType Quantitative ] -- , PAggregate Mean ]
 
       spec = toVegaLite [ dat [], mark Bar [], enc [] ]
-  writeData vegaSummarySink -< spec
+  writeData vlSummarySink -< spec
 
 -- | The task combining the three previous operations.
 --
@@ -90,7 +92,7 @@ mainTask =
   >>> arr enumTRIndices
   -- Then we just map over these ids and call analyseOnePokemon each time:
   >>> parMapTask (repIndex "pokemonId") analyzeOnePokemon
-  >>> writeVegaSummary
+  >>> writeSummary
 
 main :: IO ()
 main = runPipelineTask (FullConfig "example-pokeapi"
