@@ -23,7 +23,7 @@ data Stockdaily = Stockdaily {date :: String , close :: Double}
   deriving (Generic)
 instance FromJSON Stockdaily
 
-data Stock = Stock { chart :: [Stockdaily] }
+newtype Stock = Stock { chart :: [Stockdaily] }
   deriving (Generic)
 instance FromJSON Stock
 
@@ -35,12 +35,13 @@ stockFile :: DataSource Stock
 stockFile = dataSource ["Inputs", "Stock"]
                        (somePureDeserial JSONSerial)
 
+-- | How to write the smoothed stock prices
 globalMatrix :: DataSink (Tabular [[Double]])
 globalMatrix = dataSink ["Outputs" , "globalData"]
                         (somePureSerial (CSVSerial (T.pack "csv") False ','))
 
-ave :: [Double] -> Double
-ave list = let s = sum list
+avg :: [Double] -> Double
+avg list = let s = sum list
                n = fromIntegral (length list)
                in s/n
 
@@ -54,11 +55,12 @@ computeSmoothedCurve :: Stock -> [Double]
 computeSmoothedCurve s = curve
   where
     price = getCloseStock s
-    curve = map ave (msliding 10 price)
+    curve = map avg (msliding 10 price)
 
 analyseStocks :: (LogThrow m) => PTask m () ()
 analyseStocks =
-   arr (const ["aapl"::String, "fb" , "googl"])
+   arr (const ["aapl"::String, "fb" , "googl"])  -- We want the stocks for some
+                                                 -- fixed set of companies
    >>> loadDataList "company" stockFile
    >>> arr (Tabular Nothing . map (\(_idx,stock) -> computeSmoothedCurve stock))
    >>> writeData globalMatrix

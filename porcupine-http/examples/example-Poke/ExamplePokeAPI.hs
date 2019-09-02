@@ -23,6 +23,7 @@ import           Porcupine.Run
 import           Porcupine.Serials
 import           Porcupine.Tasks
 import           Prelude                       hiding ((.))
+import           Graphics.Vega.VegaLite
 
 import           Data.Locations.Accessors.HTTP
 
