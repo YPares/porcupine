@@ -1,6 +1,7 @@
 module Porcupine.Serials
   ( module Data.Locations.SerializationMethod
   , VirtualFile(..)
+  , Profunctor(..)
   , BidirVirtualFile, DataSource, DataSink
   , LocationTreePathItem
   , localFile
