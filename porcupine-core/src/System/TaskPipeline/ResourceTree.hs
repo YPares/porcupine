@@ -8,6 +8,7 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeOperators       #-}
 {-# LANGUAGE ViewPatterns        #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
 {-# OPTIONS_GHC -fno-warn-missing-pattern-synonym-signatures #-}
 {-# OPTIONS_GHC -fno-warn-name-shadowing #-}
 
@@ -66,6 +67,7 @@
 module System.TaskPipeline.ResourceTree where
 
 import           Control.Exception.Safe
+import           Control.Funflow.ContentHashable
 import           Control.Lens                            hiding ((:>))
 import           Control.Monad
 import           Data.Aeson
@@ -109,14 +111,39 @@ instance Semigroup SomeVirtualFile where
     Just vf'' -> SomeVirtualFile (vf <> vf'')
     Nothing -> error "Two differently typed VirtualFiles are at the same location"
 
--- | Packs together the two functions that will read
---
--- TODO: This is not just a pair of functions. There is a third unexplained
--- field.
+-- | Packs together the two functions that will read and write a location, along
+-- with the actual locations that will be accessed. This interface permits to
+-- separate the resolution of locations and their access. A @DataAccessor@ is
+-- usually meant to be used inside an 'toPTask'. A @DataAccessor@ is hashable
+-- (via the locations it accesses) so a cached task can take a @DataAccessor@ as
+-- an input, and this task will be re-triggered if the physical location(s)
+-- bound to this accessor change(s).
 data DataAccessor m a b = DataAccessor
   { daPerformWrite :: a -> m ()
   , daPerformRead  :: m b
   , daLocsAccessed :: Either String [SomeLoc m] }
+
+instance (Monad m) => ContentHashable m (DataAccessor m a b) where
+  contentHashUpdate ctx = contentHashUpdate ctx . toJSON . daLocsAccessed
+  -- TODO: We go through Aeson.Value representation of the locations to update
+  -- the hash. That's not terribly efficient, we should measure if that's a
+  -- problem.
+
+-- | Like a 'DataAccessor' but only with the writer part
+data DataWriter m a = DataWriter
+  { dwPerformWrite :: a -> m ()
+  , dwLocsAccessed :: Either String [SomeLoc m] }
+
+instance (Monad m) => ContentHashable m (DataWriter m a) where
+  contentHashUpdate ctx = contentHashUpdate ctx . toJSON . dwLocsAccessed
+
+-- | Like a 'DataAccessor' but only with the reader part
+data DataReader m a = DataReader
+  { drPerformRead :: m a
+  , drLocsAccessed :: Either String [SomeLoc m] }
+
+instance (Monad m) => ContentHashable m (DataReader m a) where
+  contentHashUpdate ctx = contentHashUpdate ctx . toJSON . drLocsAccessed
 
 -- | The internal part of a 'DataAccessNode, closing over the type params of the
 -- access function.

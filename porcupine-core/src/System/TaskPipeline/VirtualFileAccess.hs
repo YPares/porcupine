@@ -23,6 +23,8 @@ module System.TaskPipeline.VirtualFileAccess
   , writeDataList
   , writeEffData
   , writeDataFold
+  , DataWriter(..), DataReader(..)
+  , getVFileWriter, getVFileReader
 
     -- * Lower-level API
   , EffectSeq(..), EffectSeqFromList(..)
@@ -74,7 +76,7 @@ loadData
 loadData vf =
       arr (\_ -> SingletonES $ return ([] :: [TRIndex], error "loadData: THIS IS VOID"))
   >>> accessVirtualFile (DoRead id) [] vf
-  >>> unsafeLiftToPTask (fmap snd . getSingletonFromES)
+  >>> toPTask (fmap snd . getSingletonFromES)
 
 -- | Loads a stream of repeated occurences of a VirtualFile, from a stream of
 -- indices. The process is lazy: the data will actually be read when the
@@ -101,7 +103,7 @@ loadDataList
 loadDataList lv vf =
       arr (ListES . map (return . (,error "loadDataList: THIS IS VOID")))
   >>> accessVirtualFile' (DoRead id) lv vf
-  >>> unsafeLiftToPTask (sequence . getListFromES)
+  >>> toPTask (sequence . getListFromES)
 
 -- | Like 'loadDataStream', but won't stop on a failure on a single file
 tryLoadDataStream
@@ -132,7 +134,7 @@ writeEffData
 writeEffData vf =
       arr (SingletonES . (fmap ([] :: [TRIndex],)))
   >>> accessVirtualFile (DoWrite id) [] vf
-  >>> unsafeLiftToPTask runES
+  >>> toPTask runES
 
 -- | Like 'writeDataList', but takes a stream as an input instead of a list. If
 -- the VirtualFile is not mapped to any physical file (this can be authorized if
@@ -148,7 +150,7 @@ writeDataStream
 writeDataStream lv vf =
       arr StreamES
   >>> accessVirtualFile' (DoWrite id) lv vf
-  >>> unsafeLiftToPTask runES
+  >>> toPTask runES
 
 -- | The simplest way to consume a stream of data inside a pipeline. Just write
 -- it to repeated occurences of a 'VirtualFile'.
@@ -160,7 +162,7 @@ writeDataList
 writeDataList lv vf =
       arr (ListES . map return)
   >>> accessVirtualFile' (DoWrite id) lv vf
-  >>> unsafeLiftToPTask runES
+  >>> toPTask runES
 
 -- | A very simple fold that will just repeatedly write the data to different
 -- occurences of a 'VirtualFile'.
@@ -168,7 +170,7 @@ writeDataFold :: (LogThrow m, Typeable a, Typeable b)
               => VirtualFile a b -> F.FoldA (PTask m) i a ()
 writeDataFold vf = F.premapInitA (arr $ const ()) $ F.ptaskFold (arr snd >>> writeData vf)
 
--- | Gets a DataAccessor for the VirtualFile, ie. doesn't read or write it
+-- | Gets a 'DataAccessor' to the 'VirtualFile', ie. doesn't read or write it
 -- immediately but gets a function that will make it possible
 getVFileDataAccessor
   :: (LogThrow m, Typeable a, Typeable b)
@@ -178,6 +180,25 @@ getVFileDataAccessor
 getVFileDataAccessor accesses vfile = withVFileInternalAccessFunction accesses vfile
   (\mkAccessor _ _ -> return $ mkAccessor mempty)
 
+-- | Gets a 'DataWriter' to the 'VirtualFile', ie. a function to write to it
+-- that can be passed to cached tasks.
+getVFileWriter
+  :: (LogThrow m, Typeable a, Typeable b)
+  => VirtualFile a b
+  -> PTask m () (DataWriter m a)
+getVFileWriter vfile = withVFileInternalAccessFunction [ATWrite] vfile
+  (\mkAccessor _ _ -> case mkAccessor mempty of
+      DataAccessor w _ l -> return $ DataWriter w l)
+
+-- | Gets a 'DataReader' from the 'VirtualFile', ie. a function to read from it
+-- than can be passed to cached tasks.
+getVFileReader
+  :: (LogThrow m, Typeable a, Typeable b)
+  => VirtualFile a b
+  -> PTask m () (DataReader m b)
+getVFileReader vfile = withVFileInternalAccessFunction [ATRead] vfile
+  (\mkAccessor _ _ -> case mkAccessor mempty of
+      DataAccessor _ r l -> return $ DataReader r l)
 
 -- | Gives a wrapper that should be used when the actual read or write is
 -- performed.
