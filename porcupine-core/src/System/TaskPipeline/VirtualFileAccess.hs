@@ -34,7 +34,7 @@ module System.TaskPipeline.VirtualFileAccess
   , VFNodeAccessType(..)
   , SomeGLoc(..), SomeLoc
   , accessVirtualFile'
-  , getVFileDataAccessor
+  , getVFileAccessor
   , getLocsMappedTo
 
     -- * Internal API
@@ -172,12 +172,12 @@ writeDataFold vf = F.premapInitA (arr $ const ()) $ F.ptaskFold (arr snd >>> wri
 
 -- | Gets a 'DataAccessor' to the 'VirtualFile', ie. doesn't read or write it
 -- immediately but gets a function that will make it possible
-getVFileDataAccessor
+getVFileAccessor
   :: (LogThrow m, Typeable a, Typeable b)
   => [VFNodeAccessType] -- ^ The accesses that will be performed on the DataAccessor
   -> VirtualFile a b
   -> PTask m () (DataAccessor m a b)
-getVFileDataAccessor accesses vfile = withVFileInternalAccessFunction accesses vfile
+getVFileAccessor accesses vfile = withVFileInternalAccessFunction accesses vfile
   (\mkAccessor _ _ -> return $ mkAccessor mempty)
 
 -- | Gets a 'DataWriter' to the 'VirtualFile', ie. a function to write to it
