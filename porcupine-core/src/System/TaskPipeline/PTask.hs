@@ -23,6 +23,7 @@ module System.TaskPipeline.PTask
   , tryPTask, throwPTask, clockPTask, clockPTask'
   , catchAndLog, throwStringPTask
   , ptaskOnJust, ptaskOnRight
+  , toPTask, toPTask'
   , unsafeLiftToPTask, unsafeLiftToPTask', unsafeRunIOTask
   , ptaskUsedFiles
   , ptaskRequirements
@@ -65,7 +66,7 @@ unsafeRunIOTask
   :: (KatipContext m)
   => (i -> IO o)
   -> PTask m i o
-unsafeRunIOTask f = unsafeLiftToPTask (liftIO . f)
+unsafeRunIOTask f = toPTask (liftIO . f)
                     -- TODO: implement it using stepIO instead
 
 -- | Catches an error happening in a task. Leaves the tree intact if an error
@@ -79,7 +80,7 @@ catchAndLog :: (KatipContext m)
             => Severity -> PTask m a b -> PTask m a (Maybe b)
 catchAndLog severity task =
   tryPTask task
-  >>> unsafeLiftToPTask (\i ->
+  >>> toPTask (\i ->
         case i of
           Left e -> do
             logFM severity $ logStr $ displayException (e::SomeException)
@@ -94,7 +95,7 @@ throwPTask = arr (over _Left displayException) >>> throwStringPTask
 -- | Fails the whole pipeline if an exception occured, or just continues as
 -- normal
 throwStringPTask :: (LogThrow m) => PTask m (Either String b) b
-throwStringPTask = unsafeLiftToPTask $ \i ->
+throwStringPTask = toPTask $ \i ->
   case i of
     Left e  -> throwWithPrefix e
     Right r -> return r
@@ -116,16 +117,35 @@ ptaskOnRight = over ptaskRunnablePart $ \run -> proc input ->
 -- | Turn an action into a PTask. BEWARE! The resulting 'PTask' will have NO
 -- requirements, so if the action uses files or resources, they won't appear in
 -- the LocationTree.
+--
+-- Old name for 'toPTask'
 unsafeLiftToPTask :: (KatipContext m)
                   => (a -> m b) -> PTask m a b
 unsafeLiftToPTask = makePTask mempty . const
 
--- | A version of 'unsafeLiftToPTask' that can perform caching. It's analog to
--- funflow wrap' except the action passed here is just a simple function (it
--- will be wrapped later as a funflow effect).
+-- | Turn an action into a PTask. BEWARE! The resulting 'PTask' will have NO
+-- requirements, so if the action uses files or resources, they won't appear in
+-- the LocationTree.
+toPTask :: (KatipContext m)
+        => (a -> m b) -> PTask m a b
+toPTask = makePTask mempty . const
+
+-- | A version of 'toPTask' that can perform caching. It's analog to funflow
+-- wrap' except the action passed here is just a simple function (it will be
+-- wrapped later as a funflow effect).
+--
+-- Old name for 'toPTask''
 unsafeLiftToPTask' :: (KatipContext m)
                    => Properties a b -> (a -> m b) -> PTask m a b
 unsafeLiftToPTask' props = makePTask' props mempty . const
+
+-- | A version of 'toPTask' that can perform caching. It's analog to
+-- funflow wrap' except the action passed here is just a simple function (it
+-- will be wrapped later as a funflow effect).
+toPTask' :: (KatipContext m)
+         => Properties a b -> (a -> m b) -> PTask m a b
+toPTask' props = makePTask' props mempty . const
+
 
 -- This orphan instance is necessary so clockPTask may work over an 'Either
 -- SomeException a'
@@ -151,7 +171,7 @@ clockPTask' task = clockPTask $
 
 -- | Logs a message during the pipeline execution
 logTask :: (KatipContext m) => PTask m (Severity, String) ()
-logTask = unsafeLiftToPTask $ \(sev, s) -> logFM sev $ logStr s
+logTask = toPTask $ \(sev, s) -> logFM sev $ logStr s
 
 -- | To access and transform the requirements of the PTask before it runs
 ptaskRequirements :: Lens' (PTask m a b) (LocationTree VirtualFileNode)
@@ -217,7 +237,7 @@ namePTask :: (KatipContext m) => String -> PTask m a b -> PTask m a b
 namePTask ns task =
   addNamespaceToTask ns $
     clockPTask task
-    >>> unsafeLiftToPTask (\(output, time) -> do
+    >>> toPTask (\(output, time) -> do
           katipAddContext time $
             logFM InfoS $ logStr $ "Finished task '" ++ ns ++ "' in " ++ showTimeSpec time
           return output)
