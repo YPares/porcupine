@@ -15,6 +15,7 @@ module Data.Locations.VirtualFile
   , VirtualFileIntent(..), VirtualFileDescription(..)
   , RecOfOptions(..)
   , VFileImportance(..)
+  , Cacher(..)
   , vfileSerials
   , vfileAsBidir, vfileImportance
   , vfileEmbeddedValue
@@ -29,10 +30,14 @@ module Data.Locations.VirtualFile
   , documentedFile
   , withEmbeddedValue
   , usesLayeredMapping, canBeUnmapped, unmappedByDefault
+  , usesCacherWithIdent
   , getVirtualFileDescription
   , clockVFileAccesses
+  , defaultCacherWithIdent
   ) where
 
+import           Control.Funflow
+import           Control.Funflow.ContentHashable
 import           Control.Lens
 import           Data.Aeson                         (Value)
 import           Data.Default
@@ -40,6 +45,7 @@ import qualified Data.HashMap.Strict                as HM
 import qualified Data.HashSet                       as HS
 import           Data.List                          (intersperse)
 import           Data.List.NonEmpty                 (NonEmpty (..))
+import           Data.Locations.Accessors
 import           Data.Locations.Loc
 import           Data.Locations.LocationTree
 import           Data.Locations.Mappings            (HasDefaultMappingRule (..),
@@ -50,6 +56,7 @@ import           Data.Monoid                        (First (..))
 import           Data.Profunctor                    (Profunctor (..))
 import           Data.Representable
 import           Data.Semigroup                     (sconcat)
+import           Data.Store                         (Store)
 import qualified Data.Text                          as T
 import           Data.Type.Equality
 import           Data.Typeable
@@ -90,6 +97,8 @@ data VirtualFile a b = VirtualFile
   , _vfileMappedByDefault   :: Bool
   , _vfileImportance        :: VFileImportance
   , _vfileDocumentation     :: Maybe T.Text
+  , _vfileWriteCacher       :: Cacher (a, Either String SomeHashableLocs) ()
+  , _vfileReadCacher        :: Cacher (Either String SomeHashableLocs) b
   , _vfileSerials           :: SerialsFor a b }
 
 makeLenses ''VirtualFile
@@ -117,14 +126,16 @@ instance HasDefaultMappingRule (VirtualFile a b) where
 -- For now, given the requirement of PTask, VirtualFile has to be a Monoid
 -- because a Resource Tree also has to.
 instance Semigroup (VirtualFile a b) where
-  VirtualFile p l v m i d s <> VirtualFile _ _ _ _ _ _ s' =
-    VirtualFile p l v m i d (s<>s')
+  VirtualFile p l v m i d wc rc s <> VirtualFile _ _ _ _ _ _ _ _ s' =
+    VirtualFile p l v m i d wc rc (s<>s')
 instance Monoid (VirtualFile a b) where
-  mempty = VirtualFile [] SingleLayerRead Nothing True def Nothing mempty
+  mempty = VirtualFile [] SingleLayerRead Nothing True def Nothing NoCache NoCache mempty
 
+-- | The Profunctor instance is forgetful, it forgets about the mapping scheme
+-- and the caching properties.
 instance Profunctor VirtualFile where
-  dimap f g (VirtualFile p _ v m i d s) =
-    VirtualFile p SingleLayerRead (g <$> v) m i d $ dimap f g s
+  dimap f g (VirtualFile p _ v m i d _ _ s) =
+    VirtualFile p SingleLayerRead (g <$> v) m i d NoCache NoCache $ dimap f g s
 
 
 -- * Obtaining a description of how the 'VirtualFile' should be used
@@ -207,6 +218,14 @@ unmappedByDefault =
 documentedFile :: T.Text -> VirtualFile a b -> VirtualFile a b
 documentedFile doc = vfileDocumentation .~ Just doc
 
+-- | Sets the file's reads and writes to be cached. Useful if the file is bound
+-- to a source/sink that takes time to respond, such as an HTTP endpoint, or
+-- that uses an expensive text serialization method (like JSON or XML).
+usesCacherWithIdent :: (ContentHashable Identity a, Store b)
+                    => Int -> VirtualFile a b -> VirtualFile a b
+usesCacherWithIdent ident =
+    (vfileWriteCacher .~ defaultCacherWithIdent ident)
+  . (vfileReadCacher .~ defaultCacherWithIdent ident)
 
 -- * Creating VirtualFiles and convertings between its different subtypes (bidir
 -- files, sources and sinks)
@@ -224,7 +243,7 @@ type DataSink a = VirtualFile a ()
 -- the data. You should prefer 'dataSink' and 'dataSource' for clarity when the
 -- file is meant to be readonly or writeonly.
 virtualFile :: [LocationTreePathItem] -> SerialsFor a b -> VirtualFile a b
-virtualFile path sers = VirtualFile path SingleLayerRead Nothing True def Nothing sers
+virtualFile path sers = VirtualFile path SingleLayerRead Nothing True def Nothing NoCache NoCache sers
 
 -- | Creates a virtual file from its virtual path and ways to deserialize the
 -- data.
@@ -240,15 +259,17 @@ dataSink path = makeSink . virtualFile path
 bidirVirtualFile :: [LocationTreePathItem] -> BidirSerials a -> BidirVirtualFile a
 bidirVirtualFile = virtualFile
 
+-- | Turns the 'VirtualFile' into a pure source
+makeSource :: VirtualFile a b -> DataSource b
+makeSource vf = vf{_vfileSerials=eraseSerials $ _vfileSerials vf
+                  ,_vfileWriteCacher=NoCache}
+
 -- | Turns the 'VirtualFile' into a pure sink
 makeSink :: VirtualFile a b -> DataSink a
 makeSink vf = vf{_vfileSerials=eraseDeserials $ _vfileSerials vf
                 ,_vfileLayeredReadScheme=LayeredReadWithNull
+                ,_vfileReadCacher=NoCache
                 ,_vfileEmbeddedValue=Nothing}
-
--- | Turns the 'VirtualFile' into a pure source
-makeSource :: VirtualFile a b -> DataSource b
-makeSource vf = vf{_vfileSerials=eraseSerials $ _vfileSerials vf}
 
 
 -- * Traversals to the content of the VirtualFile, when it already embeds some
@@ -265,11 +286,11 @@ vfileAsBidir f vf = case eqT :: Maybe (a :~: b) of
 -- | Gives access to a version of the VirtualFile without type params. The
 -- original path isn't settable.
 vfileVoided :: Lens' (VirtualFile a b) (VirtualFile Void ())
-vfileVoided f (VirtualFile p l v m i d s) =
-  rebuild <$> f (VirtualFile p SingleLayerRead Nothing m i d mempty)
+vfileVoided f (VirtualFile p l v m i d wc rc s) =
+  rebuild <$> f (VirtualFile p SingleLayerRead Nothing m i d NoCache NoCache mempty)
   where
-    rebuild (VirtualFile _ _ _ m' i' d' _) =
-      VirtualFile p l v m' i' d' s
+    rebuild (VirtualFile _ _ _ m' i' d' _ _ _) =
+      VirtualFile p l v m' i' d' wc rc s
 
 -- | If the 'VirtualFile' has an embedded value convertible to type @i@, we get
 -- it.

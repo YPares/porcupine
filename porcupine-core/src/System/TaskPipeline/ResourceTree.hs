@@ -124,10 +124,7 @@ data DataAccessor m a b = DataAccessor
   , daLocsAccessed :: Either String [SomeLoc m] }
 
 instance (Monad m) => ContentHashable m (DataAccessor m a b) where
-  contentHashUpdate ctx = contentHashUpdate ctx . toJSON . daLocsAccessed
-  -- TODO: We go through Aeson.Value representation of the locations to update
-  -- the hash. That's not terribly efficient, we should measure if that's a
-  -- problem.
+  contentHashUpdate ctx = contentHashUpdate ctx . fmap toHashableLocs . daLocsAccessed
 
 -- | Like a 'DataAccessor' but only with the writer part
 data DataWriter m a = DataWriter
@@ -135,7 +132,7 @@ data DataWriter m a = DataWriter
   , dwLocsAccessed :: Either String [SomeLoc m] }
 
 instance (Monad m) => ContentHashable m (DataWriter m a) where
-  contentHashUpdate ctx = contentHashUpdate ctx . toJSON . dwLocsAccessed
+  contentHashUpdate ctx = contentHashUpdate ctx . fmap toHashableLocs . dwLocsAccessed
 
 -- | Like a 'DataAccessor' but only with the reader part
 data DataReader m a = DataReader
@@ -143,7 +140,7 @@ data DataReader m a = DataReader
   , drLocsAccessed :: Either String [SomeLoc m] }
 
 instance (Monad m) => ContentHashable m (DataReader m a) where
-  contentHashUpdate ctx = contentHashUpdate ctx . toJSON . drLocsAccessed
+  contentHashUpdate ctx = contentHashUpdate ctx . fmap toHashableLocs . drLocsAccessed
 
 -- | The internal part of a 'DataAccessNode, closing over the type params of the
 -- access function.

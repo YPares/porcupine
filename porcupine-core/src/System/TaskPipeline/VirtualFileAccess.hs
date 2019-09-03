@@ -34,7 +34,7 @@ module System.TaskPipeline.VirtualFileAccess
   , VFNodeAccessType(..)
   , SomeGLoc(..), SomeLoc
   , accessVirtualFile'
-  , getVFileAccessor
+  , getVFileAccessFunction
   , getLocsMappedTo
 
     -- * Internal API
@@ -45,9 +45,11 @@ module System.TaskPipeline.VirtualFileAccess
 
 import           Prelude                             hiding (id, (.))
 
+import           Control.Funflow                     (Properties(..))
 import           Control.Lens
 import           Control.Monad                       (forM)
 import           Control.Monad.Trans
+import           Data.Default
 import qualified Data.Foldable                       as F
 import qualified Data.HashMap.Strict                 as HM
 import           Data.Locations
@@ -65,22 +67,24 @@ import           System.TaskPipeline.Repetition.Internal
 import qualified System.TaskPipeline.Repetition.Fold as F
 import           System.TaskPipeline.ResourceTree
 
-
 -- | Uses only the read part of a 'VirtualFile'. It is therefore considered as a
--- pure 'DataSource'. For practical reasons the task input is () rather than
--- Void.
+-- pure 'DataSource'.
 loadData
   :: (LogThrow m, Typeable a, Typeable b)
   => VirtualFile a b -- ^ Use as a 'DataSource'
   -> PTask m ignored b  -- ^ The resulting task. Ignores its input.
 loadData vf =
-      arr (\_ -> SingletonES $ return ([] :: [TRIndex], error "loadData: THIS IS VOID"))
-  >>> accessVirtualFile (DoRead id) [] vf
-  >>> toPTask (fmap snd . getSingletonFromES)
+  getVFileReader vf >>> toPTask' props drPerformRead
+  where
+    cacher = case _vfileReadCacher vf of
+      NoCache -> NoCache
+      Cache k s r -> Cache (\i d -> k i (fmap toHashableLocs $ drLocsAccessed d)) s r
+    props = Properties Nothing cacher Nothing
 
 -- | Loads a stream of repeated occurences of a VirtualFile, from a stream of
 -- indices. The process is lazy: the data will actually be read when the
--- resulting stream is consumed.
+-- resulting stream is consumed BUT this also means that the reading cannot be
+-- cached.
 loadDataStream
   :: (HasTRIndex idx, LogThrow m, Typeable a, Typeable b, Monoid r)
   => LocVariable
@@ -122,7 +126,13 @@ writeData
   :: (LogThrow m, Typeable a, Typeable b)
   => VirtualFile a b  -- ^ Used as a 'DataSink'
   -> PTask m a ()
-writeData vf = arr return >>> writeEffData vf
+writeData vf =
+  id &&& getVFileWriter vf >>> toPTask' props (uncurry $ flip dwPerformWrite)
+  where
+    cacher = case _vfileWriteCacher vf of
+      NoCache -> NoCache
+      Cache k s r -> Cache (\i (a, d) -> k i (a, fmap toHashableLocs $ dwLocsAccessed d)) s r
+    props = Properties Nothing cacher Nothing
 
 -- | Like 'writeData', but the data to write first has to be computed by an
 -- action running some effects. Therefore, these effects will be executed only
@@ -171,22 +181,22 @@ writeDataFold :: (LogThrow m, Typeable a, Typeable b)
 writeDataFold vf = F.premapInitA (arr $ const ()) $ F.ptaskFold (arr snd >>> writeData vf)
 
 -- | Gets a 'DataAccessor' to the 'VirtualFile', ie. doesn't read or write it
--- immediately but gets a function that will make it possible
-getVFileAccessor
+-- immediately but gets a function that will make it possible.
+getVFileAccessFunction
   :: (LogThrow m, Typeable a, Typeable b)
   => [VFNodeAccessType] -- ^ The accesses that will be performed on the DataAccessor
   -> VirtualFile a b
-  -> PTask m () (DataAccessor m a b)
-getVFileAccessor accesses vfile = withVFileInternalAccessFunction accesses vfile
-  (\mkAccessor _ _ -> return $ mkAccessor mempty)
+  -> PTask m () (LocVariableMap -> DataAccessor m a b)
+getVFileAccessFunction accesses vfile = withVFileInternalAccessFunction def accesses vfile
+  (\mkAccessor _ _ -> return mkAccessor)
 
 -- | Gets a 'DataWriter' to the 'VirtualFile', ie. a function to write to it
 -- that can be passed to cached tasks.
 getVFileWriter
   :: (LogThrow m, Typeable a, Typeable b)
   => VirtualFile a b
-  -> PTask m () (DataWriter m a)
-getVFileWriter vfile = withVFileInternalAccessFunction [ATWrite] vfile
+  -> PTask m ignored (DataWriter m a)
+getVFileWriter vfile = withVFileInternalAccessFunction def [ATWrite] vfile
   (\mkAccessor _ _ -> case mkAccessor mempty of
       DataAccessor w _ l -> return $ DataWriter w l)
 
@@ -195,8 +205,8 @@ getVFileWriter vfile = withVFileInternalAccessFunction [ATWrite] vfile
 getVFileReader
   :: (LogThrow m, Typeable a, Typeable b)
   => VirtualFile a b
-  -> PTask m () (DataReader m b)
-getVFileReader vfile = withVFileInternalAccessFunction [ATRead] vfile
+  -> PTask m ignored (DataReader m b)
+getVFileReader vfile = withVFileInternalAccessFunction def [ATRead] vfile
   (\mkAccessor _ _ -> case mkAccessor mempty of
       DataAccessor _ r l -> return $ DataReader r l)
 
@@ -278,7 +288,7 @@ toAccessTypes ac = case ac of
   DoRead{}         -> [ATRead]
 
 -- | When building the pipeline, stores into the location tree the way to read
--- or write the required resource. When running the pipeline, access the
+-- or write the required resource. When running the pipeline, accesses the
 -- instances of this ressource corresponding to the values of some repetition
 -- indices.
 accessVirtualFile
@@ -293,7 +303,7 @@ accessVirtualFile
                         -- input values and returns a stream of the same indices
                         -- associated to their outputs.
 accessVirtualFile accessToDo repIndices vfile =
-  withVFileInternalAccessFunction (toAccessTypes accessToDo) vfile' $
+  withVFileInternalAccessFunction props (toAccessTypes accessToDo) vfile' $
     \accessFn isMapped inputEffSeq ->
       case (isMapped, accessToDo) of
         (False, DoWrite{}) -> return emptyES
@@ -313,13 +323,15 @@ accessVirtualFile accessToDo repIndices vfile =
     vfile' = case repIndices of
       [] -> vfile
       _  -> vfile & over (vfileSerials.serialRepetitionKeys) (repIndices++)
+    props = def
 
 -- | Executes as a task a function that needs to access the content of the
 -- DataAccessNode of a VirtualFile.
 withVFileInternalAccessFunction
   :: forall m i o a b.
      (LogThrow m, Typeable a, Typeable b)
-  => [VFNodeAccessType]  -- ^ The accesses that will be performed on it
+  => Properties i o
+  -> [VFNodeAccessType]  -- ^ The accesses that will be performed on it
   -> VirtualFile a b  -- ^ The VirtualFile to access
   -> ((LocVariableMap -> DataAccessor m a b) -> Bool -> i -> m o)
          -- ^ The action to run, and a Bool telling if the file has been
@@ -327,8 +339,8 @@ withVFileInternalAccessFunction
          -- LocVariableMap can just be empty if the VirtualFile isn't meant to
          -- be repeated
   -> PTask m i o
-withVFileInternalAccessFunction accessesToDo vfile f =
-  withFolderDataAccessNodes path (Identity fname) $
+withVFileInternalAccessFunction props accessesToDo vfile f =
+  withFolderDataAccessNodes props path (Identity fname) $
     \(Identity n) input -> case n of
       DataAccessNode layers (action :: LocVariableMap -> DataAccessor m a' b') ->
         case (eqT :: Maybe (a :~: a'), eqT :: Maybe (b :~: b')) of
@@ -346,12 +358,13 @@ withVFileInternalAccessFunction accessesToDo vfile f =
 -- subfolder of the 'LocationTree' and mark these accesses as done.
 withFolderDataAccessNodes
   :: (LogThrow m, Traversable t)
-  => [LocationTreePathItem]              -- ^ Path to folder in 'LocationTree'
+  => Properties i o
+  -> [LocationTreePathItem]              -- ^ Path to folder in 'LocationTree'
   -> t (LTPIAndSubtree VirtualFileNode)  -- ^ Items of interest in the subfolder
   -> (t (DataAccessNode m) -> i -> m o)  -- ^ What to run with these items
   -> PTask m i o                         -- ^ The resulting PTask
-withFolderDataAccessNodes path filesToAccess accessFn =
-  makePTask tree runAccess
+withFolderDataAccessNodes props path filesToAccess accessFn =
+  makePTask' props tree runAccess
   where
     tree = foldr (\pathItem subtree -> folderNode [ pathItem :/ subtree ])
                  (folderNode $ F.toList filesToAccess) path
