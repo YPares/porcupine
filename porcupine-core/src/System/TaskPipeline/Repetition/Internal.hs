@@ -1,4 +1,3 @@
-{-# LANGUAGE Arrows          #-}
 {-# LANGUAGE RecordWildCards #-}
 {-# OPTIONS_GHC -fno-warn-name-shadowing #-}
 
