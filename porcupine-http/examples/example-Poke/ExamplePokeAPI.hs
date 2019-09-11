@@ -27,10 +27,11 @@ import           Graphics.Vega.VegaLite        as VL
 import           Data.Locations.Accessors.HTTP
 
 
+-- | The type of our raw data, read from the REST API
 data Pokemon = Pokemon { pkName  :: !T.Text
                        , pkMoves :: ![T.Text]
                        , pkTypes :: ![T.Text] }
-  deriving (Generic, Store)
+  deriving (Generic, Store)  -- Store makes them cacheable
 
 instance FromJSON Pokemon where
   parseJSON = withObject "Pokemon" $ \o -> Pokemon
@@ -38,13 +39,16 @@ instance FromJSON Pokemon where
     <*> (o .: "moves" >>= mapM ((.: "move") >=> (.: "name")))
     <*> (o .: "types" >>= mapM ((.: "type") >=> (.: "name")))
 
--- | How to load pokemons.
+-- | How to load pokemons
+--
+-- See https://pokeapi.co/api/v2/pokemon/25 for instance
 pokemonFile :: DataSource Pokemon
-pokemonFile = usesCacherWithIdent 12345 $
+pokemonFile = usesCacherWithIdent 12345 $  -- This tells we want to support
+                                           -- caching of the fetched data
               dataSource ["Inputs", "Pokemon"]
                          (somePureDeserial JSONSerial)
--- See https://pokeapi.co/api/v2/pokemon/25 for instance
 
+-- | One over-simple intermediary result type
 newtype Analysis = Analysis { moveCount :: Int }
   deriving (Generic, ToJSON)
 
@@ -53,15 +57,14 @@ analysisFile :: DataSink Analysis
 analysisFile = dataSink ["Outputs", "Analysis"]
                         (somePureSerial JSONSerial)
 
+-- | Where to write the final summary visualization
 vlSummarySink :: DataSink VegaLite
 vlSummarySink = dataSink ["Outputs", "Summary"]
               (lmap VL.toHtml (somePureSerial $ PlainTextSerial $ Just "html")
                <>
                lmap VL.fromVL (somePureSerial JSONSerial))
 
-analyzePokemon :: Pokemon -> Analysis
-analyzePokemon = Analysis . length . pkMoves
-
+-- | Create the vega-lite specification of the visualization we want
 writeSummary :: (LogThrow m) => PTask m [Pokemon] ()
 writeSummary = proc pkmn -> do
   let dat = dataFromColumns []
@@ -83,6 +86,8 @@ writeSummary = proc pkmn -> do
 analyzeOnePokemon :: (LogThrow m) => PTask m a Pokemon
 analyzeOnePokemon =
   loadData pokemonFile >>> (arr analyzePokemon >>> writeData analysisFile) &&& id >>> arr snd
+  where
+    analyzePokemon = Analysis . length . pkMoves
 
 mainTask :: (LogThrow m) => PTask m () ()
 mainTask =
@@ -97,10 +102,10 @@ mainTask =
   >>> writeSummary
 
 main :: IO ()
-main = runPipelineTask (FullConfig "example-pokeapi"
-                                   "porcupine-http/examples/example-Poke/example-pokeapi.yaml"
-                                   "example-pokeapi_files")
-                       (  #http <-- useHTTP
-                            -- We just add #http on top of the baseContexts.
-                       :& baseContexts "")
-                       mainTask ()
+main = runPipelineTask
+  (FullConfig "example-pokeapi"  -- Name of the executable (for --help)
+              "porcupine-http/examples/example-Poke/example-pokeapi.yaml" -- Default config file path
+              "example-pokeapi_files") -- Default root directory for mappings
+  (   #http <-- useHTTP -- We just add #http on top of the baseContexts to activate HTTP support
+   :& baseContexts "")
+  mainTask ()
