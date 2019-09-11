@@ -4,6 +4,8 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TemplateHaskell     #-}
 {-# LANGUAGE TypeOperators       #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
+{-# OPTIONS_GHC -fno-warn-orphans #-}
 
 module Data.Locations.VirtualFile
   ( LocationTreePathItem
@@ -217,6 +219,10 @@ unmappedByDefault =
 -- | Gives a documentation to the 'VirtualFile'
 documentedFile :: T.Text -> VirtualFile a b -> VirtualFile a b
 documentedFile doc = vfileDocumentation .~ Just doc
+
+-- Not present in funflow. Needed by usesCacherWithIdent
+instance ContentHashable Identity Void where
+  contentHashUpdate ctx _ = contentHashUpdate ctx ()
 
 -- | Sets the file's reads and writes to be cached. Useful if the file is bound
 -- to a source/sink that takes time to respond, such as an HTTP endpoint, or

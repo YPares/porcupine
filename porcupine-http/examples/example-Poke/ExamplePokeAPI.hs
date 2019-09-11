@@ -30,6 +30,7 @@ import           Data.Locations.Accessors.HTTP
 data Pokemon = Pokemon { pkName  :: !T.Text
                        , pkMoves :: ![T.Text]
                        , pkTypes :: ![T.Text] }
+  deriving (Generic, Store)
 
 instance FromJSON Pokemon where
   parseJSON = withObject "Pokemon" $ \o -> Pokemon
@@ -39,7 +40,8 @@ instance FromJSON Pokemon where
 
 -- | How to load pokemons.
 pokemonFile :: DataSource Pokemon
-pokemonFile = dataSource ["Inputs", "Pokemon"]
+pokemonFile = usesCacherWithIdent 12345 $
+              dataSource ["Inputs", "Pokemon"]
                          (somePureDeserial JSONSerial)
 -- See https://pokeapi.co/api/v2/pokemon/25 for instance
 
