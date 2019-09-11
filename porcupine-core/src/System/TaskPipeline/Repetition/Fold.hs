@@ -34,9 +34,9 @@ import           System.TaskPipeline.Repetition.Internal
 unsafeGeneralizeM :: (KatipContext m)
                   => FoldM m a b -> FoldA (PTask m) i a b
 unsafeGeneralizeM (FoldM step start done) =
-  FoldA (unsafeLiftToPTask $ \(Pair a x) -> step a x)
-        (unsafeLiftToPTask $ const start)
-        (unsafeLiftToPTask done)
+  FoldA (toPTask $ \(Pair a x) -> step a x)
+        (toPTask $ const start)
+        (toPTask done)
 
 data RunningFoldM m a b =
   forall x. RFM (x -> a -> m x) !x (x -> m b)
@@ -46,15 +46,15 @@ unsafeGeneralizeFnM :: (KatipContext m)
                     => (i -> FoldM m a b)
                     -> FoldA (PTask m) i a b
 unsafeGeneralizeFnM f =
-  FoldA (unsafeLiftToPTask $ \(Pair (RFM step acc done) x) -> do
+  FoldA (toPTask $ \(Pair (RFM step acc done) x) -> do
             acc' <- step acc x
             return $ RFM step acc' done)
-        (unsafeLiftToPTask $ \i ->
+        (toPTask $ \i ->
             case f i of
               FoldM step start done -> do
                 initAcc <- start
                 return $ RFM step initAcc done)
-        (unsafeLiftToPTask $ \(RFM _ acc done) -> done acc)
+        (toPTask $ \(RFM _ acc done) -> done acc)
 
 -- | Creates a 'FoldA' from a 'PTask'.
 ptaskFold :: PTask m (acc,input) acc -- ^ The folding task

@@ -8,3 +8,4 @@ locations:
   /Inputs/Pokemon: https://pokeapi.co/api/v2/pokemon/{pokemonId}
   /: example-pokeapi_files
   /Outputs/Analysis: _-{pokemonId}.json
+  /Outputs/Summary: _.html

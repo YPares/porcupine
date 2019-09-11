@@ -103,7 +103,7 @@ runStreamTask :: (KatipContext m)
               => PTask m
                        (Stream (Of t) m r)
                        r
-runStreamTask = unsafeLiftToPTask S.effects
+runStreamTask = toPTask S.effects
 
 -- | An 'PTask' converting a list to a stream
 listToStreamTask :: (Monad m)
@@ -121,4 +121,4 @@ streamToListTask :: (KatipContext m)
                  => PTask m
                           (Stream (Of t) m r)
                           [t]
-streamToListTask = unsafeLiftToPTask (S.toList_ . void)
+streamToListTask = toPTask (S.toList_ . void)

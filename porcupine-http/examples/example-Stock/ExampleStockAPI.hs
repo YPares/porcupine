@@ -119,7 +119,7 @@ mainTask =
 -- analyseStocks =
 --   arr (const (S.each ["aapl" , "fb" , "googl"])) >>> loadDataStream "company" stockFile
 --    >>> arr (S.map (\(idx,stock) -> (idx, computeSmoothedCurve stock)))
---    >>> unsafeLiftToPTask (S.toList_)
+--    >>> toPTask (S.toList_)
 --    >>> arr (map snd)
 --    >>> arr putallStocks
 --    >>> writeData globalMatrix

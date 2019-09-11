@@ -499,6 +499,14 @@ instance SerializesWith PlainTextSerial T.Text where
       <> toAtomicFn [ext] toJSON  -- To A.Value
     }
 
+instance SerializesWith PlainTextSerial LT.Text where
+  getSerialWriters (PlainTextSerial ext) = mempty
+    { _serialWritersToAtomic =
+      toAtomicFn [Nothing] id -- To lazy text
+      <> toAtomicFn [ext] LTE.encodeUtf8 -- To lazy bytestring
+      <> toAtomicFn [ext] toJSON  -- To A.Value
+    }
+
 instance DeserializesWith PlainTextSerial T.Text where
   getSerialReaders (PlainTextSerial ext) = mempty
     { _serialReadersFromAtomic =

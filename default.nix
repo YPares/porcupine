@@ -63,8 +63,8 @@ overlayHaskell = _:pkgs:
       sha256 = "0gxws140rk4aqy00zja527nv87bnm2blp8bikmdy4a2wyvyc7agv";
     };
     hvegaSource = pkgs.fetchzip {
-      url = "http://hackage.haskell.org/package/hvega-0.3.0.1/hvega-0.3.0.1.tar.gz";
-      sha256 = "03hnb7abk1jpiidabgdbvbdl736frgpzfk9wv94028i5vkxkgg1x";
+      url = "http://hackage.haskell.org/package/hvega-0.4.0.0/hvega-0.4.0.0.tar.gz";
+      sha256 = "0bffkp19if8clrlk61ydnaghbxsi73a9f18sxlbpj467ivhcizmg";
     };
 
     inherit (pkgs.haskell.lib) doJailbreak dontCheck packageSourceOverrides;
