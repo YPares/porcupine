@@ -111,7 +111,7 @@ instance FromJSON IdCompany
 mainTask :: (LogThrow m) => PTask m () ()
 mainTask =
   getOption ["Settings"] (docField @"idcompany" [IdCompany "aapl"] "The NASDAQ of the company to load")
-  >>> parMapTask_ (repIndex "idcompany") analyseStock
+  >>> parMapTask_ "idcompany" analyseStock
 
 
 -- globalMatrix :: DataSink (Tabular [[Double]])

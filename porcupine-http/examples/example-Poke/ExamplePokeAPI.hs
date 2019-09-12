@@ -72,7 +72,7 @@ mainTask =
   -- We turn the range we read into a full lazy list:
   >>> arr enumIndices
   -- Then we just map over these ids and call analyseOnePokemon each time:
-  >>> parMapTask_ (repIndex "pokemonId") analyseOnePokemon
+  >>> parMapTask_ "pokemonId" analyseOnePokemon
 
 main :: IO ()
 main = runPipelineTask (FullConfig "example-pokeapi"

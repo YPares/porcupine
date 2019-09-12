@@ -69,7 +69,7 @@ mainTask =
   -- We turn the range we read into a full lazy list:
   >>> arr enumIndices
   -- Then we just map over these ids and call analyseOneUser each time:
-  >>> parMapTask_ (repIndex "userId") analyseOneUser
+  >>> parMapTask_ "userId" analyseOneUser
 
 main :: IO ()
 main = runPipelineTask (FullConfig "exampleS3" "porcupine.yaml" "porcupine-core/examples/data")
