@@ -10,7 +10,7 @@
 module System.TaskPipeline.CLI
   ( module System.TaskPipeline.ConfigurationReader
   , PipelineCommand(..)
-  , PipelineConfigMethod(..)
+  , PipelineConfigMethod(..), NoCLIConfigMethod
   , LocTreeLayout(..)
   , BaseInputConfig(..)
   , PostParsingAction(..)
@@ -83,6 +83,10 @@ data PipelineConfigMethod r
     -- command other than 'run' (in which case the pipeline will not run).
 
 makeLenses ''PipelineConfigMethod
+
+-- | For the 'NoConfig' and 'ConfigFileOnly' cases, which don't use the type
+-- parameter.
+type NoCLIConfigMethod = forall a. PipelineConfigMethod a
 
 -- | Runs the new ModelCLI unless a Yaml or Json config file is given on the
 -- command line
