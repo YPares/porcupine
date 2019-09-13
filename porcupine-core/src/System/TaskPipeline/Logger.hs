@@ -61,7 +61,7 @@ runLogger progName (LoggerScribeParams sev verb logFmt) x = do
           BracketLog -> bracketFormat
           JSONLog    -> jsonFormat
     handleScribe <- liftIO $
-      mkHandleScribeWithFormatter logFmt' ColorIfTerminal stdout sev verb
+      mkHandleScribeWithFormatter logFmt' ColorIfTerminal stdout (permitItem sev) verb
     let mkLogEnv = liftIO $
           registerScribe "stdout" handleScribe defaultScribeSettings
           =<< initLogEnv (fromString progName) "devel"
