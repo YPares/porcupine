@@ -15,6 +15,7 @@
 
 import           Control.Monad
 import           Data.Aeson
+import qualified Data.Csv as Csv
 import           Data.DocRecord
 import qualified Data.Text                     as T
 import           GHC.Generics
@@ -24,7 +25,15 @@ import           Porcupine.Tasks
 import           Prelude                       hiding (id, (.))
 import           Graphics.Vega.VegaLite        as VL
 
-import           Data.Locations.Accessors.HTTP
+import Plotting  -- In the same folder
+
+
+data RadonObservation = RadonObservation
+  { state :: !T.Text
+  , county :: !T.Text
+  , basement :: !T.Text
+  , logRadon :: !Double }
+  deriving (Generic, Csv.FromRecord)
 
 
 -- | The type of our raw data, read from the REST API
@@ -105,9 +114,8 @@ mainTask =
 
 main :: IO ()
 main = runPipelineTask
-  (FullConfig "example-pokeapi"  -- Name of the executable (for --help)
-              "porcupine-http/examples/example-Poke/example-pokeapi.yaml" -- Default config file path
-              "example-pokeapi_files") -- Default root directory for mappings
-  (   #http <-- useHTTP -- We just add #http on top of the baseContexts to activate HTTP support
-   :& baseContexts "")
+  (FullConfig "example-radon"  -- Name of the executable (for --help)
+              "example-radon.yaml" -- Default config file path
+              "example-radon_files") -- Default root directory for mappings
+  (baseContexts "")
   mainTask ()
