@@ -46,6 +46,7 @@ import           Data.Typeable
 import qualified Data.Vector                 as V
 import           Data.Void
 import qualified Data.Yaml                   as Y
+import           Katip
 import           Streaming
 import qualified Streaming.Prelude           as S
 import qualified Streaming.Zip               as SZip
@@ -641,6 +642,17 @@ addZlibSerials = over serialWriters (over serialWritersToAtomic editTA)
       \(ext, FromStreamFn'' f) ->
         fromStreamFn [Just $ ext <> "zlib"] $
           f . BSS.toChunks . SZip.decompress SZip.defaultWindowBits . BSS.fromChunks
+
+-- | Adds warnings when deserializing values /from a stream/
+addDeserialWarnings :: (b -> [String]) -> SerialsFor a b -> SerialsFor a b
+addDeserialWarnings f = serialReaders . serialReadersFromStream . traversed %~ addW
+  where
+    addW (FromStreamFn g) = FromStreamFn $ \s -> do
+      (a :> r) <- g s
+      let warnings = f a
+      mapM_ (logFM WarningS . logStr) warnings
+      return $ a :> r
+
 
 -- -- | Traverses to the repetition keys stored in the access functions of a
 -- -- 'SerialsFor'
