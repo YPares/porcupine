@@ -576,7 +576,7 @@ makeDataAccessor vpath (VFileImportance sevRead sevWrite sevError clockAccess)
                     withException runWrite $ \ioError ->
                       logFM sevError $ logStr $ displayException (ioError :: IOException)
     daPerformRead = do
-        dataFromLayers <- forM readLocs (\(FromStreamFn {-rkeys-} (f :: Stream (Of i) m () -> m (Of b ())), SomeGLoc loc) ->
+        dataFromLayers <- forM readLocs (\(FromStreamFn {-rkeys-} (f :: Stream (Of i) m () -> m b), SomeGLoc loc) ->
           case eqT :: Maybe (i :~: Strict.ByteString) of
             Nothing -> error "Some stream reader isn't expecting a stream of strict ByteStrings"
             Just Refl -> do
@@ -584,7 +584,7 @@ makeDataAccessor vpath (VFileImportance sevRead sevWrite sevError clockAccess)
               katipAddNamespace "dataAccessor" $ katipAddNamespace "reader" $
                 katipAddContext (DAC (toJSON loc) {-rkeys-}mempty repetKeyMap (toJSON loc')) $ do
                   let runRead = readBSS loc' (f . BSS.toChunks)
-                  (r :> ()) <- timeAccess "Read" sevRead (show loc') $ withException runRead $ \ioError ->
+                  r <- timeAccess "Read" sevRead (show loc') $ withException runRead $ \ioError ->
                     logFM sevError $ logStr $ displayException (ioError :: IOException)
                   return r)
         let embeddedValAndLayers = maybe id (:) mbDefVal dataFromLayers

@@ -91,7 +91,7 @@ allFromAtomicFnsWithType = mapMaybe fltr . HM.toList
 
 
 type FromStreamFn' i a =
-  forall m r. (LogMask m) => Stream (Of i) m r -> m (Of a r)
+  forall m. (LogMask m) => Stream (Of i) m () -> m a
 
 -- | How to read an @a@ from some @Stream (Of i) m r@
 data FromStreamFn a =
@@ -99,8 +99,7 @@ data FromStreamFn a =
 
 instance Functor FromStreamFn where
   fmap f (FromStreamFn g) = FromStreamFn $ \s -> do
-    (a :> r) <- g s
-    return $ f a :> r
+    f <$> g s
 
 instance Show (FromStreamFn a) where
   show _ = "<FromStreamFn>"
@@ -342,10 +341,8 @@ fromJSONStream, fromYAMLStream
   :: FromJSON a
   => [FileExt] -> HM.HashMap (TypeRep, Maybe FileExt) (FromStreamFn a)
 fromJSONStream exts = fromStreamFn (map Just exts) $ \strm -> do
-  (bs :> r) <- BSS.toStrict $ BSS.fromChunks strm
+  BSS.toStrict_ (BSS.fromChunks strm) >>= decodeJ
     -- TODO: Enhance this so we don't have to accumulate the whole
-    -- stream
-  (:> r) <$> decodeJ bs
   where
     decodeJ x = case A.eitherDecodeStrict x of
       Right y  -> return y
@@ -354,19 +351,13 @@ fromJSONStream exts = fromStreamFn (map Just exts) $ \strm -> do
 -- | From a stream of strict bytestrings of YAML
 fromYAMLStream exts = fromStreamFn (map Just exts) (decodeYAMLStream . BSS.fromChunks)
 
-decodeYAMLStream :: (LogThrow m, FromJSON a) => BSS.ByteString m r -> m (Of a r)
+decodeYAMLStream :: (LogThrow m, FromJSON a) => BSS.ByteString m () -> m a
 decodeYAMLStream strm = do
-  (bs :> r) <- BSS.toStrict strm -- TODO: same than above
-  (:> r) <$> decodeY bs
+  BSS.toStrict_ strm >>= decodeY -- TODO: same than above
   where
     decodeY x = case Y.decodeEither' x of
       Right y  -> return y
       Left exc -> logAndThrowM exc
-
-decodeYAMLStream_ :: (LogThrow m, FromJSON a) => BSS.ByteString m () -> m a
-decodeYAMLStream_ strm = do
-  (v :> _) <- decodeYAMLStream strm
-  return v
 
 instance (FromJSON a) => DeserializesWith JSONSerial a where
   getSerialReaders _srl = mempty
@@ -403,13 +394,13 @@ class FromByteStream serial a where
   fromLazyByteString s = fromStrictByteString s . LBS.toStrict
   fromStrictByteString :: serial -> BS.ByteString -> Either String a
   fromStrictByteString s = fromLazyByteString s . LBS.fromStrict
-  fromByteStream :: (LogThrow m) => serial -> BSS.ByteString m r -> m (Of a r)
+  fromByteStream :: (LogThrow m) => serial -> BSS.ByteString m () -> m a
   fromByteStream s bss = do
-    (bs :> r) <- BSS.toLazy bss  -- This default implementation is stricter than
+    bs <- BSS.toLazy_ bss  -- This default implementation is stricter than
                                  -- it needs to be
     case fromLazyByteString s bs of
       Left msg -> throwWithPrefix msg
-      Right y -> return $ y :> r
+      Right y -> return y
 
 getSerialWriters_ToBinaryBuilder
   :: (SerializationMethod srl, ToBinaryBuilder srl a) => srl -> SerialWriters a
@@ -439,7 +430,9 @@ data Tabular a = Tabular
 -- | Data that can be converted to/from CSV, with previous knowledge of the
 -- headers
 newtype Records a = Records { fromRecords :: a }
-  deriving (Show)
+
+instance (Show a) => Show (Records a) where
+  show = show . fromRecords
 
 instance (ToJSON a) => ToJSON (Records a) where
   toJSON = toJSON . fromRecords
@@ -501,12 +494,12 @@ instance (Csv.FromNamedRecord a) => FromByteStream CSVSerial (Records (V.Vector 
 instance (Foldable f, Csv.ToRecord a) => SerializesWith CSVSerial (Tabular (f a)) where
   getSerialWriters = getSerialWriters_ToBinaryBuilder
 
-instance (Csv.FromRecord a) => DeserializesWith CSVSerial (Tabular (V.Vector a)) where
-  getSerialReaders = getSerialReaders_FromByteStream
-
 instance (Foldable f, Csv.ToNamedRecord a, Csv.DefaultOrdered a)
   => SerializesWith CSVSerial (Records (f a)) where
   getSerialWriters = getSerialWriters_ToBinaryBuilder
+
+instance (Csv.FromRecord a) => DeserializesWith CSVSerial (Tabular (V.Vector a)) where
+  getSerialReaders = getSerialReaders_FromByteStream
 
 instance (Csv.FromNamedRecord a) => DeserializesWith CSVSerial (Records (V.Vector a)) where
   getSerialReaders = getSerialReaders_FromByteStream
@@ -547,7 +540,7 @@ instance DeserializesWith ByteStringSerial BS.ByteString where
     { _serialReadersFromAtomic =
         fromAtomicFn [ext] Right
     , _serialReadersFromStream =
-        fromStreamFn [ext] S.mconcat }
+        fromStreamFn [ext] S.mconcat_ }
 
 -- * Serialization to/from plain text
 
@@ -582,9 +575,9 @@ instance DeserializesWith PlainTextSerial T.Text where
         <> fromAtomicFn [ext] parseJSONEither
         <> fromAtomicFn [ext] (Right . TE.decodeUtf8)
     , _serialReadersFromStream =
-        fromStreamFn [ext] S.mconcat
+        fromStreamFn [ext] S.mconcat_
         <>
-        fromStreamFn [ext] (fmap (S.mapOf TE.decodeUtf8) . S.mconcat)
+        fromStreamFn [ext] (fmap TE.decodeUtf8 . S.mconcat_)
     }
 
 -- * Serialization of options
