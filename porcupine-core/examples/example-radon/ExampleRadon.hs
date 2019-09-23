@@ -18,6 +18,7 @@ import           Data.Aeson
 import qualified Data.Csv as Csv
 import           Data.DocRecord
 import qualified Data.Text                     as T
+import qualified Data.Vector                   as V
 import           GHC.Generics
 import           Porcupine.Run
 import           Porcupine.Serials
@@ -32,90 +33,100 @@ data RadonObservation = RadonObservation
   { state :: !T.Text
   , county :: !T.Text
   , basement :: !T.Text
-  , logRadon :: !Double }
-  deriving (Generic, Csv.FromRecord)
+  , log_radon :: !Double }
+  deriving (Generic, FromJSON, ToJSON, Csv.FromNamedRecord, Csv.ToNamedRecord, Csv.DefaultOrdered)
 
+radonFile :: DataSource (Records (V.Vector RadonObservation))
+radonFile = dataSource ["data", "radon"] $ somePureDeserial $
+            CSVSerial "csv" True ','
 
--- | The type of our raw data, read from the REST API
-data Pokemon = Pokemon { pkName  :: !T.Text
-                       , pkMoves :: ![T.Text]
-                       , pkTypes :: ![T.Text] }
-  deriving (Generic, Store)  -- Store makes them cacheable
+resFile :: DataSink (Records (V.Vector RadonObservation))
+resFile = dataSink ["outputs", "radon"] $
+          (somePureSerial $ CSVSerial "csv" True ',')
+          <>
+          (somePureSerial JSONSerial)
 
-instance FromJSON Pokemon where
-  parseJSON = withObject "Pokemon" $ \o -> Pokemon
-    <$> o .: "name"
-    <*> (o .: "moves" >>= mapM ((.: "move") >=> (.: "name")))
-    <*> (o .: "types" >>= mapM ((.: "type") >=> (.: "name")))
+-- -- | The type of our raw data, read from the REST API
+-- data Pokemon = Pokemon { pkName  :: !T.Text
+--                        , pkMoves :: ![T.Text]
+--                        , pkTypes :: ![T.Text] }
+--   deriving (Generic, Store)  -- Store makes them cacheable
 
--- | How to load pokemons
---
--- See https://pokeapi.co/api/v2/pokemon/25 for instance
-pokemonFile :: DataSource Pokemon
-pokemonFile = usesCacherWithIdent 12345 $  -- This tells we want to support
-                                           -- caching of the fetched data
-              clockVFileAccesses $  -- This tells we want to add info about time
-                                    -- taken to read data
-              dataSource ["Inputs", "Pokemon"]
-                         (somePureDeserial JSONSerial)
+-- instance FromJSON Pokemon where
+--   parseJSON = withObject "Pokemon" $ \o -> Pokemon
+--     <$> o .: "name"
+--     <*> (o .: "moves" >>= mapM ((.: "move") >=> (.: "name")))
+--     <*> (o .: "types" >>= mapM ((.: "type") >=> (.: "name")))
 
--- | One over-simple intermediary result type
-newtype Analysis = Analysis { moveCount :: Int }
-  deriving (Generic, ToJSON)
+-- -- | How to load pokemons
+-- --
+-- -- See https://pokeapi.co/api/v2/pokemon/25 for instance
+-- pokemonFile :: DataSource Pokemon
+-- pokemonFile = usesCacherWithIdent 12345 $  -- This tells we want to support
+--                                            -- caching of the fetched data
+--               clockVFileAccesses $  -- This tells we want to add info about time
+--                                     -- taken to read data
+--               dataSource ["Inputs", "Pokemon"]
+--                          (somePureDeserial JSONSerial)
 
--- | How to write analysis
-analysisFile :: DataSink Analysis
-analysisFile = dataSink ["Outputs", "Analysis"]
-                        (somePureSerial JSONSerial)
+-- -- | One over-simple intermediary result type
+-- newtype Analysis = Analysis { moveCount :: Int }
+--   deriving (Generic, ToJSON)
 
--- | Where to write the final summary visualization
-vlSummarySink :: DataSink VegaLite
-vlSummarySink = dataSink ["Outputs", "Summary"]
-              (lmap VL.toHtml (somePureSerial $ PlainTextSerial $ Just "html")
-               <>
-               lmap VL.fromVL (somePureSerial JSONSerial))
+-- -- | How to write analysis
+-- analysisFile :: DataSink Analysis
+-- analysisFile = dataSink ["Outputs", "Analysis"]
+--                         (somePureSerial JSONSerial)
 
--- | Create the vega-lite specification of the visualization we want
-writeSummary :: (LogThrow m) => PTask m [Pokemon] ()
-writeSummary = proc pkmn -> do
-  let dat = dataFromColumns []
-          . dataColumn "name" (Strings $ map pkName pkmn)
-          . dataColumn "numMoves" (Numbers $ map (fromIntegral . length . pkMoves) pkmn)
+-- -- | Where to write the final summary visualization
+-- vlSummarySink :: DataSink VegaLite
+-- vlSummarySink = dataSink ["Outputs", "Summary"]
+--               (lmap VL.toHtml (somePureSerial $ PlainTextSerial $ Just "html")
+--                <>
+--                lmap VL.fromVL (somePureSerial JSONSerial))
 
-      enc = encoding
-          . position X [ PName "name", PmType Nominal ]
-          . position Y [ PName "numMoves", PmType Quantitative ] -- , PAggregate Mean ]
+-- -- | Create the vega-lite specification of the visualization we want
+-- writeSummary :: (LogThrow m) => PTask m [Pokemon] ()
+-- writeSummary = proc pkmn -> do
+--   let dat = dataFromColumns []
+--           . dataColumn "name" (Strings $ map pkName pkmn)
+--           . dataColumn "numMoves" (Numbers $ map (fromIntegral . length . pkMoves) pkmn)
 
-      spec = toVegaLite [ dat [], mark Bar [], enc [] ]
-  writeData vlSummarySink -< spec
+--       enc = encoding
+--           . position X [ PName "name", PmType Nominal ]
+--           . position Y [ PName "numMoves", PmType Quantitative ] -- , PAggregate Mean ]
 
--- | The task combining the three previous operations.
---
--- This task may look very opaque from the outside, having no parameters and no
--- return value. But we will be able to ppreuse it over different users without
--- having to change it at all.
-analyzeOnePokemon :: (LogThrow m) => PTask m a Pokemon
-analyzeOnePokemon =
-  loadData pokemonFile >>> (arr analyzePokemon >>> writeData analysisFile) &&& id >>> arr snd
-  where
-    analyzePokemon = Analysis . length . pkMoves -- Just count number of moves
+--       spec = toVegaLite [ dat [], mark Bar [], enc [] ]
+--   writeData vlSummarySink -< spec
+
+-- -- | The task combining the three previous operations.
+-- --
+-- -- This task may look very opaque from the outside, having no parameters and no
+-- -- return value. But we will be able to ppreuse it over different users without
+-- -- having to change it at all.
+-- analyzeOnePokemon :: (LogThrow m) => PTask m a Pokemon
+-- analyzeOnePokemon =
+--   loadData pokemonFile >>> (arr analyzePokemon >>> writeData analysisFile) &&& id >>> arr snd
+--   where
+--     analyzePokemon = Analysis . length . pkMoves -- Just count number of moves
 
 mainTask :: (LogThrow m) => PTask m () ()
 mainTask =
   -- First we get the ids of the users that we want to analyse. We need only one
   -- field that will contain a range of values, see IndexRange. By default, this
   -- range contains just one value, zero.
-  getOption ["Settings"] (docField @"pokemonIds" (oneIndex (1::Int)) "The indices of the pokemon to load")
+  -- getOption ["Settings"] (docField @"pokemonIds" (oneIndex (1::Int)) "The indices of the pokemon to load")
   -- We turn the range we read into a full lazy list:
-  >>> arr enumTRIndices
-  -- Then we just map over these ids and call analyseOnePokemon each time:
-  >>> parMapTask (repIndex "pokemonId") analyzeOnePokemon
-  >>> writeSummary
+  -- >>> arr enumTRIndices
+  -- -- Then we just map over these ids and call analyseOnePokemon each time:
+  -- >>> parMapTask (repIndex "pokemonId") analyzeOnePokemon
+  -- >>> writeSummary
+  loadData radonFile >>> writeData resFile
 
 main :: IO ()
 main = runPipelineTask
   (FullConfig "example-radon"  -- Name of the executable (for --help)
               "example-radon.yaml" -- Default config file path
-              "example-radon_files") -- Default root directory for mappings
+              "porcupine-core/examples/example-radon") -- Default root directory for mappings
   (baseContexts "")
   mainTask ()
