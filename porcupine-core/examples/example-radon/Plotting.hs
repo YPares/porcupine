@@ -2,53 +2,53 @@
 
 module Plotting where
 
-import qualified Graphics.Vega.VegaLite as VL
-import Data.Text (Text, pack, unpack)
+import Graphics.Vega.VegaLite
+import Data.Text (Text)
 
 
-barPlot :: Text -> VL.VLSpec
+barPlot :: Text -> VLSpec
 barPlot xName = 
-    let enc = VL.encoding
-            . VL.position VL.X [VL.PName xName, VL.PmType VL.Nominal, VL.PAxis [VL.AxGrid True, VL.AxTitle xName]]
-            . VL.position VL.Y [VL.PName "binnedData", VL.PAggregate VL.Count, VL.PmType VL.Quantitative, VL.PAxis [VL.AxGrid False, VL.AxTitle "count"]]
-    in VL.asSpec $ [VL.mark VL.Bar [VL.MOpacity 1.0, VL.MColor "#a3c6de"], enc []]
+    let enc = encoding
+            . position X [PName xName, PmType Nominal, PAxis [AxGrid True, AxTitle xName]]
+            . position Y [PName "binnedData", PAggregate Count, PmType Quantitative, PAxis [AxGrid False, AxTitle "count"]]
+    in asSpec $ [mark Bar [MOpacity 1.0, MColor "#a3c6de"], enc []]
     
-barPlot2 :: Text -> Text -> VL.VLSpec
+barPlot2 :: Text -> Text -> VLSpec
 barPlot2 xName yName = 
-    let enc = VL.encoding
-            . VL.position VL.X [VL.PName xName, VL.PmType VL.Nominal, VL.PAxis [VL.AxGrid True, VL.AxTitle xName]]
-            . VL.position VL.Y [VL.PName yName, VL.PmType VL.Quantitative, VL.PAxis [VL.AxGrid False, VL.AxTitle yName]]
-    in VL.asSpec $ [VL.mark VL.Bar [VL.MOpacity 1.0, VL.MColor "#a3c6de"], enc []]
+    let enc = encoding
+            . position X [PName xName, PmType Nominal, PAxis [AxGrid True, AxTitle xName]]
+            . position Y [PName yName, PmType Quantitative, PAxis [AxGrid False, AxTitle yName]]
+    in asSpec $ [mark Bar [MOpacity 1.0, MColor "#a3c6de"], enc []]
     
-linePlot :: Text -> Text -> VL.VLSpec
+linePlot :: Text -> Text -> VLSpec
 linePlot xName yName = 
-  let enc = VL.encoding
-            . VL.position VL.X [VL.PName xName, VL.PmType VL.Quantitative, VL.PAxis [VL.AxGrid True, VL.AxTitle xName]]
-            . VL.position VL.Y [VL.PName yName, VL.PmType VL.Quantitative, VL.PAxis [VL.AxGrid False, VL.AxTitle yName]]
-  in VL.asSpec $ [VL.mark VL.Line [VL.MColor "green"], enc []]
+  let enc = encoding
+            . position X [PName xName, PmType Quantitative, PAxis [AxGrid True, AxTitle xName]]
+            . position Y [PName yName, PmType Quantitative, PAxis [AxGrid False, AxTitle yName]]
+  in asSpec $ [mark Line [MColor "green"], enc []]
 
-density2DPlot :: Text -> Text -> (Double, Double) -> (Double, Double) -> VL.VLSpec
+density2DPlot :: Text -> Text -> (Double, Double) -> (Double, Double) -> VLSpec
 density2DPlot xName yName (xmin, xmax) (ymin, ymax) = 
-  let enc = VL.encoding
-            . VL.position VL.X [VL.PName xName, VL.PScale [VL.SDomain (VL.DNumbers [xmin, xmax])], VL.PBin [VL.MaxBins 30], VL.PmType VL.Quantitative, VL.PAxis [VL.AxGrid True, VL.AxTitle xName]]
-            . VL.position VL.Y [VL.PName yName, VL.PScale [VL.SDomain (VL.DNumbers [ymin, ymax])], VL.PBin [VL.MaxBins 30], VL.PmType VL.Quantitative, VL.PAxis [VL.AxGrid True, VL.AxTitle yName]]
-            . VL.color [ VL.MAggregate VL.Count, VL.MName "col", VL.MmType VL.Quantitative, VL.MScale [{-VL.SReverse False,-} VL.SScheme "blues" [0.0, 1.0]]]
-  in VL.asSpec $ [VL.mark VL.Rect [VL.MClip True], enc []]
+  let enc = encoding
+            . position X [PName xName, PScale [SDomain (DNumbers [xmin, xmax])], PBin [MaxBins 30], PmType Quantitative, PAxis [AxGrid True, AxTitle xName]]
+            . position Y [PName yName, PScale [SDomain (DNumbers [ymin, ymax])], PBin [MaxBins 30], PmType Quantitative, PAxis [AxGrid True, AxTitle yName]]
+            . color [ MAggregate Count, MName "col", MmType Quantitative, MScale [{-SReverse False,-} SScheme "blues" [0.0, 1.0]]]
+  in asSpec $ [mark Rect [MClip True], enc []]
   
-scatter2 :: Text -> Text -> (Double, Double) -> VL.VLSpec
+scatter2 :: Text -> Text -> (Double, Double) -> VLSpec
 scatter2 xName yName (ymin, ymax) = 
-  let enc = VL.encoding
-            . VL.position VL.X [VL.PName xName, VL.PmType VL.Nominal, VL.PAxis [VL.AxGrid True, VL.AxTitle xName]]
-            . VL.position VL.Y [VL.PName yName, VL.PScale [VL.SDomain (VL.DNumbers [ymin, ymax])], VL.PmType VL.Quantitative, VL.PAxis [VL.AxGrid True, VL.AxTitle yName]]
-  in VL.asSpec $ [VL.mark VL.Tick [VL.MClip True], enc []]
+  let enc = encoding
+            . position X [PName xName, PmType Nominal, PAxis [AxGrid True, AxTitle xName]]
+            . position Y [PName yName, PScale [SDomain (DNumbers [ymin, ymax])], PmType Quantitative, PAxis [AxGrid True, AxTitle yName]]
+  in asSpec $ [mark Tick [MClip True], enc []]
   
-plot :: (Double, Double) -> [VL.VLSpec] -> [(Text, VL.DataValues)] -> VL.VegaLite
+plot :: (Double, Double) -> [VLSpec] -> [(Text, DataValues)] -> VegaLite
 plot (figw,figh) layers samples =
-    let desc = VL.description "Plot"
-        dataColumns = map (\(x,y) -> VL.dataColumn x y) samples
-        dat =  foldl (.) (VL.dataFromColumns []) dataColumns
-        conf = VL.configure
-            . VL.configuration (VL.Axis [ VL.DomainWidth 1 ])
-            . VL.configuration (VL.SelectionStyle [ ( VL.Single, [ VL.On "dblclick" ] ) ])
-            . VL.configuration (VL.View [VL.ViewStroke (Just "transparent")])
-    in VL.toVegaLite [VL.width figw, VL.height figh, conf [], desc, dat [], VL.layer layers]
+    let desc = description "Plot"
+        dataColumns = map (\(x,y) -> dataColumn x y) samples
+        dat =  foldl (.) (dataFromColumns []) dataColumns
+        conf = configure
+            . configuration (Axis [ DomainWidth 1 ])
+            . configuration (SelectionStyle [ ( Single, [ On "dblclick" ] ) ])
+            . configuration (View [ViewStroke (Just "transparent")])
+    in toVegaLite [width figw, height figh, conf [], desc, dat [], layer layers]

@@ -84,5 +84,6 @@ executables:
       - aeson
       - unordered-containers
       - text
+      - log-domain
       - monad-bayes
       - hvega

@@ -24,6 +24,7 @@ module System.TaskPipeline.PTask
   , catchAndLog, throwStringPTask
   , ptaskOnJust, ptaskOnRight
   , toPTask, toPTask'
+  , ioPTask, stepIO, stepIO'
   , unsafeLiftToPTask, unsafeLiftToPTask', unsafeRunIOTask
   , ptaskUsedFiles
   , ptaskRequirements
@@ -36,6 +37,7 @@ module System.TaskPipeline.PTask
   , addNamespaceToTask
   , namePTask
   , logTask
+  , logDebug, logInfo, logNotice, logWarning, logError
   ) where
 
 import           Prelude                            hiding (id, (.))
@@ -45,7 +47,7 @@ import qualified Control.Arrow.Free                 as AF
 import           Control.Category
 import           Control.DeepSeq                    (NFData (..), force)
 import           Control.Exception                  (evaluate)
-import           Control.Funflow                    (Properties)
+import           Control.Funflow                    (Properties, stepIO, stepIO')
 import           Control.Lens
 import           Control.Monad.IO.Class
 import           Data.Locations
@@ -68,6 +70,10 @@ unsafeRunIOTask
   -> PTask m i o
 unsafeRunIOTask f = toPTask (liftIO . f)
                     -- TODO: implement it using stepIO instead
+
+-- | Just a shortcut for when you want an IO step that requires no input
+ioPTask :: (KatipContext m) => PTask m (IO a) a
+ioPTask = stepIO id
 
 -- | Catches an error happening in a task. Leaves the tree intact if an error
 -- occured.
@@ -172,6 +178,14 @@ clockPTask' task = clockPTask $
 -- | Logs a message during the pipeline execution
 logTask :: (KatipContext m) => PTask m (Severity, String) ()
 logTask = toPTask $ \(sev, s) -> logFM sev $ logStr s
+
+-- | Logs a message at a predefined severity level
+logDebug, logInfo, logNotice, logWarning, logError :: (KatipContext m) => PTask m String ()
+logDebug = arr (DebugS,) >>> logTask
+logInfo = arr (InfoS,) >>> logTask
+logNotice = arr (NoticeS,) >>> logTask
+logWarning = arr (WarningS,) >>> logTask
+logError = arr (ErrorS,) >>> logTask
 
 -- | To access and transform the requirements of the PTask before it runs
 ptaskRequirements :: Lens' (PTask m a b) (LocationTree VirtualFileNode)
