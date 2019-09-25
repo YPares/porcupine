@@ -64,6 +64,8 @@ extra-deps:
   commit: f0e0238aba688637fb6487a7ff4e24f2ae312a1d  # Branch 'remote-cache'
   subdirs:
     - funflow
+- git: https://github.com/tweag/monad-bayes
+  commit: ffd695379fefc056e99c43e3ca4d79be9a6372af
 
 # Override default flag values for local packages and extra-deps
 # flags: {}
