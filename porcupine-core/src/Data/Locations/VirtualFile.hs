@@ -194,10 +194,10 @@ describeVFile vf =
   (case vfileDescIntent vfd of
     Nothing -> ""
     Just i -> case i of
-      VFForWriting -> "OUTPUT (type: " ++ a ++ "), "
-      VFForReading -> "INPUT (type: " ++ b ++ "), "
-      VFForRW -> "OUTPUT & INPUT (writes: " ++ a ++ ", reads: " ++ b ++ "), "
-      VFForCLIOptions -> "OPTIONS, ")
+      VFForWriting -> "SINK (type: " ++ a ++ "), "
+      VFForReading -> "SOURCE (type: " ++ b ++ "), "
+      VFForRW -> "SINK & SOURCE (writes: " ++ a ++ ", reads: " ++ b ++ "), "
+      VFForCLIOptions -> "OPTION SOURCE, ")
     ++ (if vfileDescEmbeddableInConfig vfd then "Can be embedded in config file, " else "")
     ++ "Possible extensions: "
     ++ T.unpack (T.intercalate (T.pack ",") (vfileDescPossibleExtensions vfd))

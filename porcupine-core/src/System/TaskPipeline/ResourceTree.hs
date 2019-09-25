@@ -109,7 +109,10 @@ data SomeVirtualFile where
 instance Semigroup SomeVirtualFile where
   SomeVirtualFile vf <> SomeVirtualFile vf' = case cast vf' of
     Just vf'' -> SomeVirtualFile (vf <> vf'')
-    Nothing -> error "Two differently typed VirtualFiles are at the same location"
+    Nothing -> error $ "Two differently typed VirtualFiles share the same virtual path "
+      ++ (T.unpack $ toTextRepr (LTP $ _vfileOriginalPath vf))
+      ++ ":\n  file 1 type: " ++ show (typeOf vf)
+      ++ "\n  file 2 type: " ++ show (typeOf vf')
 
 -- | Packs together the two functions that will read and write a location, along
 -- with the actual locations that will be accessed. This interface permits to
