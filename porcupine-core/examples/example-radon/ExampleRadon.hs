@@ -22,6 +22,7 @@ import           Porcupine.Run
 import           Porcupine.Serials
 import           Porcupine.Tasks
 import           Prelude                       hiding (id, (.))
+import Control.Lens
 import qualified Control.Foldl as L
 import           Graphics.Vega.VegaLite        as VL
 import Control.Monad.Bayes.Class
@@ -82,7 +83,7 @@ data ModelParams = ModelParams
   , radonWithoutB :: Double -- ^ radon level in houses without basement
   , noiseWithB :: Double -- ^ variation around radonWithB
   , noiseWithoutB :: Double -- ^ variation around radonWithoutB
-  } deriving (Eq, Show)
+  } deriving (Eq, Show, Generic, ToJSON, FromJSON)
 
 priorModel :: MonadSample m => m ModelParams
 priorModel =
@@ -134,29 +135,25 @@ sampleFlatLinRegModel = proc () -> do
   vizSize <- getOption ["viz", "options"]
              (docField @"vizSize" (400,400) "(w,h) of visualisations") -< ()
   writeViz "1" -< plot vizSize
-                       [scatter2 xLbl yLbl (-3,5)]
-                       [(xLbl, VL.Booleans xs)
-                       ,(yLbl, VL.Numbers ys)]
+                       (S $ scatter2 xLbl yLbl (-3,5))
+                       (Cols [(xLbl, VL.Booleans xs)
+                             ,(yLbl, VL.Numbers ys)])
   nsamples <- getOption ["sampling", "options"]
               (docField @"nsamples" 5000 "Number of samples to draw") -< ()
   samples <- ioPTask -<
     sampleIOfixed $ prior $ mh nsamples $ model (zip xs ys)
   writeViz "2" -< plot vizSize
-                       [density2DPlot "radonWith" "radonWithout" (0,2) (0,2)]
-                       [("radonWith", VL.Numbers (radonWithB <$> samples))
-                       ,("radonWithout", VL.Numbers (radonWithoutB <$> samples))]
-  writeViz "3" -< plot vizSize
-    [density2DPlot "noiseWith" "noiseWithout"  (0,2) (0,2)]
-    [("noiseWith", VL.Numbers (noiseWithB <$> samples))
-    ,("noiseWithout", VL.Numbers (noiseWithoutB <$> samples))]
+                       (H [[density2DPlot "radonWithB" "radonWithoutB" (0,2) (0,2)]
+                          ,[density2DPlot "noiseWithB" "noiseWithoutB" (0,2) (0,2)]])
+                       (J samples)
 
   samples <- ioPTask -<
     sampleIOfixed $ prior $ mh nsamples $ posteriorForward $ model (zip xs ys)
   let (xModel, yModel) = unzip samples
-  writeViz "4" -< plot vizSize
-    [scatter2 xLbl yLbl (-3,5)]
-    [(xLbl, VL.Booleans xModel)
-    ,(yLbl, VL.Numbers yModel)]
+  writeViz "3" -< plot vizSize
+    (S $ scatter2 xLbl yLbl (-3,5))
+    (Cols [(xLbl, VL.Booleans xModel)
+          ,(yLbl, VL.Numbers yModel)])
   
 
 runIn topdir = runPipelineTask
