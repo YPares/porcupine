@@ -10,6 +10,9 @@
 {-# LANGUAGE TupleSections         #-}
 {-# LANGUAGE Arrows #-}
 
+-- This example is loosely based on the series of blog posts by Thomas Wiecki
+-- https://twiecki.io/blog/2014/03/17/bayesian-glms-3/ .
+
 import           Control.Monad
 import           Data.Aeson
 import qualified Data.Csv as Csv
