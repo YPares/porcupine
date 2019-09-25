@@ -193,11 +193,9 @@ instance Monoid (DataAccessNode m) where
 
 instance Show VirtualFileNode where
   show VirtualFileNode{..} =
-    "VirtualFileNode with " ++ show (getVirtualFileDescription vfnodeFile)
-    ++ " accessed for: " ++ show vfnodeAccesses
-  show _                    = ""
-  -- TODO: Cleaner Show
-  -- TODO: Display read/written types here, since they're already Typeable
+    describeVFile vfnodeFile
+    ++ "; Accesses: " ++ show vfnodeAccesses
+  show _                   = ""
 
 toJSONTxt :: SomeLocWithVars m -> T.Text
 toJSONTxt (SomeGLoc a) = case toJSON a of
@@ -206,12 +204,14 @@ toJSONTxt (SomeGLoc a) = case toJSON a of
 
 instance Show (PhysicalFileNode m) where
   show (MbPhysicalFileNode layers mbVF) =
-    T.unpack (mconcat
+    (if null layers
+       then "[no mapping]"
+       else T.unpack (mconcat
               (intersperse " << "
-               (map toJSONTxt layers)))
+               (map toJSONTxt layers))))
     ++ case mbVF of
          Just (SomeVirtualFile vf) ->
-           " - " ++ show (getVirtualFileDescription vf)
+           " | " ++ describeVFile vf
          _ -> ""
 
 

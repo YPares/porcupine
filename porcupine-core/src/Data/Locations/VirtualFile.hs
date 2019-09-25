@@ -33,7 +33,7 @@ module Data.Locations.VirtualFile
   , withEmbeddedValue
   , usesLayeredMapping, canBeUnmapped, unmappedByDefault
   , usesCacherWithIdent
-  , getVirtualFileDescription
+  , getVirtualFileDescription, describeVFile
   , clockVFileAccesses
   , defaultCacherWithIdent
   ) where
@@ -161,8 +161,7 @@ data VirtualFileDescription = VirtualFileDescription
   , vfileDescPossibleExtensions :: [FileExt]
                         -- ^ Possible extensions for the files this virtual file
                         -- can be mapped to (prefered extension is the first)
-  }
-  deriving (Show)
+  } deriving (Show)
 
 -- | Gives a 'VirtualFileDescription'. To be used on files stored in the
 -- ResourceTree.
@@ -189,6 +188,22 @@ getVirtualFileDescription vf =
     typeOfAesonVal = typeOf (undefined :: Value)
     readableFromConfig = (typeOfAesonVal,Nothing) `HM.member` fromA
     writableInOutput = (typeOfAesonVal,Nothing) `HM.member` toA
+
+describeVFile :: forall a b. (Typeable a, Typeable b) => VirtualFile a b -> String
+describeVFile vf =
+  (case vfileDescIntent vfd of
+    Nothing -> ""
+    Just i -> case i of
+      VFForWriting -> "OUTPUT (type: " ++ a ++ "), "
+      VFForReading -> "INPUT (type: " ++ b ++ "), "
+      VFForRW -> "OUTPUT & INPUT (writes: " ++ a ++ ", reads: " ++ b ++ "), "
+      VFForCLIOptions -> "OPTIONS, ")
+    ++ (if vfileDescEmbeddableInConfig vfd then "Can be embedded in config file, " else "")
+    ++ "Possible extensions: "
+    ++ T.unpack (T.intercalate (T.pack ",") (vfileDescPossibleExtensions vfd))
+  where vfd = getVirtualFileDescription vf
+        a = show (typeOf (undefined :: a))
+        b = show (typeOf (undefined :: b))
 
 -- | Just for logs and error messages
 showVFileOriginalPath :: VirtualFile a b -> String
