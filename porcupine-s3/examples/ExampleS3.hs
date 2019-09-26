@@ -72,7 +72,7 @@ mainTask =
   >>> parMapTask_ "userId" analyseOneUser
 
 main :: IO ()
-main = runPipelineTask (FullConfig "exampleS3" "porcupine.yaml" "porcupine-core/examples/data")
+main = runPipelineTask (FullConfig "exampleS3" "porcupine.yaml" "porcupine-core/examples/data" ())
                        (  #aws <-- useAWS Discover
                             -- We just add #aws on top of the
                             -- baseContexts. Credentials will be discovered.

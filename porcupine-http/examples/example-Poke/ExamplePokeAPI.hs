@@ -77,7 +77,8 @@ mainTask =
 main :: IO ()
 main = runPipelineTask (FullConfig "example-pokeapi"
                                    "porcupine-http/examples/example-Poke/example-pokeapi.yaml"
-                                   "example-pokeapi_files")
+                                   "example-pokeapi_files"
+                                   ())
                        (  #http <-- useHTTP
                             -- We just add #http on top of the baseContexts.
                        :& baseContexts "")

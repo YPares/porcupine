@@ -131,6 +131,6 @@ mainTask =
 --    >>> writeData globalMatrix
 
 main :: IO ()
-main = runPipelineTask (FullConfig "example-stock" "porcupine-http/examples/example-Stock/example-stock.yaml" "porcupine-http/examples/example-Stock/data")
+main = runPipelineTask (FullConfig "example-stock" "porcupine-http/examples/example-Stock/example-stock.yaml" "porcupine-http/examples/example-Stock/data" ())
                        (#http <-- useHTTP :& baseContexts "")
                        mainTask ()
