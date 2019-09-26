@@ -15,8 +15,12 @@ module System.TaskPipeline.Run
   , CanRunPTask
   , Rec(..)
   , ContextRunner(..)
-  , SimplePTaskM
+  , SimplePTaskM, BasePorcupineContexts
+  , ReaderSoup
+  , FieldWithAccessors
+  , AcceptableArgsAndContexts
   , (<--)
+  , (:::)
   , baseContexts
   , runPipelineTask
   , runLocalPipelineTask
