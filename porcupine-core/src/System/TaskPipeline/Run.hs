@@ -21,7 +21,9 @@ module System.TaskPipeline.Run
   , AcceptableArgsAndContexts
   , (<--)
   , (:::)
-  , baseContexts
+  , baseContexts, baseContextsWithScribeParams
+  , maxVerbosityLoggerScribeParams
+  , warningsAndErrorsLoggerScribeParams
   , runPipelineTask
   , runLocalPipelineTask
   , simpleRunPTask
@@ -43,7 +45,7 @@ import           System.Environment                 (lookupEnv, withArgs)
 import           System.FilePath                    ((</>))
 import           System.Posix.Directory             (getWorkingDirectory)
 import           System.TaskPipeline.CLI
-import           System.TaskPipeline.Logger         (runLogger)
+import           System.TaskPipeline.Logger
 import           System.TaskPipeline.PTask
 import           System.TaskPipeline.PTask.Internal
 import           System.TaskPipeline.ResourceTree
@@ -99,7 +101,7 @@ runPipelineTaskWithExceptionHandlers exceptionHandlers configMethod accessors pt
 type SimplePTaskM = ReaderSoup BasePorcupineContexts
 
 -- | Like 'runPipelineTask' if you don't need to access any other resources than
--- local files.
+-- local files. Uses the 'maxVerbosityLoggerScribeParams' by default.
 runLocalPipelineTask
   :: PipelineConfigMethod o
   -> PTask SimplePTaskM i o
