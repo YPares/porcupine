@@ -228,7 +228,9 @@ bindResourceTreeAndRun (ConfigFileOnly progName configFileURL defRoot) accessors
   -- parsing until that part of the code is refactored to better separate CLI
   -- parsing and deserialization of the ResourceTreeAndMappings from the config
   -- file
-  res <- withArgs [] $
+  res <- withArgs ["-qq", "--context-verb", "2", "--log-format", "compact"] $
+         -- No CLI arg is passable, so until we improve CLI parsin as stated
+         -- just above, in that case we limit ourselves to warnings and errors
     bindResourceTreeAndRun (FullConfig progName configFileURL defRoot Nothing) accessorsRec tree $
       \_ _ t o -> Just <$> f RunPipeline Nothing t o
   case res of
