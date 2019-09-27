@@ -50,7 +50,7 @@ data RadonObservation = RadonObservation
 -- reading from CSV files with headers and from JSON files. The Vector cannot
 -- directly be read from the CSV, as we would not known whether the columns are
 -- positional or nominal. This is why we use the 'Records' wrapper here (for
--- nominal columns). This requires our datatype to instanciate
+-- nominal columns). This requires our datatype to instantiate
 -- Csv.From/ToNamedRecord
 radonObsSerials :: BidirSerials (V.Vector RadonObservation)
 radonObsSerials = dimap Records fromRecords $  -- We wrap/unwrap the Records
