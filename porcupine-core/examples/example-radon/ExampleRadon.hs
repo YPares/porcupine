@@ -9,6 +9,7 @@
 {-# LANGUAGE TypeApplications      #-}
 {-# LANGUAGE TupleSections         #-}
 {-# LANGUAGE Arrows #-}
+{-# OPTIONS_GHC -Wwarn #-}
 
 -- This example is loosely based on the series of blog posts by Thomas Wiecki
 -- https://twiecki.io/blog/2014/03/17/bayesian-glms-3/ .
