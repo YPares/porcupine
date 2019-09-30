@@ -46,6 +46,7 @@ import           Data.Typeable
 import qualified Data.Vector                 as V
 import           Data.Void
 import qualified Data.Yaml                   as Y
+import           GHC.Generics
 import           Streaming
 import qualified Streaming.Prelude           as S
 import qualified Streaming.Zip               as SZip
@@ -90,7 +91,7 @@ allFromAtomicFnsWithType = mapMaybe fltr . HM.toList
 
 
 type FromStreamFn' i a =
-  forall m r. (LogMask m) => Stream (Of i) m r -> m (Of a r)
+  forall m. (LogMask m) => Stream (Of i) m () -> m a
 
 -- | How to read an @a@ from some @Stream (Of i) m r@
 data FromStreamFn a =
@@ -98,8 +99,7 @@ data FromStreamFn a =
 
 instance Functor FromStreamFn where
   fmap f (FromStreamFn g) = FromStreamFn $ \s -> do
-    (a :> r) <- g s
-    return $ f a :> r
+    f <$> g s
 
 instance Show (FromStreamFn a) where
   show _ = "<FromStreamFn>"
@@ -341,10 +341,8 @@ fromJSONStream, fromYAMLStream
   :: FromJSON a
   => [FileExt] -> HM.HashMap (TypeRep, Maybe FileExt) (FromStreamFn a)
 fromJSONStream exts = fromStreamFn (map Just exts) $ \strm -> do
-  (bs :> r) <- BSS.toStrict $ BSS.fromChunks strm
+  BSS.toStrict_ (BSS.fromChunks strm) >>= decodeJ
     -- TODO: Enhance this so we don't have to accumulate the whole
-    -- stream
-  (:> r) <$> decodeJ bs
   where
     decodeJ x = case A.eitherDecodeStrict x of
       Right y  -> return y
@@ -353,19 +351,13 @@ fromJSONStream exts = fromStreamFn (map Just exts) $ \strm -> do
 -- | From a stream of strict bytestrings of YAML
 fromYAMLStream exts = fromStreamFn (map Just exts) (decodeYAMLStream . BSS.fromChunks)
 
-decodeYAMLStream :: (LogThrow m, FromJSON a) => BSS.ByteString m r -> m (Of a r)
+decodeYAMLStream :: (LogThrow m, FromJSON a) => BSS.ByteString m () -> m a
 decodeYAMLStream strm = do
-  (bs :> r) <- BSS.toStrict strm -- TODO: same than above
-  (:> r) <$> decodeY bs
+  BSS.toStrict_ strm >>= decodeY -- TODO: same than above
   where
     decodeY x = case Y.decodeEither' x of
       Right y  -> return y
       Left exc -> logAndThrowM exc
-
-decodeYAMLStream_ :: (LogThrow m, FromJSON a) => BSS.ByteString m () -> m a
-decodeYAMLStream_ strm = do
-  (v :> _) <- decodeYAMLStream strm
-  return v
 
 instance (FromJSON a) => DeserializesWith JSONSerial a where
   getSerialReaders _srl = mempty
@@ -389,42 +381,130 @@ instance (FromJSON a) => DeserializesWith JSONSerialWithExt a where
     { _serialReadersFromAtomic = fromAtomicYAML [ext]
     , _serialReadersFromStream = fromYAMLStream [ext] }
 
+
+-- * Helpers to write to and from binary representations
+
+class ToBinaryBuilder serial a where
+  toBinaryBuilder :: serial -> a -> BinBuilder.Builder
+
+-- | Recommendation: instances should implement fromLazyByteString and
+-- fromByteStream whenever possible.
+class FromByteStream serial a where
+  fromLazyByteString :: serial -> LBS.ByteString -> Either String a
+  fromLazyByteString s = fromStrictByteString s . LBS.toStrict
+  fromStrictByteString :: serial -> BS.ByteString -> Either String a
+  fromStrictByteString s = fromLazyByteString s . LBS.fromStrict
+  fromByteStream :: (LogThrow m) => serial -> BSS.ByteString m () -> m a
+  fromByteStream s bss = do
+    bs <- BSS.toLazy_ bss  -- This default implementation is stricter than
+                                 -- it needs to be
+    case fromLazyByteString s bs of
+      Left msg -> throwWithPrefix msg
+      Right y -> return y
+
+getSerialWriters_ToBinaryBuilder
+  :: (SerializationMethod srl, ToBinaryBuilder srl a) => srl -> SerialWriters a
+getSerialWriters_ToBinaryBuilder srl = mempty
+  { _serialWritersToAtomic =
+    toAtomicFn [getSerialDefaultExt srl] $
+      BinBuilder.toLazyByteString . toBinaryBuilder srl }
+
+getSerialReaders_FromByteStream
+  :: (SerializationMethod srl, FromByteStream srl a) => srl -> SerialReaders a
+getSerialReaders_FromByteStream srl = mempty
+    { _serialReadersFromStream =
+        fromStreamFn [getSerialDefaultExt srl] (fromByteStream srl . BSS.fromChunks)
+    , _serialReadersFromAtomic =  -- From strict bytestring
+        fromAtomicFn [getSerialDefaultExt srl] (fromStrictByteString srl)
+    }
+
 -- * Serialization to/from CSV
 
--- | Just packs data that can be converted to CSV with a header
+-- | Data with header not known in advance, that can be converted to/from CSV,
+-- keeping track of the header
 data Tabular a = Tabular
-  { tabularHeader :: Maybe [String]
-  , tabularData   :: a }
-  deriving (Show)
+  { tabularHeader :: Maybe [T.Text]
+  , tabularData :: a }
+  deriving (Show, Generic, ToJSON, FromJSON)
 
--- | Can serialize and deserialize any @Tabular a@ where @a@ is an instance of
--- 'CSV'.
-data CSVSerial
-  = CSVSerial { csvSerialExt       :: FileExt  -- ^ The extension to use (csv, tsv,
-                                         -- txt, etc.)
-              , csvSerialHasHeader :: Bool  -- ^ Used by the reader part
-              , csvSerialDelimiter :: Char  -- ^ Used by both reader and writer
-              }
+-- | Data that can be converted to/from CSV, with previous knowledge of the
+-- headers
+newtype Records a = Records { fromRecords :: a }
+
+instance (Show a) => Show (Records a) where
+  show = show . fromRecords
+
+instance (ToJSON a) => ToJSON (Records a) where
+  toJSON = toJSON . fromRecords
+
+instance (FromJSON a) => FromJSON (Records a) where
+  parseJSON = fmap Records . parseJSON
+
+-- | Can serialize and deserialize any @Tabular a@ from a CSV file
+data CSVSerial = CSVSerial
+  { csvSerialExt       :: FileExt
+    -- ^ The extension to use (csv, tsv, txt, etc.)
+  , csvSerialHasHeader :: Bool
+    -- ^ The csv file contains a header (to skip or to read/write). Must be True
+    -- if we want to read 'Records' from it
+  , csvSerialDelimiter :: Char
+    -- ^ The character (@,@, @\t@, etc.) to use as a field delimiter.
+  }
 
 instance SerializationMethod CSVSerial where
   getSerialDefaultExt = Just . csvSerialExt
 
--- NOTE: In the end, vectors of records should be intermediate types, much like
--- Data.Aeson.Value is, so backends specialized in storing tabular data (like
--- Apache Parquet/Arrow) can directly access it.
-instance (Csv.ToRecord a, Foldable f)
-      => SerializesWith CSVSerial (Tabular (f a)) where
-  getSerialWriters srl@(CSVSerial _ _ delim) = mempty
-    { _serialWritersToAtomic =
-      toAtomicFn [getSerialDefaultExt srl] $ -- To lazy bytestring
-        \(Tabular mbHeader dat) -> BinBuilder.toLazyByteString $
-           maybe id (<>) (enc <$> mbHeader) $ foldMap enc dat
-    }
+instance (Foldable f, Csv.ToRecord a) => ToBinaryBuilder CSVSerial (Tabular (f a)) where
+  toBinaryBuilder (CSVSerial _ hasHeader delim) (Tabular mbHeader dat) =
+    mbAddHeader $ foldMap encField dat
     where
-      encodeOpts = Csv.defaultEncodeOptions
-                   {Csv.encDelimiter = fromIntegral $ ord delim}
-      enc :: (Csv.ToRecord t) => t -> BinBuilder.Builder
-      enc = CsvBuilder.encodeRecordWith encodeOpts
+      mbAddHeader | hasHeader = maybe id (<>) (encHeader <$> mbHeader)
+                  | otherwise = id
+      encodeOpts = Csv.defaultEncodeOptions {Csv.encDelimiter = fromIntegral $ ord delim}
+      encHeader = CsvBuilder.encodeRecordWith encodeOpts
+      encField = CsvBuilder.encodeRecordWith encodeOpts
+
+instance (Foldable f, Csv.ToNamedRecord a, Csv.DefaultOrdered a)
+  => ToBinaryBuilder CSVSerial (Records (f a)) where
+  toBinaryBuilder (CSVSerial _ hasHeader delim) (Records dat) =
+    mbAddHeader $ foldMap encField dat
+    where
+      mbAddHeader | hasHeader = (encHeader (Csv.headerOrder (undefined :: a)) <>)
+                  | otherwise = id
+      encodeOpts = Csv.defaultEncodeOptions {Csv.encDelimiter = fromIntegral $ ord delim}
+      encHeader = CsvBuilder.encodeHeaderWith encodeOpts
+      encField = CsvBuilder.encodeDefaultOrderedNamedRecordWith encodeOpts
+
+instance (Csv.FromRecord a) => FromByteStream CSVSerial (Tabular (V.Vector a)) where
+  fromLazyByteString (CSVSerial _ hasHeader delim) bs =
+    Tabular Nothing <$>  -- TODO: parse header
+    Csv.decodeWith decOpts (if hasHeader then Csv.HasHeader else Csv.NoHeader) bs
+    where
+      decOpts = Csv.defaultDecodeOptions {Csv.decDelimiter=fromIntegral $ ord delim}
+
+instance (Csv.FromNamedRecord a) => FromByteStream CSVSerial (Records (V.Vector a)) where
+  fromLazyByteString (CSVSerial _ hasHeader delim) bs =
+    if not hasHeader then error "CANNOT USE ColNamed on CSV files without headers"
+    else do
+      (_, v) <- Csv.decodeByNameWith decOpts bs
+      return $ Records v
+    where
+      decOpts = Csv.defaultDecodeOptions {Csv.decDelimiter=fromIntegral $ ord delim}
+
+instance (Foldable f, Csv.ToRecord a) => SerializesWith CSVSerial (Tabular (f a)) where
+  getSerialWriters = getSerialWriters_ToBinaryBuilder
+
+instance (Foldable f, Csv.ToNamedRecord a, Csv.DefaultOrdered a)
+  => SerializesWith CSVSerial (Records (f a)) where
+  getSerialWriters = getSerialWriters_ToBinaryBuilder
+
+instance (Csv.FromRecord a) => DeserializesWith CSVSerial (Tabular (V.Vector a)) where
+  getSerialReaders = getSerialReaders_FromByteStream
+
+instance (Csv.FromNamedRecord a) => DeserializesWith CSVSerial (Records (V.Vector a)) where
+  getSerialReaders = getSerialReaders_FromByteStream
+
+-- instance (Csv.ToNamedRecord a, Foldable f) => 
 
 -- TODO: recover header when deserializing CSV (which cassava doesn't return)
 -- decodeTabular :: Bool -> Char -> LBS.ByteString -> Either String (Tabular (V.Vector a))
@@ -435,25 +515,6 @@ instance (Csv.ToRecord a, Foldable f)
 --   where
 --     delim' = fromIntegral $ ord delim
 --     decOpts = Csv.defaultDecodeOptions {Csv.decDelimiter=delim'}
-
--- We cannot easily deserialize a Tabular from a CSV because cassava doesn't
--- return the header when decoding. We should change that
-instance (Csv.FromRecord a)
-      => DeserializesWith CSVSerial (V.Vector a) where
-  getSerialReaders srl@(CSVSerial _ hasHeader delim) = mempty
-    { _serialReadersFromAtomic =
-        fromAtomicFn [getSerialDefaultExt srl] $ -- From strict bytestring
-        Csv.decodeWith decOpts hh . LBS.fromStrict
-    , _serialReadersFromStream =
-        fromStreamFn [getSerialDefaultExt srl] $ \strm -> do
-          (bs :> r) <- BSS.toLazy $ BSS.fromChunks strm
-          vec <- case Csv.decodeWith decOpts hh bs of
-            Right y  -> return y
-            Left msg -> throwWithPrefix msg
-          return (vec :> r)
-    } where
-    hh = if hasHeader then Csv.HasHeader else Csv.NoHeader
-    decOpts = Csv.defaultDecodeOptions {Csv.decDelimiter=fromIntegral $ ord delim}
 
 -- * "Serialization" to/from bytestrings
 
@@ -479,7 +540,7 @@ instance DeserializesWith ByteStringSerial BS.ByteString where
     { _serialReadersFromAtomic =
         fromAtomicFn [ext] Right
     , _serialReadersFromStream =
-        fromStreamFn [ext] S.mconcat }
+        fromStreamFn [ext] S.mconcat_ }
 
 -- * Serialization to/from plain text
 
@@ -514,9 +575,9 @@ instance DeserializesWith PlainTextSerial T.Text where
         <> fromAtomicFn [ext] parseJSONEither
         <> fromAtomicFn [ext] (Right . TE.decodeUtf8)
     , _serialReadersFromStream =
-        fromStreamFn [ext] S.mconcat
+        fromStreamFn [ext] S.mconcat_
         <>
-        fromStreamFn [ext] (fmap (S.mapOf TE.decodeUtf8) . S.mconcat)
+        fromStreamFn [ext] (fmap TE.decodeUtf8 . S.mconcat_)
     }
 
 -- * Serialization of options

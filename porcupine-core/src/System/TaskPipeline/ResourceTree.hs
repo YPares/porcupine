@@ -109,7 +109,10 @@ data SomeVirtualFile where
 instance Semigroup SomeVirtualFile where
   SomeVirtualFile vf <> SomeVirtualFile vf' = case cast vf' of
     Just vf'' -> SomeVirtualFile (vf <> vf'')
-    Nothing -> error "Two differently typed VirtualFiles are at the same location"
+    Nothing -> error $ "Two differently typed VirtualFiles share the same virtual path "
+      ++ (T.unpack $ toTextRepr (LTP $ _vfileOriginalPath vf))
+      ++ ":\n  file 1 type: " ++ show (typeOf vf)
+      ++ "\n  file 2 type: " ++ show (typeOf vf')
 
 -- | Packs together the two functions that will read and write a location, along
 -- with the actual locations that will be accessed. This interface permits to
@@ -193,11 +196,9 @@ instance Monoid (DataAccessNode m) where
 
 instance Show VirtualFileNode where
   show VirtualFileNode{..} =
-    "VirtualFileNode with " ++ show (getVirtualFileDescription vfnodeFile)
-    ++ " accessed for: " ++ show vfnodeAccesses
-  show _                    = ""
-  -- TODO: Cleaner Show
-  -- TODO: Display read/written types here, since they're already Typeable
+    describeVFile vfnodeFile
+    ++ "; Accesses: " ++ show vfnodeAccesses
+  show _                   = ""
 
 toJSONTxt :: SomeLocWithVars m -> T.Text
 toJSONTxt (SomeGLoc a) = case toJSON a of
@@ -206,12 +207,14 @@ toJSONTxt (SomeGLoc a) = case toJSON a of
 
 instance Show (PhysicalFileNode m) where
   show (MbPhysicalFileNode layers mbVF) =
-    T.unpack (mconcat
+    (if null layers
+       then "[no mapping]"
+       else T.unpack (mconcat
               (intersperse " << "
-               (map toJSONTxt layers)))
+               (map toJSONTxt layers))))
     ++ case mbVF of
          Just (SomeVirtualFile vf) ->
-           " - " ++ show (getVirtualFileDescription vf)
+           " | " ++ describeVFile vf
          _ -> ""
 
 
@@ -576,7 +579,7 @@ makeDataAccessor vpath (VFileImportance sevRead sevWrite sevError clockAccess)
                     withException runWrite $ \ioError ->
                       logFM sevError $ logStr $ displayException (ioError :: IOException)
     daPerformRead = do
-        dataFromLayers <- forM readLocs (\(FromStreamFn {-rkeys-} (f :: Stream (Of i) m () -> m (Of b ())), SomeGLoc loc) ->
+        dataFromLayers <- forM readLocs (\(FromStreamFn {-rkeys-} (f :: Stream (Of i) m () -> m b), SomeGLoc loc) ->
           case eqT :: Maybe (i :~: Strict.ByteString) of
             Nothing -> error "Some stream reader isn't expecting a stream of strict ByteStrings"
             Just Refl -> do
@@ -584,7 +587,7 @@ makeDataAccessor vpath (VFileImportance sevRead sevWrite sevError clockAccess)
               katipAddNamespace "dataAccessor" $ katipAddNamespace "reader" $
                 katipAddContext (DAC (toJSON loc) {-rkeys-}mempty repetKeyMap (toJSON loc')) $ do
                   let runRead = readBSS loc' (f . BSS.toChunks)
-                  (r :> ()) <- timeAccess "Read" sevRead (show loc') $ withException runRead $ \ioError ->
+                  r <- timeAccess "Read" sevRead (show loc') $ withException runRead $ \ioError ->
                     logFM sevError $ logStr $ displayException (ioError :: IOException)
                   return r)
         let embeddedValAndLayers = maybe id (:) mbDefVal dataFromLayers

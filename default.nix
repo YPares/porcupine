@@ -66,6 +66,12 @@ overlayHaskell = _:pkgs:
       url = "http://hackage.haskell.org/package/hvega-0.4.0.0/hvega-0.4.0.0.tar.gz";
       sha256 = "0bffkp19if8clrlk61ydnaghbxsi73a9f18sxlbpj467ivhcizmg";
     };
+    monadBayesSource = pkgs.fetchFromGitHub {
+      owner = "tweag"; # Using our fork until https://github.com/adscib/monad-bayes/pull/54 is merged
+      repo = "monad-bayes";
+      rev = "ffd695379fefc056e99c43e3ca4d79be9a6372af";
+      sha256 = "1qikvzpkpm255q3mgpc0x9jipxg6kya3pxgkk043vk25h2j11l0p";
+    };
 
     inherit (pkgs.haskell.lib) doJailbreak dontCheck packageSourceOverrides;
   in {
@@ -85,6 +91,7 @@ overlayHaskell = _:pkgs:
         # checks take too long, so they are disabled
         hedis = dontCheck super.hedis_0_12_5;
         hvega = self.callCabal2nix "hvega" hvegaSource {};
+        monad-bayes = self.callCabal2nix "monad-bayes" monadBayesSource {};
 
         funflow = dontCheck (self.callCabal2nix "funflow" "${funflowSource}/funflow" {});
                   # Check are failing for funflow, this should be investigated

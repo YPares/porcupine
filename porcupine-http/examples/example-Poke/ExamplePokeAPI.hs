@@ -45,6 +45,8 @@ instance FromJSON Pokemon where
 pokemonFile :: DataSource Pokemon
 pokemonFile = usesCacherWithIdent 12345 $  -- This tells we want to support
                                            -- caching of the fetched data
+              clockVFileAccesses $  -- This tells we want to add info about time
+                                    -- taken to read data
               dataSource ["Inputs", "Pokemon"]
                          (somePureDeserial JSONSerial)
 
@@ -87,7 +89,7 @@ analyzeOnePokemon :: (LogThrow m) => PTask m a Pokemon
 analyzeOnePokemon =
   loadData pokemonFile >>> (arr analyzePokemon >>> writeData analysisFile) &&& id >>> arr snd
   where
-    analyzePokemon = Analysis . length . pkMoves
+    analyzePokemon = Analysis . length . pkMoves -- Just count number of moves
 
 mainTask :: (LogThrow m) => PTask m () ()
 mainTask =
