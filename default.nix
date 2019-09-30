@@ -62,10 +62,6 @@ overlayHaskell = _:pkgs:
       url = "https://github.com/tweag/funflow/archive/${funflowRev}.tar.gz";
       sha256 = "1zgy40lfw4ar73w0g1292cls3x19yaxwc9f43ib8zpjycmf779mx";
     };
-    hvegaSource = pkgs.fetchzip {
-      url = "http://hackage.haskell.org/package/hvega-0.4.0.0/hvega-0.4.0.0.tar.gz";
-      sha256 = "0bffkp19if8clrlk61ydnaghbxsi73a9f18sxlbpj467ivhcizmg";
-    };
     monadBayesSource = pkgs.fetchFromGitHub {
       owner = "tweag"; # Using our fork until https://github.com/adscib/monad-bayes/pull/54 is merged
       repo = "monad-bayes";
@@ -78,20 +74,13 @@ overlayHaskell = _:pkgs:
   haskellPackages =
     (pkgs.haskellPackages.override {
       overrides = self: super: rec {
-
-        # A few package version override.
-        # Hopefully a future nixpkgs update will make them as default
-        # so they will be in the binary cache.
-        network-bsd = super.network-bsd_2_8_1_0;
-        network = super.network_3_1_0_0;
-        socks = super.socks_0_6_0;
-        connection = super.connection_0_3_0;
         streaming-conduit = doJailbreak super.streaming-conduit;
-        katip = super.katip_0_8_2_0;
 
-        # checks take too long, so they are disabled
-        hedis = dontCheck super.hedis_0_12_5;
-        hvega = self.callCabal2nix "hvega" hvegaSource {};
+        # hedis checks take too long, so they are disabled:
+        hedis = dontCheck super.hedis;
+        # vinyl hasn't been updated for hspec >= 2.7:
+        vinyl = dontCheck super.vinyl;
+        hvega = super.hvega_0_4_1_0;
         monad-bayes = self.callCabal2nix "monad-bayes" monadBayesSource {};
 
         funflow = dontCheck (self.callCabal2nix "funflow" "${funflowSource}/funflow" {});

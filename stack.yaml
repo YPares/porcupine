@@ -20,7 +20,7 @@
 #
 # resolver: ./custom-snapshot.yaml
 # resolver: https://example.com/snapshots/2018-01-01.yaml
-resolver: lts-13.25
+resolver: lts-14.6
 
 # User packages to be built.
 # Various formats can be used as shown in the example below.
@@ -46,12 +46,13 @@ packages:
 # using the same syntax as the packages field.
 # (e.g., acme-missiles-0.3)
 extra-deps:
-- katip-0.8.2.0
+- amazonka-1.6.1
+- amazonka-core-1.6.1
+- amazonka-s3-1.6.1
 - streaming-conduit-0.1.2.2
 - streaming-utils-0.2.0.0
 - json-stream-0.4.2.4
-- hvega-0.4.0.0
-- hedis-0.12.5@sha256:5e3f47b935a48e57c44197f715a26d88a33c46c045a8c19d75b0d7ebc4ae3cbe
+- hvega-0.4.1.0
 - git: https://github.com/tweag/funflow
   commit: af227eadf7e1afed08473d47d54ea4ef6c76d303 # Branch 'remote-cache'
   subdirs:
