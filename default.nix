@@ -57,10 +57,10 @@ porcupineSources = {
 
 overlayHaskell = _:pkgs:
   let
-    funflowRev = "f0e0238aba688637fb6487a7ff4e24f2ae312a1d";
+    funflowRev = "af227eadf7e1afed08473d47d54ea4ef6c76d303"; # branch 'remote-cache'
     funflowSource = pkgs.fetchzip {
       url = "https://github.com/tweag/funflow/archive/${funflowRev}.tar.gz";
-      sha256 = "0gxws140rk4aqy00zja527nv87bnm2blp8bikmdy4a2wyvyc7agv";
+      sha256 = "1zgy40lfw4ar73w0g1292cls3x19yaxwc9f43ib8zpjycmf779mx";
     };
     hvegaSource = pkgs.fetchzip {
       url = "http://hackage.haskell.org/package/hvega-0.4.0.0/hvega-0.4.0.0.tar.gz";
@@ -87,6 +87,7 @@ overlayHaskell = _:pkgs:
         socks = super.socks_0_6_0;
         connection = super.connection_0_3_0;
         streaming-conduit = doJailbreak super.streaming-conduit;
+        katip = super.katip_0_8_2_0;
 
         # checks take too long, so they are disabled
         hedis = dontCheck super.hedis_0_12_5;

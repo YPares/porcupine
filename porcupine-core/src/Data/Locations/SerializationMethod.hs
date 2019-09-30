@@ -717,10 +717,10 @@ addDeserialWarnings :: (b -> [String]) -> SerialsFor a b -> SerialsFor a b
 addDeserialWarnings f = serialReaders . serialReadersFromStream . traversed %~ addW
   where
     addW (FromStreamFn g) = FromStreamFn $ \s -> do
-      (a :> r) <- g s
+      a <- g s
       let warnings = f a
       mapM_ (logFM WarningS . logStr) warnings
-      return $ a :> r
+      return a
 
 
 -- -- | Traverses to the repetition keys stored in the access functions of a
