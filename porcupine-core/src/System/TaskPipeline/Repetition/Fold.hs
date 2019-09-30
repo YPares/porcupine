@@ -6,7 +6,8 @@
 module System.TaskPipeline.Repetition.Fold
   ( module Control.Arrow.FoldA
   , RepInfo(..)
-  , HasTaskRepetitionIndex(..)
+  , TRIndex(..)
+  , HasTRIndex(..)
   , ptaskFold
   , ptaskFold_
   , unsafeGeneralizeM
@@ -33,9 +34,9 @@ import           System.TaskPipeline.Repetition.Internal
 unsafeGeneralizeM :: (KatipContext m)
                   => FoldM m a b -> FoldA (PTask m) i a b
 unsafeGeneralizeM (FoldM step start done) =
-  FoldA (unsafeLiftToPTask $ \(Pair a x) -> step a x)
-        (unsafeLiftToPTask $ const start)
-        (unsafeLiftToPTask done)
+  FoldA (toPTask $ \(Pair a x) -> step a x)
+        (toPTask $ const start)
+        (toPTask done)
 
 data RunningFoldM m a b =
   forall x. RFM (x -> a -> m x) !x (x -> m b)
@@ -45,15 +46,15 @@ unsafeGeneralizeFnM :: (KatipContext m)
                     => (i -> FoldM m a b)
                     -> FoldA (PTask m) i a b
 unsafeGeneralizeFnM f =
-  FoldA (unsafeLiftToPTask $ \(Pair (RFM step acc done) x) -> do
+  FoldA (toPTask $ \(Pair (RFM step acc done) x) -> do
             acc' <- step acc x
             return $ RFM step acc' done)
-        (unsafeLiftToPTask $ \i ->
+        (toPTask $ \i ->
             case f i of
               FoldM step start done -> do
                 initAcc <- start
                 return $ RFM step initAcc done)
-        (unsafeLiftToPTask $ \(RFM _ acc done) -> done acc)
+        (toPTask $ \(RFM _ acc done) -> done acc)
 
 -- | Creates a 'FoldA' from a 'PTask'.
 ptaskFold :: PTask m (acc,input) acc -- ^ The folding task
@@ -75,12 +76,12 @@ ptaskFold_ task =
 
 newtype PairWithRepeatable x a = PWR { unPWR :: Pair x a }
 
-instance (HasTaskRepetitionIndex a)
-      => HasTaskRepetitionIndex (PairWithRepeatable x a) where
-  getTaskRepetitionIndex (PWR (Pair _ a)) = getTaskRepetitionIndex a
+instance (HasTRIndex a)
+      => HasTRIndex (PairWithRepeatable x a) where
+  getTRIndex (PWR (Pair _ a)) = getTRIndex a
 
 -- | Just before running the fold, we have to make the step part repeatable
-makeStepRepeatable :: (HasTaskRepetitionIndex a, KatipContext m)
+makeStepRepeatable :: (HasTRIndex a, KatipContext m)
                    => RepInfo
                    -> PTask m (Pair acc a) b
                    -> PTask m (Pair acc a) b
@@ -90,7 +91,7 @@ makeStepRepeatable ri step =
 -- | Consumes a Stream with a 'FoldA' created with 'ptaskFold', 'generalizeA',
 -- 'unsafeGeneralizeM', or a composition of such folds.
 foldStreamTask
-  :: (HasTaskRepetitionIndex a, KatipContext m)
+  :: (HasTRIndex a, KatipContext m)
   => RepInfo  -- ^ How to log the repeated task
   -> FoldA (PTask m) i a b
   -> PTask m (i, Stream (Of a) m r) (b, r)
@@ -113,7 +114,7 @@ foldStreamTask ri (FoldA step_ start done) =
 
 -- | Consumes a list with a 'FoldA' over 'PTask'
 foldlTask
-  :: (HasTaskRepetitionIndex a, KatipContext m)
+  :: (HasTRIndex a, KatipContext m)
   => RepInfo  -- ^ How to log the repeated task
   -> FoldA (PTask m) i a b
   -> PTask m (i,[a]) b

@@ -8,6 +8,7 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeOperators       #-}
 {-# LANGUAGE ViewPatterns        #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
 {-# OPTIONS_GHC -fno-warn-missing-pattern-synonym-signatures #-}
 {-# OPTIONS_GHC -fno-warn-name-shadowing #-}
 
@@ -66,6 +67,7 @@
 module System.TaskPipeline.ResourceTree where
 
 import           Control.Exception.Safe
+import           Control.Funflow.ContentHashable
 import           Control.Lens                            hiding ((:>))
 import           Control.Monad
 import           Data.Aeson
@@ -107,16 +109,41 @@ data SomeVirtualFile where
 instance Semigroup SomeVirtualFile where
   SomeVirtualFile vf <> SomeVirtualFile vf' = case cast vf' of
     Just vf'' -> SomeVirtualFile (vf <> vf'')
-    Nothing -> error "Two differently typed VirtualFiles are at the same location"
+    Nothing -> error $ "Two differently typed VirtualFiles share the same virtual path "
+      ++ (T.unpack $ toTextRepr (LTP $ _vfileOriginalPath vf))
+      ++ ":\n  file 1 type: " ++ show (typeOf vf)
+      ++ "\n  file 2 type: " ++ show (typeOf vf')
 
--- | Packs together the two functions that will read
---
--- TODO: This is not just a pair of functions. There is a third unexplained
--- field.
+-- | Packs together the two functions that will read and write a location, along
+-- with the actual locations that will be accessed. This interface permits to
+-- separate the resolution of locations and their access. A @DataAccessor@ is
+-- usually meant to be used inside an 'toPTask'. A @DataAccessor@ is hashable
+-- (via the locations it accesses) so a cached task can take a @DataAccessor@ as
+-- an input, and this task will be re-triggered if the physical location(s)
+-- bound to this accessor change(s).
 data DataAccessor m a b = DataAccessor
   { daPerformWrite :: a -> m ()
   , daPerformRead  :: m b
   , daLocsAccessed :: Either String [SomeLoc m] }
+
+instance (Monad m) => ContentHashable m (DataAccessor m a b) where
+  contentHashUpdate ctx = contentHashUpdate ctx . fmap toHashableLocs . daLocsAccessed
+
+-- | Like a 'DataAccessor' but only with the writer part
+data DataWriter m a = DataWriter
+  { dwPerformWrite :: a -> m ()
+  , dwLocsAccessed :: Either String [SomeLoc m] }
+
+instance (Monad m) => ContentHashable m (DataWriter m a) where
+  contentHashUpdate ctx = contentHashUpdate ctx . fmap toHashableLocs . dwLocsAccessed
+
+-- | Like a 'DataAccessor' but only with the reader part
+data DataReader m a = DataReader
+  { drPerformRead :: m a
+  , drLocsAccessed :: Either String [SomeLoc m] }
+
+instance (Monad m) => ContentHashable m (DataReader m a) where
+  contentHashUpdate ctx = contentHashUpdate ctx . fmap toHashableLocs . drLocsAccessed
 
 -- | The internal part of a 'DataAccessNode, closing over the type params of the
 -- access function.
@@ -169,11 +196,9 @@ instance Monoid (DataAccessNode m) where
 
 instance Show VirtualFileNode where
   show VirtualFileNode{..} =
-    "VirtualFileNode with " ++ show (getVirtualFileDescription vfnodeFile)
-    ++ " accessed for: " ++ show vfnodeAccesses
-  show _                    = ""
-  -- TODO: Cleaner Show
-  -- TODO: Display read/written types here, since they're already Typeable
+    describeVFile vfnodeFile
+    ++ "; Accesses: " ++ show vfnodeAccesses
+  show _                   = ""
 
 toJSONTxt :: SomeLocWithVars m -> T.Text
 toJSONTxt (SomeGLoc a) = case toJSON a of
@@ -182,12 +207,14 @@ toJSONTxt (SomeGLoc a) = case toJSON a of
 
 instance Show (PhysicalFileNode m) where
   show (MbPhysicalFileNode layers mbVF) =
-    T.unpack (mconcat
+    (if null layers
+       then "[no mapping]"
+       else T.unpack (mconcat
               (intersperse " << "
-               (map toJSONTxt layers)))
+               (map toJSONTxt layers))))
     ++ case mbVF of
          Just (SomeVirtualFile vf) ->
-           " - " ++ show (getVirtualFileDescription vf)
+           " | " ++ describeVFile vf
          _ -> ""
 
 
@@ -552,7 +579,7 @@ makeDataAccessor vpath (VFileImportance sevRead sevWrite sevError clockAccess)
                     withException runWrite $ \ioError ->
                       logFM sevError $ logStr $ displayException (ioError :: IOException)
     daPerformRead = do
-        dataFromLayers <- forM readLocs (\(FromStreamFn {-rkeys-} (f :: Stream (Of i) m () -> m (Of b ())), SomeGLoc loc) ->
+        dataFromLayers <- forM readLocs (\(FromStreamFn {-rkeys-} (f :: Stream (Of i) m () -> m b), SomeGLoc loc) ->
           case eqT :: Maybe (i :~: Strict.ByteString) of
             Nothing -> error "Some stream reader isn't expecting a stream of strict ByteStrings"
             Just Refl -> do
@@ -560,7 +587,7 @@ makeDataAccessor vpath (VFileImportance sevRead sevWrite sevError clockAccess)
               katipAddNamespace "dataAccessor" $ katipAddNamespace "reader" $
                 katipAddContext (DAC (toJSON loc) {-rkeys-}mempty repetKeyMap (toJSON loc')) $ do
                   let runRead = readBSS loc' (f . BSS.toChunks)
-                  (r :> ()) <- timeAccess "Read" sevRead (show loc') $ withException runRead $ \ioError ->
+                  r <- timeAccess "Read" sevRead (show loc') $ withException runRead $ \ioError ->
                     logFM sevError $ logStr $ displayException (ioError :: IOException)
                   return r)
         let embeddedValAndLayers = maybe id (:) mbDefVal dataFromLayers

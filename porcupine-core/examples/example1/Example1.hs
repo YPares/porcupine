@@ -57,7 +57,7 @@ mainTask =
   -- range contains just one value, zero.
   getOption ["Settings"] (docField @"users" (oneIndex (0::Int)) "The user ids to load")
   -- We turn the range we read into a full lazy list:
-  >>> arr enumIndices
+  >>> arr enumTRIndices
   -- Then we just map over these ids and call analyseOneUser each time:
   >>> parMapTask_ "userId" analyseOneUser
 

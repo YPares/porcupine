@@ -75,3 +75,15 @@ executables:
     main: Example2.hs
     dependencies:
       - porcupine-core
+  example-radon:
+    source-dirs: examples/example-radon
+    main: ExampleRadon.hs
+    dependencies:
+      - porcupine-core
+      - docrecords
+      - aeson
+      - unordered-containers
+      - text
+      - log-domain
+      - monad-bayes
+      - hvega
