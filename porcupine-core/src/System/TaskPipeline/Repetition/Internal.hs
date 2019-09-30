@@ -1,4 +1,3 @@
-{-# LANGUAGE Arrows          #-}
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# OPTIONS_GHC -fno-warn-name-shadowing #-}
@@ -7,7 +6,6 @@ module System.TaskPipeline.Repetition.Internal
   ( RepInfo(..)
   , TRIndex(..)
   , HasTRIndex(..)
-  , repIndex
   , makeRepeatable
   ) where
 
@@ -25,7 +23,13 @@ import           System.TaskPipeline.PTask.Internal
 import           System.TaskPipeline.ResourceTree
 
 
--- | Gives information about how a task will be repeated
+-- | Gives information about how a task will be repeated. The repInfoIndex will
+-- be used as a suffix in the default bindings to locations accessed by this
+-- task. If repInfoLogging is not Nothing, repInfoIndex will also be mentioned
+-- in the context of each line logged by the task to identify which repetition
+-- of the task is generating this log line. RepInfo is an instance of IsString
+-- so you can use it with OverloadedStrings (in which case repInfoIndex will be
+-- added to the context when verbosity level is at least 1).
 data RepInfo = RepInfo
   { repInfoIndex   :: LocVariable
   -- ^ A name that will be used as a metavariable in the config file. It may
@@ -37,10 +41,8 @@ data RepInfo = RepInfo
   -- context.
   } deriving (Eq, Show)
 
--- | Creates a 'RepetitionInfo' that will log the repetition index at verbosity
--- level 1 and above
-repIndex :: LocVariable -> RepInfo
-repIndex lv = RepInfo lv (Just V1)
+instance IsString RepInfo where
+  fromString s = RepInfo (fromString s) (Just V1)
 
 -- | Logging context for repeated tasks
 data TaskRepetitionContext = TRC

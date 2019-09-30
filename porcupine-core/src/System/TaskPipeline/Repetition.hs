@@ -4,7 +4,7 @@
 
 module System.TaskPipeline.Repetition
   ( module System.TaskPipeline.Repetition.Streaming
-  , RepInfo(..), repIndex
+  , RepInfo(..)
   , TRIndex(..)
   , HasTRIndex(..)
   , OneOrSeveral(..)

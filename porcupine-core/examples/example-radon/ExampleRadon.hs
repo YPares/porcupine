@@ -163,7 +163,8 @@ sampleFlatLinRegModel = proc () -> do
 runIn topdir = runPipelineTask
   (FullConfig "example-radon"  -- Name of the executable (for --help)
               "example-radon.yaml" -- Default config file path
-              topdir) -- Default root directory for mappings
+              topdir -- Default root directory for mappings
+              ())
   (baseContexts "")
   sampleFlatLinRegModel ()
 

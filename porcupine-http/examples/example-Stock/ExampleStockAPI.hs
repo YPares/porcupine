@@ -105,7 +105,7 @@ mainTask :: (LogThrow m) => PTask m () ()
 mainTask =
   getOption ["Settings"]
     (docField @"idcompany" ["aapl"::TRIndex] "The NASDAQ of the company to load")
-  >>> parMapTask_ (repIndex "idcompany") analyseStock
+  >>> parMapTask_ "idcompany" analyseStock
 
 
 -- globalMatrix :: DataSink (Tabular [[Double]])
@@ -125,6 +125,6 @@ mainTask =
 --    >>> writeData globalMatrix
 
 main :: IO ()
-main = runPipelineTask (FullConfig "example-stock" "porcupine-http/examples/example-Stock/example-stock.yaml" "porcupine-http/examples/example-Stock/data")
+main = runPipelineTask (FullConfig "example-stock" "porcupine-http/examples/example-Stock/example-stock.yaml" "porcupine-http/examples/example-Stock/data" ())
                        (#http <-- useHTTP :& baseContexts "")
                        mainTask ()

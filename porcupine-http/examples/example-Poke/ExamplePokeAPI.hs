@@ -100,14 +100,15 @@ mainTask =
   -- We turn the range we read into a full lazy list:
   >>> arr enumTRIndices
   -- Then we just map over these ids and call analyseOnePokemon each time:
-  >>> parMapTask (repIndex "pokemonId") analyzeOnePokemon
+  >>> parMapTask "pokemonId" analyzeOnePokemon
   >>> writeSummary
 
 main :: IO ()
-main = runPipelineTask
-  (FullConfig "example-pokeapi"  -- Name of the executable (for --help)
-              "porcupine-http/examples/example-Poke/example-pokeapi.yaml" -- Default config file path
-              "example-pokeapi_files") -- Default root directory for mappings
-  (   #http <-- useHTTP -- We just add #http on top of the baseContexts to activate HTTP support
-   :& baseContexts "")
-  mainTask ()
+main = runPipelineTask (FullConfig "example-pokeapi"
+                                   "porcupine-http/examples/example-Poke/example-pokeapi.yaml"
+                                   "example-pokeapi_files"
+                                   ())
+                       (  #http <-- useHTTP
+                            -- We just add #http on top of the baseContexts.
+                       :& baseContexts "")
+                       mainTask ()

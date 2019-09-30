@@ -3,6 +3,7 @@
 {-# LANGUAGE LambdaCase                #-}
 {-# LANGUAGE OverloadedStrings         #-}
 {-# LANGUAGE RankNTypes                #-}
+{-# LANGUAGE TemplateHaskell           #-}
 {-# LANGUAGE TupleSections             #-}
 {-# OPTIONS_GHC -Wall          #-}
 
@@ -23,6 +24,8 @@ module System.TaskPipeline.CLI
 
   , pipelineConfigMethodProgName
   , pipelineConfigMethodDefRoot
+  , pipelineConfigMethodConfigFile
+  , pipelineConfigMethodDefReturnVal
   , withConfigFileSourceFromCLI
   ) where
 
@@ -51,57 +54,53 @@ import           System.TaskPipeline.Logger
 -- | How to print a 'LocationTree' or its mappings on stdout
 data LocTreeLayout = NoMappings | FullMappings
 
-data PipelineCommand r where
-  RunPipeline :: PipelineCommand r
-  ShowLocTree :: (Monoid r) => LocTreeLayout -> PipelineCommand r
+-- | The command to parse from the CLI
+data PipelineCommand
+  = RunPipeline
+  | ShowLocTree LocTreeLayout
 
--- | Tells whether and how command-line options should be used. @r@ is the
--- result of the Pipeline, which must be a Monoid in case the CLI runs because
--- the user might ask for simply saving the config file.
---
--- NoConfig: No CLI, no Yaml file are used, in which case we require a program
--- name and the root directory.
---
--- FullConfig: We require a name (for the help page in the CLI), the config file
--- path, default 'LocationTree' root mapping, and a way to override ModelOpts
--- arguments from CLI and config file.
---
--- Program names can be empty.
-data PipelineConfigMethod r where
-  NoConfig :: String -> Loc -> PipelineConfigMethod r
-  FullConfig :: (Monoid r)
-             => String
-             -> LocalFilePath
-             -> Loc
-             -> PipelineConfigMethod r
+-- | Tells whether and how command-line options should be used. @r@ is the type
+-- of the result of the PTask that this PipelineConfigMethod will be use for
+-- (see @runPipelineTask@). _pipelineConfigMethodDefReturnVal will be used as a
+-- return value for the pipeline eg. when the user just wants to write the
+-- config template, and not run the pipeline.
+data PipelineConfigMethod r
+  = NoConfig { _pipelineConfigMethodProgName :: String
+             , _pipelineConfigMethodDefRoot  :: Loc }
+    -- ^ No CLI and no config file are used, in which case we require a program
+    -- name (for logs) and the root directory.
+  | ConfigFileOnly { _pipelineConfigMethodProgName   :: String
+                   , _pipelineConfigMethodConfigFile :: LocalFilePath
+                   , _pipelineConfigMethodDefRoot    :: Loc }
+    -- ^ Config file is read and loaded if it exists. No CLI is used.
+  | FullConfig { _pipelineConfigMethodProgName     :: String
+               , _pipelineConfigMethodConfigFile   :: LocalFilePath
+               , _pipelineConfigMethodDefRoot      :: Loc
+               , _pipelineConfigMethodDefReturnVal :: r }
+    -- ^ Both config file and CLI will be used. We require a name (for the help
+    -- page in the CLI), the config file path, the default 'LocationTree' root
+    -- mapping, and a default value to return when the CLI is called with a
+    -- command other than 'run' (in which case the pipeline will not run).
 
--- | Get/set the program name in the 'PipelineConfigMethod'
-pipelineConfigMethodProgName :: Lens' (PipelineConfigMethod r) String
-pipelineConfigMethodProgName f (FullConfig n s r) = (\n' -> FullConfig n' s r) <$> f n
-pipelineConfigMethodProgName f (NoConfig n r    ) = (\n' -> NoConfig n' r) <$> f n
-
--- | Get/set the default Loc that should be bound to the top of the 'LocationTree'
-pipelineConfigMethodDefRoot :: Lens' (PipelineConfigMethod r) Loc
-pipelineConfigMethodDefRoot f (FullConfig n s r) = FullConfig n s <$> f r
-pipelineConfigMethodDefRoot f (NoConfig n r    ) = NoConfig n <$> f r
+makeLenses ''PipelineConfigMethod
 
 -- | Runs the new ModelCLI unless a Yaml or Json config file is given on the
 -- command line
 withCliParser
-  :: (Monoid r)
-  => String
+  :: String
   -> String
   -> Parser (Maybe (a, cmd), LoggerScribeParams, [PostParsingAction])
+  -> r
   -> (a -> cmd -> LoggerScribeParams -> PreRun -> IO r)
   -> IO r
-withCliParser progName progDesc_ cliParser f = do
+withCliParser progName progDesc_ cliParser defRetVal f = do
   (mbArgs, lsp, actions) <- execCliParser progName progDesc_ cliParser
   case mbArgs of
     Just (cfg, cmd) ->
       f cfg cmd lsp $ PreRun $ mapM_ processAction actions
     Nothing         -> runLogger progName lsp $ do
       mapM_ processAction actions
-      return mempty
+      return defRetVal
  where
    processAction (PostParsingLog s l) = logFM s l
    processAction (PostParsingWrite configFile cfg) = do
@@ -390,7 +389,7 @@ mergeWithDefault path (Object o1) (Object o2) =
   in (warnings ++ subWarnings, Object merged)
 mergeWithDefault _ _ v = pure v
 
-parseShowLocTree :: (Monoid r) => Parser (PipelineCommand r)
+parseShowLocTree :: Parser PipelineCommand
 parseShowLocTree = ShowLocTree <$>
   (   (flag' FullMappings
         (long "mappings"
@@ -399,11 +398,11 @@ parseShowLocTree = ShowLocTree <$>
   )
 
 pipelineCliParser
-  :: (Monoid r, ToJSON cfg)
+  :: (ToJSON cfg)
   => (cfg -> ConfigurationReader cfg overrides)
   -> String
   -> BaseInputConfig cfg
-  -> IO (Parser (Maybe (cfg, PipelineCommand r), LoggerScribeParams, [PostParsingAction]))
+  -> IO (Parser (Maybe (cfg, PipelineCommand), LoggerScribeParams, [PostParsingAction]))
 pipelineCliParser getCliOverriding progName baseInputConfig =
   cliYamlParser progName baseInputConfig (getCliOverriding $ bicDefaultConfig baseInputConfig)
   [(pure RunPipeline, "run", "Run the pipeline")

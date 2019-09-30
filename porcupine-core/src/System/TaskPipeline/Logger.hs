@@ -7,6 +7,7 @@ module System.TaskPipeline.Logger
   , Severity(..)
   , Verbosity(..)
   , maxVerbosityLoggerScribeParams
+  , warningsAndErrorsLoggerScribeParams
   , log
   , runLogger
   ) where
@@ -42,9 +43,13 @@ data LoggerScribeParams = LoggerScribeParams
   }
   deriving (Eq, Show)
 
--- | Show log message from Debug level, with maximum verbosity.
+-- | Show log message from Debug level, with V2 verbosity.
 maxVerbosityLoggerScribeParams :: LoggerScribeParams
-maxVerbosityLoggerScribeParams = LoggerScribeParams DebugS V3 PrettyLog
+maxVerbosityLoggerScribeParams = LoggerScribeParams DebugS V2 PrettyLog
+
+-- | Show log message from Warning level, with V2 verbosity and one-line logs.
+warningsAndErrorsLoggerScribeParams :: LoggerScribeParams
+warningsAndErrorsLoggerScribeParams = LoggerScribeParams WarningS V2 CompactLog
 
 -- | Starts a logger.
 runLogger
@@ -61,7 +66,7 @@ runLogger progName (LoggerScribeParams sev verb logFmt) x = do
           BracketLog -> bracketFormat
           JSONLog    -> jsonFormat
     handleScribe <- liftIO $
-      mkHandleScribeWithFormatter logFmt' ColorIfTerminal stdout sev verb
+      mkHandleScribeWithFormatter logFmt' ColorIfTerminal stdout (permitItem sev) verb
     let mkLogEnv = liftIO $
           registerScribe "stdout" handleScribe defaultScribeSettings
           =<< initLogEnv (fromString progName) "devel"

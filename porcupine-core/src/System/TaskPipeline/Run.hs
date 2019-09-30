@@ -15,11 +15,17 @@ module System.TaskPipeline.Run
   , CanRunPTask
   , Rec(..)
   , ContextRunner(..)
+  , SimplePTaskM, BasePorcupineContexts
+  , ReaderSoup
+  , FieldWithAccessors
+  , AcceptableArgsAndContexts
   , (<--)
-  , baseContexts
+  , (:::)
+  , baseContexts, baseContextsWithScribeParams
+  , maxVerbosityLoggerScribeParams
+  , warningsAndErrorsLoggerScribeParams
   , runPipelineTask
   , runLocalPipelineTask
-  , runPipelineTask_
   , simpleRunPTask
   , runPipelineTaskWithExceptionHandlers
   , runPipelineCommandOnPTask
@@ -35,11 +41,11 @@ import           Data.Maybe
 import           Data.Vinyl.Derived                 (HasField, rlensf)
 import           Katip
 import           Prelude                            hiding ((.))
-import           System.Environment                 (lookupEnv)
+import           System.Environment                 (lookupEnv, withArgs)
 import           System.FilePath                    ((</>))
 import           System.Posix.Directory             (getWorkingDirectory)
 import           System.TaskPipeline.CLI
-import           System.TaskPipeline.Logger         (runLogger)
+import           System.TaskPipeline.Logger
 import           System.TaskPipeline.PTask
 import           System.TaskPipeline.PTask.Internal
 import           System.TaskPipeline.ResourceTree
@@ -69,8 +75,7 @@ runPipelineTask
                                                       -- accessors to use
   -> PTask (ReaderSoup ctxs) i o  -- ^ The whole pipeline task to run
   -> i                 -- ^ The pipeline task input
-  -> IO o -- , RscAccessTree (ResourceTreeNode m))
-                       -- ^ The pipeline task output and the final LocationTree
+  -> IO o              -- ^ The pipeline task output
 runPipelineTask = runPipelineTaskWithExceptionHandlers []
 
 runPipelineTaskWithExceptionHandlers
@@ -83,60 +88,48 @@ runPipelineTaskWithExceptionHandlers
                                                       -- accessors to use
   -> PTask (ReaderSoup ctxs) i o  -- ^ The whole pipeline task to run
   -> i                 -- ^ The pipeline task input
-  -> IO o -- , RscAccessTree (ResourceTreeNode m))
-                       -- ^ The pipeline task output and the final LocationTree
-runPipelineTaskWithExceptionHandlers exceptionHandlers cliUsage accessors ptask input = do
+  -> IO o              -- ^ The pipeline task output
+runPipelineTaskWithExceptionHandlers exceptionHandlers configMethod accessors ptask input = do
   let tree = ptask ^. ptaskRequirements
   catches
-    (bindResourceTreeAndRun cliUsage accessors tree $
+    (bindResourceTreeAndRun configMethod accessors tree $
       runPipelineCommandOnPTask ptask input)
     exceptionHandlers
 
--- | Like 'runPipelineTask' if you don't need any specific LocationAccessor
--- aside "resource" (accessor for local files).
+-- | A monad that implements MonadIO, MonadUnliftIO, KatipContext and
+-- MonadResource. For simplest uses of porcupine.
+type SimplePTaskM = ReaderSoup BasePorcupineContexts
+
+-- | Like 'runPipelineTask' if you don't need to access any other resources than
+-- local files. Uses the 'maxVerbosityLoggerScribeParams' by default.
 runLocalPipelineTask
   :: PipelineConfigMethod o
-  -> PTask (ReaderSoup BasePorcupineContexts) i o
+  -> PTask SimplePTaskM i o
   -> i
   -> IO o
-runLocalPipelineTask cliUsage =
-  runPipelineTask cliUsage (baseContexts $ cliUsage ^. pipelineConfigMethodProgName)
+runLocalPipelineTask configMethod =
+  runPipelineTask configMethod (baseContexts $ configMethod ^. pipelineConfigMethodProgName)
 
--- | Runs a PTask without any configuration, only local files accesses, and
--- using PWD as the root location for all files read and written.
+-- | Runs a PTask without reading any configuration nor parsing the CLI, with
+-- only local files being accessible, and using PWD as the root location for all
+-- files read and written.
 simpleRunPTask
-  :: PTask (ReaderSoup BasePorcupineContexts) i o
+  :: PTask SimplePTaskM i o
   -> i
   -> IO o
 simpleRunPTask = runLocalPipelineTask (NoConfig "simpleRunPTask" ".")
-
--- | A simpler 'runLocalPipelineTask' for when you task just expects no input.
---
--- DEPRECATED
-runPipelineTask_
-  :: PipelineConfigMethod o
-  -> PTask (ReaderSoup BasePorcupineContexts) () o
-  -> IO o
-runPipelineTask_ cliUsage ptask = runLocalPipelineTask cliUsage ptask ()
--- TODO: Remove runPipelineTask_ from porcupine, it doesn't belong to the API
-
--- pipelineConfigMethodChangeResult
---   :: PipelineConfigMethod o
---   -> PipelineConfigMethod (o, RscAccessTree (ResourceTreeNode m))
--- pipelineConfigMethodChangeResult cliUsage = case cliUsage of
---   NoConfig r     -> NoConfig r
---   FullConfig s r -> FullConfig s r
 
 -- | Runs the required 'PipelineCommand' on an 'PTask'
 runPipelineCommandOnPTask
   :: (CanRunPTask m)
   => PTask m i o
   -> i
-  -> PipelineCommand o --, RscAccessTree (ResourceTreeNode m))
+  -> PipelineCommand
+  -> Maybe o
   -> PhysicalResourceTree m
   -> FunflowOpts m
-  -> m o --, RscAccessTree (PhysicalTreeNode m)
-runPipelineCommandOnPTask ptask input cmd physTree ffopts = do
+  -> m o
+runPipelineCommandOnPTask ptask input cmd defRetVal physTree ffopts = do
   let (virtualTree, runnable) = ptask ^. splittedPTask
   -- virtualTree is the bare tree of VirtualFiles straight from the
   -- pipeline. physTree is virtualTree after configuration, with embedded data
@@ -151,13 +144,16 @@ runPipelineCommandOnPTask ptask input cmd physTree ffopts = do
             (case remoteCacheLoc ffopts of
                Just l -> "Using remote cache at " ++ show l
                _      -> "")
-          Nothing -> "FUNFLOW_IDENTITY not specified. The cache will not be used."
+          Nothing -> identityVar ++ " not specified. The cache will not be used."
         execRunnablePTask runnable initState input
     ShowLocTree mode -> do
       liftIO $ putStrLn $ case mode of
         NoMappings   -> prettyLocTree virtualTree
         FullMappings -> prettyLocTree physTree
-      return mempty
+      case defRetVal of
+        Just r -> return r
+        Nothing -> error "NOT EXPECTED: runPipelineCommandOnPTask(ShowLocTree) was not given a default\
+                         \value to return. Please submit this as a bug."
 
 storeVar,remoteCacheVar,identityVar,coordVar :: String
 storeVar       = "FUNFLOW_STORE"
@@ -208,10 +204,11 @@ getPhysTreeAndFFOpts rtam accessors =
 -- to its final value/path, and passes the continuation the bound resource tree.
 bindResourceTreeAndRun
   :: (AcceptableArgsAndContexts args ctxs m)
-  => PipelineConfigMethod r -- ^ How to get CLI args from ModelOpts
+  => PipelineConfigMethod r -- ^ How to read the configuration
   -> Rec (FieldWithAccessors (ReaderSoup ctxs)) args
   -> VirtualResourceTree    -- ^ The tree to look for DocRecOfoptions in
-  -> (PipelineCommand r
+  -> (PipelineCommand
+      -> Maybe r
       -> PhysicalResourceTree (ReaderSoup ctxs)
       -> FunflowOpts (ReaderSoup ctxs)
       -> ReaderSoup ctxs r)
@@ -219,15 +216,32 @@ bindResourceTreeAndRun
   -> IO r
 bindResourceTreeAndRun (NoConfig _ root) accessorsRec tree f =
   consumeSoup argsRec $ do
-    (physTree, ffPaths) <- getPhysTreeAndFFOpts rtam accessors
-    f RunPipeline physTree ffPaths
+    (physTree, ffPaths) <- getPhysTreeAndFFOpts defaultConfig accessors
+    f RunPipeline Nothing physTree ffPaths
   where
-    rtam = ResourceTreeAndMappings tree (Left root) mempty
+    defaultConfig = ResourceTreeAndMappings tree (Left root) mempty
     (accessors, argsRec) = splitAccessorsFromArgRec accessorsRec
-bindResourceTreeAndRun (FullConfig progName defConfigFileURL defRoot) accessorsRec tree f =
+bindResourceTreeAndRun (ConfigFileOnly progName configFileURL defRoot) accessorsRec tree f = do
+  -- We deactivate every argument that might have been passed so the only choice
+  -- is to run the pipeline. Given the parsing of the config file and the
+  -- command-line are quite related, it is difficult to just remove the CLI
+  -- parsing until that part of the code is refactored to better separate CLI
+  -- parsing and deserialization of the ResourceTreeAndMappings from the config
+  -- file
+  res <- withArgs ["-qq", "--context-verb", "2", "--log-format", "compact"] $
+         -- No CLI arg is passable, so until we improve CLI parsin as stated
+         -- just above, in that case we limit ourselves to warnings and errors
+    bindResourceTreeAndRun (FullConfig progName configFileURL defRoot Nothing) accessorsRec tree $
+      \_ _ t o -> Just <$> f RunPipeline Nothing t o
+  case res of
+    Just r -> return r
+    Nothing -> error "NOT EXPECTED: bindResourceTreeAndRun(ConfigFileOnly) didn't receive a result\
+                     \from the pipeline. Please submit this as a bug."
+bindResourceTreeAndRun (FullConfig progName defConfigFileURL defRoot defRetVal) accessorsRec tree f =
   withConfigFileSourceFromCLI $ \mbConfigFileSource -> do
     let configFileSource = fromMaybe (ConfigFileURL (LocalFile defConfigFileURL)) mbConfigFileSource
-    mbConfig <- tryReadConfigFileSource configFileSource $ \remoteURL ->
+    mbConfigFromFile <-
+      tryReadConfigFileSource configFileSource $ \remoteURL ->
                   consumeSoup argsRec $ do
                     -- If config file is remote, we use the accessors and run
                     -- the readerSoup with the defaut katip params
@@ -241,17 +255,18 @@ bindResourceTreeAndRun (FullConfig progName defConfigFileURL defRoot) accessorsR
               BaseInputConfig (case configFileSource of
                                  ConfigFileURL (LocalFile filep) -> Just filep
                                  _                               -> Nothing)
-                              mbConfig
-                              (ResourceTreeAndMappings tree (Left defRoot) mempty)
-    withCliParser progName "Run a task pipeline" parser run
+                              mbConfigFromFile
+                              defaultConfig
+    withCliParser progName "Run a task pipeline" parser defRetVal run
   where
+    defaultConfig = ResourceTreeAndMappings tree (Left defRoot) mempty
     (accessors, argsRec) = splitAccessorsFromArgRec accessorsRec
-    run rtam cmd lsp performConfigWrites =
+    run finalConfig cmd lsp performConfigWrites =
       let -- We change the katip runner, from the options we got from CLI:
           argsRec' = argsRec & set (rlensf #katip)
             (ContextRunner (runLogger progName lsp))
       in
       consumeSoup argsRec' $ do
         unPreRun performConfigWrites
-        (physTree, ffPaths) <- getPhysTreeAndFFOpts rtam accessors
-        f cmd physTree ffPaths
+        (physTree, ffPaths) <- getPhysTreeAndFFOpts finalConfig accessors
+        f cmd (Just defRetVal) physTree ffPaths

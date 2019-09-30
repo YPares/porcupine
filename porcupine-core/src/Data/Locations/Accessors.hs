@@ -35,7 +35,7 @@ module Data.Locations.Accessors
   , LocResolutionM
   , BasePorcupineContexts
   , (<--)
-  , baseContexts
+  , baseContexts, baseContextsWithScribeParams
   , pattern L
   , splitAccessorsFromArgRec
   , withParsedLocs, withParsedLocsWithVars, resolvePathToSomeLoc, resolveYamlDocToSomeLoc
@@ -290,6 +290,12 @@ baseContexts topNamespace =
   :& #resource <-- useResource
   :& RNil
 
+-- | Like 'baseContext' but allows you to set the 'LoggerScribeParams'. Useful
+-- when no CLI is used (see 'NoConfig' and 'ConfigFileOnly')
+baseContextsWithScribeParams topNamespace scribeParams =
+     #katip    <-- ContextRunner (runLogger topNamespace scribeParams)
+  :& #resource <-- useResource
+  :& RNil
 
 -- * Parsing and resolving locations, tying them to one LocationAccessor
 

@@ -59,10 +59,10 @@ mainTask =
   -- We turn the range we read into a full lazy list:
   >>> arr enumTRIndices
   -- Then we just map over these ids and call analyseOneUser each time:
-  >>> parMapTask_ (repIndex "userId") analyseOneUser
+  >>> parMapTask_ "userId" analyseOneUser
 
 main :: IO ()
-main = runPipelineTask (FullConfig "example1" "porcupine-example1.yaml" "porcupine-core/examples/example1/data")
+main = runPipelineTask (FullConfig "example1" "porcupine-example1.yaml" "porcupine-core/examples/example1/data" ())
                           -- The CLI/Yaml configuration to use (prog name,
                           -- default config file to create, and default root to
                           -- use for the resource tree)

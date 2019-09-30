@@ -66,7 +66,7 @@ analyseStocks =
    >>> writeData globalMatrix
 
 main :: IO ()
-main = runPipelineTask (FullConfig "example2" "porcupine-example2.yaml" "porcupine-core/examples/example2/data")
+main = runPipelineTask (FullConfig "example2" "porcupine-example2.yaml" "porcupine-core/examples/example2/data" ())
                           -- The CLI/Yaml configuration to use (prog name,
                           -- default config file to create, and default root to
                           -- use for the resource tree)
