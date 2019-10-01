@@ -46,9 +46,11 @@ have to care about how the input data will be serialized. As long as the data it
 tries to feed into the pipeline matches some known serialization function. Also,
 the introspectable nature of resource trees (more on that later) allows you to
 _add_ serials to an existing pipeline before reusing it as part of your own
-pipeline. This sort of makes Porcupine an "anti-ETL": rather than marshall and
-curate input data so that it matches the pipeline expectations, you augment the
-pipeline so that it can deal with more data sources.
+pipeline. This sort of makes Porcupine an
+"anti-[ETL](https://en.wikipedia.org/wiki/Extract,_transform,_load)": rather
+than marshall and curate input data so that it matches the pipeline
+expectations, you augment the pipeline so that it can deal with more data
+sources.
 
 ## Resource tree
 
@@ -76,7 +78,7 @@ myInput :: VirtualFile Void MyConfig
 	-- MyConfig must be an instance of FromJSON here
 myInput = dataSource
             ["Inputs", "Config"] -- The logical path '/Inputs/Config'
-	    (somePureDeserial JSONSerial)
+	        (somePureDeserial JSONSerial)
 
 somePureDeserial :: (DeserializesWith s a) => s -> SerialsFor Void a
 dataSource :: [LocationTreePathItem] -> SerialsFor a b -> DataSource b
@@ -118,9 +120,9 @@ pipeline, your application just needs to call:
 
 ```haskell
 main :: IO ()
-main = runPipelineTask_ cfg mainTask
+main = runLocalPipelineTask cfg mainTask
   where
-    cfg = FullConfig "MyApp" "pipeline-config.yaml" "./default-root-dir"
+    cfg = FullConfig "MyApp" "pipeline-config.yaml" "./default-root-dir" ()
 ```
 
 ## Running a Porcupine application
@@ -132,7 +134,7 @@ configuration. Just run it with:
 $ my-exe write-config-template
 ```
 
-if your `main` looks like the one we presented previously, that will generate a
+If your `main` looks like the one we presented previously, that will generate a
 `pipeline-config.yaml` file in the current directory. In this file, you will see
 the totality of the virtual files accessed by your pipeline and the totality of
 the options^[Options are just VirtualFiles, but they are created with the
@@ -152,6 +154,16 @@ and the pipeline will run (logging its accesses along). The `run` is optional,
 it's the default subcommand. Any option you defined inside your pipeline is also
 exposed on the CLI, and shown by `my-exe --help`. Specifying it on the CLI
 overrides the value set in the yaml config file.
+
+A note about the `FullConfig` option you saw earlier. Porcupine is quite a
+high-level tool and handles configuration file and CLI parsing for you, and this
+is what `FullConfig` triggers. But this is not mandatory, you also have
+`ConfigFileOnly` for when you don't want porcupine to parse the CLI arguments
+(this is for the cases when your pipeline isn't the entirety of your program, or
+when you want for some reason to parse CLI yourself) and `NoConfig` for when you
+don't want any source of configuration to be read. When CLI parsing is
+activated, you need to provide a default value for the pipeline: indeed using
+`write-config-template` means your pipeline won't even run.
 
 # Philosophy of use
 
@@ -184,10 +196,10 @@ with her different set of skills.
 
 # Walking through an example
 
-Let's have a look at [example1](porcupine-core/examples/Example1.hs). It carries
+Let's have a look at [example1](porcupine-core/examples/example1/Example1.hs). It carries
 out a very simple analysis: counting the number of times each letter of the
 alphabet appears in some users' first name and last name. Each user data is read
-from [a json file specific to that user](porcupine-core/examples/data/Inputs)
+from [a json file specific to that user](porcupine-core/examples/example1/data/Inputs)
 named `User-{userId}.json`, and the result for that user is written to another
 json file named `Analysis-{userId}.json`. This very basic process is repeated
 once per user ID to consider.
@@ -320,7 +332,7 @@ This is not what we want. That's why we'll declare another task on top of that:
 mainTask =
   getOption ["Settings"] (docField @"users" (oneIndex (0::Int)) "The user ids to load")
   >>> arr enumIndices
-  >>> parMapTask_ (repIndex "userId") analyseOneUser
+  >>> parMapTask_ "userId" analyseOneUser
 ```
 
 Here, we will first declare a record of one option field (that's why we use
@@ -336,14 +348,15 @@ embed it in the YAML config file).
 `getOption`'s output will thus be list of ranges (tuples). We transform it to a
 flat list of every ID to consider with `enumIndices`, and finally we map (in
 parallel) over that list with `parMapTask_`, repeating our `analyseOneUser` once
-per user ID in input. Note the `repIndex "userId"`: this creates a *repetition
-index*. Every function that repeats tasks in porcupine will take one, and this
-is where the `{userId}` variable that we saw in the YAML config comes from. It
-works first by changing the default mappings of the VirtualFiles accessed by
-`analyseOneUser` so that each of them now contains the `{userId}` variable, and
-second by looking up that variable in the physical path and replacing it with
-the user ID currently being considered. All of that so we don't end up reading
-and writing the same files everytime the task is repeated.
+per user ID in input. Note the first argument `"userId"`: this is the
+*repetition index* (you need OverloadedStrings). Every function that repeats
+tasks in porcupine will take one, and this is where the `{userId}` variable that
+we saw in the YAML config comes from. It works first by changing the default
+mappings of the VirtualFiles accessed by `analyseOneUser` so that each of them
+now contains the `{userId}` variable, and second by looking up that variable in
+the physical path and replacing it with the user ID currently being
+considered. All of that so we don't end up reading and writing the same files
+everytime the task is repeated.
 
 So what happens if you remove the variables from the mappings? Let's say you
 change the mappings of `/Outputs/Analysis` to:
@@ -418,16 +431,16 @@ file that doesn't exist.
 
 Every VirtualFile (be it read from embedded data of from external files) can be
 read from _several_ sources instead of one. That requires one thing though: that
-the type `B` you read from a `VirtualFile A B` is an instance of Semigroup (and
-that your VirtualFile is wrapped in `usesLayeredMapping` so it knows about
-that). This way, porcupine has a way to merge all these inputs into just one
-resource. It can come very handy, and can be used depending on your pipeline to
-organize your input resources into several layers, "stacked" so that the first
-layers' content are completed or overriden by the subsequent layers'. It all
-depends on which instance of Semigroup is read from your `VirtualFile`.
+the type `B` you read from a `VirtualFile A B` is an instance of Semigroup (call
+`usesLayeredMapping` so your VirtualFile registers that). This way, porcupine
+has a way to merge all these inputs into just one resource. It can come very
+handy, and can be used depending on your pipeline to organize your input
+resources into several layers, "stacked" so that the first layers' content are
+completed or overriden by the subsequent layers. It all depends on which
+instance of Semigroup is read from your `VirtualFile`.
 
-In a similar fashion, if `B` is a Monoid (and if your `VirtualFile` is wrapped
-in `canBeUnmapped`), this authorizes you to map it to `null` in your config
+In a similar fashion, if `B` is a Monoid (and if `canBeUnmapped` is applied to
+your `VirtualFile`), this authorizes you to map it to `null` in your config
 file, so when this `VirtualFile` is "read", we just get a `mempty`.
 
 Layers also work for output files, although it's much simpler here: the data is
@@ -463,8 +476,8 @@ we want to run it with the `useHTTP` function, imported from
 access to local files and logging). Note that you need to activate the
 `OverloadedLabels` GHC extension.
 
-Note that _nothing_ in the code tells us where the data will actually be
-read. The connection between our dataSource and the REST API will be made in the
+Note that _nothing_ in the code tells us where the data will actually be read
+from. The connection between our dataSource and the REST API will be made in the
 [configuration file](porcupine-http/examples/example-Poke/example-pokeapi.yaml).
 
 ## Logging

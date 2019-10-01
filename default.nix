@@ -46,6 +46,8 @@ A few notes:
   extended by source filtering
 */
 
+{ withHoogle ? false }:
+
 let
 porcupineSources = {
   docrecords = ./docrecords;
@@ -104,7 +106,7 @@ porcupinePkgs = builtins.mapAttrs (x: _: pkgs.haskellPackages.${x}) porcupineSou
 shell = pkgs.haskellPackages.shellFor {
   packages = _: builtins.attrValues porcupinePkgs;
   nativeBuildInputs = [pkgs.cabal-install];
-  withHoogle = true;
+  withHoogle = withHoogle;
   # Generates the cabal and cabal project file
   shellHook =
   ''
