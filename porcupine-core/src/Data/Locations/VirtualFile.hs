@@ -126,7 +126,7 @@ instance HasDefaultMappingRule (VirtualFile a b) where
           _                -> T.pack ""
 
 -- For now, given the requirement of PTask, VirtualFile has to be a Monoid
--- because a Resource Tree also has to.
+-- because a VirtualTree also has to.
 instance Semigroup (VirtualFile a b) where
   VirtualFile p l v m i d wc rc s <> VirtualFile _ _ _ _ _ _ _ _ s' =
     VirtualFile p l v m i d wc rc (s<>s')
@@ -164,7 +164,7 @@ data VirtualFileDescription = VirtualFileDescription
   } deriving (Show)
 
 -- | Gives a 'VirtualFileDescription'. To be used on files stored in the
--- ResourceTree.
+-- VirtualTree.
 getVirtualFileDescription :: VirtualFile a b -> VirtualFileDescription
 getVirtualFileDescription vf =
   VirtualFileDescription intent readableFromConfig writableInOutput exts

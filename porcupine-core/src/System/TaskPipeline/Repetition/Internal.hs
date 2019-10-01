@@ -18,9 +18,9 @@ import           Data.Locations
 import           Data.String                        (IsString(..))
 import           Katip
 import           Prelude                            hiding (id, (.))
+import           System.TaskPipeline.PorcupineTree
 import           System.TaskPipeline.PTask
 import           System.TaskPipeline.PTask.Internal
-import           System.TaskPipeline.ResourceTree
 
 
 -- | Gives information about how a task will be repeated. The repInfoIndex will

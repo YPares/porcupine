@@ -55,8 +55,8 @@ import           Data.Locations.LogAndErrors
 import           Data.String
 import           Katip
 import           System.ClockHelpers
+import           System.TaskPipeline.PorcupineTree
 import           System.TaskPipeline.PTask.Internal
-import           System.TaskPipeline.ResourceTree
 
 
 -- | a tasks that discards its inputs and returns ()

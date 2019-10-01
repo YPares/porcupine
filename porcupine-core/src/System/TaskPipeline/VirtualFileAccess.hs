@@ -61,11 +61,12 @@ import qualified Data.Text                           as T
 import           Data.Typeable
 import           Streaming                           (Of (..), Stream)
 import qualified Streaming.Prelude                   as S
+import           System.TaskPipeline.PorcupineTree
 import           System.TaskPipeline.PTask
 import           System.TaskPipeline.PTask.Internal
 import           System.TaskPipeline.Repetition.Internal
 import qualified System.TaskPipeline.Repetition.Fold as F
-import           System.TaskPipeline.ResourceTree
+
 
 -- | Uses only the read part of a 'VirtualFile'. It is therefore considered as a
 -- pure 'DataSource'.
@@ -368,8 +369,8 @@ withFolderDataAccessNodes props path filesToAccess accessFn =
   where
     tree = foldr (\pathItem subtree -> folderNode [ pathItem :/ subtree ])
                  (folderNode $ F.toList filesToAccess) path
-    runAccess rscTree input = do
-      let mbSubtree = rscTree ^? atSubfolderRec path
+    runAccess virtualTree input = do
+      let mbSubtree = virtualTree ^? atSubfolderRec path
       subtree <- case mbSubtree of
         Just s -> return s
         Nothing -> throwWithPrefix $

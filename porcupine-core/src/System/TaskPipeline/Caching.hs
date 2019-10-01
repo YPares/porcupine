@@ -30,8 +30,8 @@ import           Control.Funflow
 import           Data.Default                          (Default (..))
 import           Data.Locations.LogAndErrors
 import           Data.Locations.VirtualFile
+import           System.TaskPipeline.PorcupineTree
 import           System.TaskPipeline.PTask
-import           System.TaskPipeline.ResourceTree
 import           System.TaskPipeline.VirtualFileAccess
 
 import           Prelude                               hiding (id, (.))

@@ -62,7 +62,7 @@ import           Data.Locations.LogAndErrors
 import           Katip.Core                                  (Namespace)
 import           Katip.Monadic
 import           Path
-import           System.TaskPipeline.ResourceTree
+import           System.TaskPipeline.PorcupineTree
 
 
 -- | PTask functions like mappingOverStream make necessary to recursively run
@@ -117,14 +117,14 @@ execRunnablePTask
 
 -- | A task is an Arrow than turns @a@ into @b@. It runs in some monad @m@.
 -- Each 'PTask' will expose its requirements in terms of resource it wants to
--- access in the form of a resource tree (implemented as a 'LocationTree' of
+-- access in the form of a virtual tree (implemented as a 'LocationTree' of
 -- 'VirtualFile's). These trees of requirements are aggregated when the tasks
 -- are combined with each other, so once the full pipeline has been composed
--- (through Arrow composition), its 'pTaskResourceTree' will contain the
+-- (through Arrow composition), its 'pTaskVirtualTree' will contain the
 -- complete requirements of the pipeline.
 newtype PTask m a b = PTask
   (AppArrow
-    (Writer VirtualResourceTree)  -- The writer layer accumulates the requirements. It will
+    (Writer VirtualTree)  -- The writer layer accumulates the requirements. It will
                       -- be used only as an applicative.
     (RunnablePTask m)
     a b)
@@ -223,8 +223,8 @@ runnableWithoutReqs = PTask . appArrow
 
 -- | An Iso to the requirements and the runnable part of a 'PTask'
 splittedPTask :: Iso (PTask m a b) (PTask m a' b')
-                     (VirtualResourceTree, RunnablePTask m a b)
-                     (VirtualResourceTree, RunnablePTask m a' b')
+                     (VirtualTree, RunnablePTask m a b)
+                     (VirtualTree, RunnablePTask m a' b')
 splittedPTask = iso to_ from_
   where
     to_ (PTask (AppArrow wrtrAct)) = swap $ runWriter wrtrAct
