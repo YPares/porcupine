@@ -46,9 +46,9 @@ import           System.FilePath                    ((</>))
 import           System.Posix.Directory             (getWorkingDirectory)
 import           System.TaskPipeline.CLI
 import           System.TaskPipeline.Logger
+import           System.TaskPipeline.PorcupineTree
 import           System.TaskPipeline.PTask
 import           System.TaskPipeline.PTask.Internal
-import           System.TaskPipeline.ResourceTree
 
 
 -- | Tells whether a record of args can be used to run a PTask
@@ -92,7 +92,7 @@ runPipelineTaskWithExceptionHandlers
 runPipelineTaskWithExceptionHandlers exceptionHandlers configMethod accessors ptask input = do
   let tree = ptask ^. ptaskRequirements
   catches
-    (bindResourceTreeAndRun configMethod accessors tree $
+    (bindVirtualTreeAndRun configMethod accessors tree $
       runPipelineCommandOnPTask ptask input)
     exceptionHandlers
 
@@ -126,7 +126,7 @@ runPipelineCommandOnPTask
   -> i
   -> PipelineCommand
   -> Maybe o
-  -> PhysicalResourceTree m
+  -> PhysicalTree m
   -> FunflowOpts m
   -> m o
 runPipelineCommandOnPTask ptask input cmd defRetVal physTree ffopts = do
@@ -192,52 +192,52 @@ getFunflowOpts = do
 -- funflow) to locations tied to their respective LocationAccessors
 getPhysTreeAndFFOpts
   :: (MonadIO m, LogThrow m)
-  => ResourceTreeAndMappings
+  => VirtualTreeAndMappings
   -> AvailableAccessors m
-  -> m (PhysicalResourceTree m, FunflowOpts m)
-getPhysTreeAndFFOpts rtam accessors =
+  -> m (PhysicalTree m, FunflowOpts m)
+getPhysTreeAndFFOpts vtam accessors =
   flip runReaderT accessors $
-    (,) <$> getPhysicalResourceTreeFromMappings rtam
+    (,) <$> getPhysicalTreeFromMappings vtam
         <*> getFunflowOpts
 
--- | Runs the cli if using FullConfig, binds every location in the resource tree
--- to its final value/path, and passes the continuation the bound resource tree.
-bindResourceTreeAndRun
+-- | Runs the cli if using FullConfig, binds every location in the virtual tree
+-- to its final value/path, and passes to the continuation the physical tree.
+bindVirtualTreeAndRun
   :: (AcceptableArgsAndContexts args ctxs m)
   => PipelineConfigMethod r -- ^ How to read the configuration
   -> Rec (FieldWithAccessors (ReaderSoup ctxs)) args
-  -> VirtualResourceTree    -- ^ The tree to look for DocRecOfoptions in
+  -> VirtualTree    -- ^ The tree to look for DocRecOfoptions in
   -> (PipelineCommand
       -> Maybe r
-      -> PhysicalResourceTree (ReaderSoup ctxs)
+      -> PhysicalTree (ReaderSoup ctxs)
       -> FunflowOpts (ReaderSoup ctxs)
       -> ReaderSoup ctxs r)
              -- ^ What to do with the tree
   -> IO r
-bindResourceTreeAndRun (NoConfig _ root) accessorsRec tree f =
+bindVirtualTreeAndRun (NoConfig _ root) accessorsRec tree f =
   consumeSoup argsRec $ do
     (physTree, ffPaths) <- getPhysTreeAndFFOpts defaultConfig accessors
     f RunPipeline Nothing physTree ffPaths
   where
-    defaultConfig = ResourceTreeAndMappings tree (Left root) mempty
+    defaultConfig = VirtualTreeAndMappings tree (Left root) mempty
     (accessors, argsRec) = splitAccessorsFromArgRec accessorsRec
-bindResourceTreeAndRun (ConfigFileOnly progName configFileURL defRoot) accessorsRec tree f = do
+bindVirtualTreeAndRun (ConfigFileOnly progName configFileURL defRoot) accessorsRec tree f = do
   -- We deactivate every argument that might have been passed so the only choice
   -- is to run the pipeline. Given the parsing of the config file and the
   -- command-line are quite related, it is difficult to just remove the CLI
   -- parsing until that part of the code is refactored to better separate CLI
-  -- parsing and deserialization of the ResourceTreeAndMappings from the config
+  -- parsing and deserialization of the VirtualTreeAndMappings from the config
   -- file
   res <- withArgs ["-qq", "--context-verb", "2", "--log-format", "compact"] $
          -- No CLI arg is passable, so until we improve CLI parsin as stated
          -- just above, in that case we limit ourselves to warnings and errors
-    bindResourceTreeAndRun (FullConfig progName configFileURL defRoot Nothing) accessorsRec tree $
+    bindVirtualTreeAndRun (FullConfig progName configFileURL defRoot Nothing) accessorsRec tree $
       \_ _ t o -> Just <$> f RunPipeline Nothing t o
   case res of
     Just r -> return r
-    Nothing -> error "NOT EXPECTED: bindResourceTreeAndRun(ConfigFileOnly) didn't receive a result\
+    Nothing -> error "NOT EXPECTED: bindVirtualTreeAndRun(ConfigFileOnly) didn't receive a result\
                      \from the pipeline. Please submit this as a bug."
-bindResourceTreeAndRun (FullConfig progName defConfigFileURL defRoot defRetVal) accessorsRec tree f =
+bindVirtualTreeAndRun (FullConfig progName defConfigFileURL defRoot defRetVal) accessorsRec tree f =
   withConfigFileSourceFromCLI $ \mbConfigFileSource -> do
     let configFileSource = fromMaybe (ConfigFileURL (LocalFile defConfigFileURL)) mbConfigFileSource
     mbConfigFromFile <-
@@ -251,7 +251,7 @@ bindResourceTreeAndRun (FullConfig progName defConfigFileURL defRoot defRetVal) 
                       -- here. For now we fail if given a remote config that
                       -- doesn't exist.
                     readBSS loc decodeYAMLStream
-    parser <- pipelineCliParser rscTreeConfigurationReader progName $
+    parser <- pipelineCliParser virtualTreeConfigurationReader progName $
               BaseInputConfig (case configFileSource of
                                  ConfigFileURL (LocalFile filep) -> Just filep
                                  _                               -> Nothing)
@@ -259,7 +259,7 @@ bindResourceTreeAndRun (FullConfig progName defConfigFileURL defRoot defRetVal) 
                               defaultConfig
     withCliParser progName "Run a task pipeline" parser defRetVal run
   where
-    defaultConfig = ResourceTreeAndMappings tree (Left defRoot) mempty
+    defaultConfig = VirtualTreeAndMappings tree (Left defRoot) mempty
     (accessors, argsRec) = splitAccessorsFromArgRec accessorsRec
     run finalConfig cmd lsp performConfigWrites =
       let -- We change the katip runner, from the options we got from CLI:

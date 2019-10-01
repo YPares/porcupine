@@ -69,7 +69,7 @@ main :: IO ()
 main = runPipelineTask (FullConfig "example2" "porcupine-example2.yaml" "porcupine-core/examples/example2/data" ())
                           -- The CLI/Yaml configuration to use (prog name,
                           -- default config file to create, and default root to
-                          -- use for the resource tree)
+                          -- use for the porcupine tree)
                        (baseContexts "")
                           -- The contexts to use. 'baseContexts' is the
                           -- minimum. It gives out katip logging and local files

@@ -15,8 +15,7 @@ different data without recompiling, by just a shift in its configuration,
 3. while maintaining composability (any task can always be reused as a subtask
 of a greater task pipeline).
 
-Porcupine provides three core abstractions: _serials_, _tasks_ and _resource
-trees_.
+Porcupine provides three core abstractions: _serials_, _tasks_ and _trees_.
 
 ## Serials
 
@@ -44,7 +43,7 @@ it in a task pipeline.
 The end goal of `SerialsFor` is that the user writing a task pipeline will not
 have to care about how the input data will be serialized. As long as the data it
 tries to feed into the pipeline matches some known serialization function. Also,
-the introspectable nature of resource trees (more on that later) allows you to
+the introspectable nature of virtual trees (more on that later) allows you to
 _add_ serials to an existing pipeline before reusing it as part of your own
 pipeline. This sort of makes Porcupine an
 "anti-[ETL](https://en.wikipedia.org/wiki/Extract,_transform,_load)": rather
@@ -52,22 +51,21 @@ than marshall and curate input data so that it matches the pipeline
 expectations, you augment the pipeline so that it can deal with more data
 sources.
 
-## Resource tree
+## Porcupine's trees
 
-Every task in Porcupine exposes a resource tree. Resources are represented in
-porcupine by `VirtualFile`s, and a resource tree is a hierarchy (like a
-filesystem) of `VirtualFiles`. A `VirtualFile A B` just groups together a
-logical path and a `SerialsFor A B`, so it is just something with an identifier
-(like `"/Inputs/Config"` or `"/Ouputs/Results"`) in which we can write a `A`
-and/or from which we can read a `B`. We say the path is "logical" because it
-doesn't necessary have to correspond to some physical path on the hard drive: in
-the end, the user of the task pipeline (the one who runs the executable) will
-bind each logical path to a physical location. Besides, a `VirtualFile` doesn't
-even have to correspond in the end to an actual file, as for instance you could
-map an entry in a database to a `VirtualFile`. However, paths are a convenient
-and customary way to organise resources, and we can conveniently use them as a
-default layout for when your logical paths do correspond to actual paths on your
-hard drive.
+Every task in Porcupine exposes a _virtual tree_. A virtual tree is a
+hierarchy (like a filesystem) of `VirtualFiles`. A `VirtualFile A B` just groups
+together a logical path and a `SerialsFor A B`, so it is just something with an
+identifier (like `"/Inputs/Config"` or `"/Ouputs/Results"`) in which we can
+write a `A` and/or from which we can read a `B`. We say the path is "logical"
+because it doesn't necessary have to correspond to some physical path on the
+hard drive: in the end, the user of the task pipeline (the one who runs the
+executable) will bind each logical path to a physical location. Besides, a
+`VirtualFile` doesn't even have to correspond in the end to an actual file, as
+for instance you could map an entry in a database to a `VirtualFile`. However,
+paths are a convenient and customary way to organise resources, and we can
+conveniently use them as a default layout for when your logical paths do
+correspond to actual paths on your hard drive.
 
 So once the user has their serials, they just need to create a
 `VirtualFile`. For instance, this is how you create a readonly resource that can
@@ -83,6 +81,9 @@ myInput = dataSource
 somePureDeserial :: (DeserializesWith s a) => s -> SerialsFor Void a
 dataSource :: [LocationTreePathItem] -> SerialsFor a b -> DataSource b
 ```
+
+Later on, before the pipeline runs, your `VirtualTree` will be resolved to
+actual locations and will become a `DataAccessTree`.
 
 ## Tasks
 
@@ -110,10 +111,16 @@ So `PTasks` can access resources or perform computations, as any pure function
 `(a -> b)` can be lifted to a `PTask m a b`. Each `PTask` will expose the
 VirtualFiles it accesses (we call them the _requirements_ of the task, as it
 requires these files to be present and bound to physical locations so it can
-run) in the form of a resource tree. `PTasks` compose much like functions do,
-and they merge their requirements as they compose, so in the end if you whole
+run) in the form of a virtual tree. `PTasks` compose much like functions do, and
+they merge their requirements as they compose, so in the end if you whole
 application runs in a `PTask`, then it will expose and make bindable the
-totality of the resources accessed by your application.
+totality of the resources accessed by your application. So a `PTask` _exposes_ a
+`VirtualTree` as its requirements, and when it actually runs it _receives_ a
+`DataAccessTree` that contains the functions to actually pull the data it needs
+or output the data it generates. Both trees are editable in the task, so a
+`PTask` can be altered from the outside, in order to adapt it to work in a
+different context than the one it was conceived for, which boosts code
+reusability.
 
 Once you have e.g. a `mainTask :: PTask () ()` that corresponds to your whole
 pipeline, your application just needs to call:
@@ -185,7 +192,7 @@ persons:
   the scientist's puny laptop and go bigger. This is time to "patch" the
   pipeline, make it run in different context, in the cloud, behind a scheduler,
   as jobs in a task queue reading its inputs from all kinds of databases. The
-  devops will target the _resource tree_ framework (possibly without ever
+  devops will target the _porcupine tree_ framework (possibly without ever
   recompiling the pipeline, only by adjusting its configuration from the
   outside)
 
@@ -227,6 +234,9 @@ locations:
   /: porcupine-core/examples/data
   /Outputs/Analysis: _-{userId}.json
 ```
+
+This hierarchy of virtual paths filled with data and physical paths to resources
+is what we call the _porcupine tree_ of the pipeline.
 
 The `data:` section contains one bit of information here: the `users:` field,
 corresponding to ranges of user IDs to consider. By default, we just consider
