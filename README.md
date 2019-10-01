@@ -194,7 +194,7 @@ persons:
   as jobs in a task queue reading its inputs from all kinds of databases. The
   devops will target the _porcupine tree_ framework (possibly without ever
   recompiling the pipeline, only by adjusting its configuration from the
-  outside)
+  outside). But more on that later.
 
 Of course, these people can be the same person, and you don't need to plan on
 runnning anything in the cloud to start benefiting from porcupine. But we want
@@ -235,8 +235,8 @@ locations:
   /Outputs/Analysis: _-{userId}.json
 ```
 
-This hierarchy of virtual paths filled with data and physical paths to resources
-is what we call the _porcupine tree_ of the pipeline.
+This hierarchy of virtual paths filled with data and mappings to physical paths
+to resources is what we call the _porcupine tree_ of the pipeline.
 
 The `data:` section contains one bit of information here: the `users:` field,
 corresponding to ranges of user IDs to consider. By default, we just consider
