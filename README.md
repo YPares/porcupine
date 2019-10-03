@@ -4,16 +4,18 @@
 [![Join the chat at
 https://gitter.im/tweag/porcupine](https://badges.gitter.im/tweag/porcupine.svg)](https://gitter.im/tweag/porcupine?utm_source=badge&utm_medium=badge&utm_campaign=pr-badge&utm_content=badge)
 
-Porcupine stands for _Portable & Customizable Pipeline_. It is a tool aimed at
-data scientists and numerical analysts, so that they can express in Haskell
-general data manipulation and analysis tasks,
+"porcupine" stands for _Portable & Customizable Pipeline_. It is a tool aimed at
+people who want to express in Haskell general data manipulation and analysis tasks,
 
 1. in a way that is agnostic from the source of the input data and from the
 destination of the end results,
 2. such that a pipeline can be re-executed in a different environment and on
 different data without recompiling, by just a shift in its configuration,
-3. while maintaining composability (any task can always be reused as a subtask
-of a greater task pipeline).
+3. while facilitating code reusability (any task can always be reused as part
+of a bigger pipeline).
+
+`porcupine` specifically targets teams containing skills ranging from those of data scientists
+to those of data/software engineers.
 
 Porcupine provides three core abstractions: _serials_, _tasks_ and _trees_.
 
