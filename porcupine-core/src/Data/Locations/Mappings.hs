@@ -123,7 +123,7 @@ mappingRootOnly l = LocationMappings_ $
 data LocShortcut a
   = DeriveWholeLocFromTree FileExt
     -- ^ Means that this loc path and name should be inherited from locs up the
-    -- resource tree.
+    -- virtual tree.
   | DeriveLocPrefixFromTree (LocFilePath StringWithVars)
     -- ^ Means that this loc path should be inherited from locs up the resource
     -- tree. Its name should be a concatenation of the corresponding name in the

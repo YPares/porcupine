@@ -57,7 +57,7 @@ mainTask =
   -- range contains just one value, zero.
   getOption ["Settings"] (docField @"users" (oneIndex (0::Int)) "The user ids to load")
   -- We turn the range we read into a full lazy list:
-  >>> arr enumIndices
+  >>> arr enumTRIndices
   -- Then we just map over these ids and call analyseOneUser each time:
   >>> parMapTask_ "userId" analyseOneUser
 
@@ -65,7 +65,7 @@ main :: IO ()
 main = runPipelineTask (FullConfig "example1" "porcupine-example1.yaml" "porcupine-core/examples/example1/data" ())
                           -- The CLI/Yaml configuration to use (prog name,
                           -- default config file to create, and default root to
-                          -- use for the resource tree)
+                          -- use for the porcupine tree)
                        (baseContexts "")
                           -- The contexts to use. 'baseContexts' is the
                           -- minimum. It gives out katip logging and local files

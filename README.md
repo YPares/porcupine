@@ -4,19 +4,20 @@
 [![Join the chat at
 https://gitter.im/tweag/porcupine](https://badges.gitter.im/tweag/porcupine.svg)](https://gitter.im/tweag/porcupine?utm_source=badge&utm_medium=badge&utm_campaign=pr-badge&utm_content=badge)
 
-Porcupine stands for _Portable & Customizable Pipeline_. It is a tool aimed at
-data scientists and numerical analysts, so that they can express in Haskell
-general data manipulation and analysis tasks,
+"porcupine" stands for _Portable & Customizable Pipeline_. It is a tool aimed at
+people who want to express in Haskell general data manipulation and analysis tasks,
 
 1. in a way that is agnostic from the source of the input data and from the
 destination of the end results,
 2. such that a pipeline can be re-executed in a different environment and on
 different data without recompiling, by just a shift in its configuration,
-3. while maintaining composability (any task can always be reused as a subtask
-of a greater task pipeline).
+3. while facilitating code reusability (any task can always be reused as part
+of a bigger pipeline).
 
-Porcupine provides three core abstractions: _serials_, _tasks_ and _resource
-trees_.
+`porcupine` specifically targets teams containing skills ranging from those of data scientists
+to those of data/software engineers.
+
+Porcupine provides three core abstractions: _serials_, _tasks_ and _trees_.
 
 ## Serials
 
@@ -44,28 +45,29 @@ it in a task pipeline.
 The end goal of `SerialsFor` is that the user writing a task pipeline will not
 have to care about how the input data will be serialized. As long as the data it
 tries to feed into the pipeline matches some known serialization function. Also,
-the introspectable nature of resource trees (more on that later) allows you to
+the introspectable nature of virtual trees (more on that later) allows you to
 _add_ serials to an existing pipeline before reusing it as part of your own
-pipeline. This sort of makes Porcupine an "anti-ETL": rather than marshall and
-curate input data so that it matches the pipeline expectations, you augment the
-pipeline so that it can deal with more data sources.
+pipeline. This sort of makes Porcupine an
+"anti-[ETL](https://en.wikipedia.org/wiki/Extract,_transform,_load)": rather
+than marshall and curate input data so that it matches the pipeline
+expectations, you augment the pipeline so that it can deal with more data
+sources.
 
-## Resource tree
+## Porcupine's trees
 
-Every task in Porcupine exposes a resource tree. Resources are represented in
-porcupine by `VirtualFile`s, and a resource tree is a hierarchy (like a
-filesystem) of `VirtualFiles`. A `VirtualFile A B` just groups together a
-logical path and a `SerialsFor A B`, so it is just something with an identifier
-(like `"/Inputs/Config"` or `"/Ouputs/Results"`) in which we can write a `A`
-and/or from which we can read a `B`. We say the path is "logical" because it
-doesn't necessary have to correspond to some physical path on the hard drive: in
-the end, the user of the task pipeline (the one who runs the executable) will
-bind each logical path to a physical location. Besides, a `VirtualFile` doesn't
-even have to correspond in the end to an actual file, as for instance you could
-map an entry in a database to a `VirtualFile`. However, paths are a convenient
-and customary way to organise resources, and we can conveniently use them as a
-default layout for when your logical paths do correspond to actual paths on your
-hard drive.
+Every task in Porcupine exposes a _virtual tree_. A virtual tree is a
+hierarchy (like a filesystem) of `VirtualFiles`. A `VirtualFile A B` just groups
+together a logical path and a `SerialsFor A B`, so it is just something with an
+identifier (like `"/Inputs/Config"` or `"/Ouputs/Results"`) in which we can
+write a `A` and/or from which we can read a `B`. We say the path is "logical"
+because it doesn't necessary have to correspond to some physical path on the
+hard drive: in the end, the user of the task pipeline (the one who runs the
+executable) will bind each logical path to a physical location. Besides, a
+`VirtualFile` doesn't even have to correspond in the end to an actual file, as
+for instance you could map an entry in a database to a `VirtualFile`. However,
+paths are a convenient and customary way to organise resources, and we can
+conveniently use them as a default layout for when your logical paths do
+correspond to actual paths on your hard drive.
 
 So once the user has their serials, they just need to create a
 `VirtualFile`. For instance, this is how you create a readonly resource that can
@@ -76,11 +78,14 @@ myInput :: VirtualFile Void MyConfig
 	-- MyConfig must be an instance of FromJSON here
 myInput = dataSource
             ["Inputs", "Config"] -- The logical path '/Inputs/Config'
-	    (somePureDeserial JSONSerial)
+	        (somePureDeserial JSONSerial)
 
 somePureDeserial :: (DeserializesWith s a) => s -> SerialsFor Void a
 dataSource :: [LocationTreePathItem] -> SerialsFor a b -> DataSource b
 ```
+
+Later on, before the pipeline runs, your `VirtualTree` will be resolved to
+actual locations and will become a `DataAccessTree`.
 
 ## Tasks
 
@@ -108,19 +113,25 @@ So `PTasks` can access resources or perform computations, as any pure function
 `(a -> b)` can be lifted to a `PTask m a b`. Each `PTask` will expose the
 VirtualFiles it accesses (we call them the _requirements_ of the task, as it
 requires these files to be present and bound to physical locations so it can
-run) in the form of a resource tree. `PTasks` compose much like functions do,
-and they merge their requirements as they compose, so in the end if you whole
+run) in the form of a virtual tree. `PTasks` compose much like functions do, and
+they merge their requirements as they compose, so in the end if you whole
 application runs in a `PTask`, then it will expose and make bindable the
-totality of the resources accessed by your application.
+totality of the resources accessed by your application. So a `PTask` _exposes_ a
+`VirtualTree` as its requirements, and when it actually runs it _receives_ a
+`DataAccessTree` that contains the functions to actually pull the data it needs
+or output the data it generates. Both trees are editable in the task, so a
+`PTask` can be altered from the outside, in order to adapt it to work in a
+different context than the one it was conceived for, which boosts code
+reusability.
 
 Once you have e.g. a `mainTask :: PTask () ()` that corresponds to your whole
 pipeline, your application just needs to call:
 
 ```haskell
 main :: IO ()
-main = runPipelineTask_ cfg mainTask
+main = runLocalPipelineTask cfg mainTask
   where
-    cfg = FullConfig "MyApp" "pipeline-config.yaml" "./default-root-dir"
+    cfg = FullConfig "MyApp" "pipeline-config.yaml" "./default-root-dir" ()
 ```
 
 ## Running a Porcupine application
@@ -132,7 +143,7 @@ configuration. Just run it with:
 $ my-exe write-config-template
 ```
 
-if your `main` looks like the one we presented previously, that will generate a
+If your `main` looks like the one we presented previously, that will generate a
 `pipeline-config.yaml` file in the current directory. In this file, you will see
 the totality of the virtual files accessed by your pipeline and the totality of
 the options^[Options are just VirtualFiles, but they are created with the
@@ -152,6 +163,16 @@ and the pipeline will run (logging its accesses along). The `run` is optional,
 it's the default subcommand. Any option you defined inside your pipeline is also
 exposed on the CLI, and shown by `my-exe --help`. Specifying it on the CLI
 overrides the value set in the yaml config file.
+
+A note about the `FullConfig` option you saw earlier. Porcupine is quite a
+high-level tool and handles configuration file and CLI parsing for you, and this
+is what `FullConfig` triggers. But this is not mandatory, you also have
+`ConfigFileOnly` for when you don't want porcupine to parse the CLI arguments
+(this is for the cases when your pipeline isn't the entirety of your program, or
+when you want for some reason to parse CLI yourself) and `NoConfig` for when you
+don't want any source of configuration to be read. When CLI parsing is
+activated, you need to provide a default value for the pipeline: indeed using
+`write-config-template` means your pipeline won't even run.
 
 # Philosophy of use
 
@@ -173,9 +194,9 @@ persons:
   the scientist's puny laptop and go bigger. This is time to "patch" the
   pipeline, make it run in different context, in the cloud, behind a scheduler,
   as jobs in a task queue reading its inputs from all kinds of databases. The
-  devops will target the _resource tree_ framework (possibly without ever
+  devops will target the _porcupine tree_ framework (possibly without ever
   recompiling the pipeline, only by adjusting its configuration from the
-  outside)
+  outside). But more on that later.
 
 Of course, these people can be the same person, and you don't need to plan on
 runnning anything in the cloud to start benefiting from porcupine. But we want
@@ -184,10 +205,10 @@ with her different set of skills.
 
 # Walking through an example
 
-Let's have a look at [example1](porcupine-core/examples/Example1.hs). It carries
+Let's have a look at [example1](porcupine-core/examples/example1/Example1.hs). It carries
 out a very simple analysis: counting the number of times each letter of the
 alphabet appears in some users' first name and last name. Each user data is read
-from [a json file specific to that user](porcupine-core/examples/data/Inputs)
+from [a json file specific to that user](porcupine-core/examples/example1/data/Inputs)
 named `User-{userId}.json`, and the result for that user is written to another
 json file named `Analysis-{userId}.json`. This very basic process is repeated
 once per user ID to consider.
@@ -215,6 +236,9 @@ locations:
   /: porcupine-core/examples/data
   /Outputs/Analysis: _-{userId}.json
 ```
+
+This hierarchy of virtual paths filled with data and mappings to physical paths
+to resources is what we call the _porcupine tree_ of the pipeline.
 
 The `data:` section contains one bit of information here: the `users:` field,
 corresponding to ranges of user IDs to consider. By default, we just consider
@@ -320,7 +344,7 @@ This is not what we want. That's why we'll declare another task on top of that:
 mainTask =
   getOption ["Settings"] (docField @"users" (oneIndex (0::Int)) "The user ids to load")
   >>> arr enumIndices
-  >>> parMapTask_ (repIndex "userId") analyseOneUser
+  >>> parMapTask_ "userId" analyseOneUser
 ```
 
 Here, we will first declare a record of one option field (that's why we use
@@ -336,14 +360,15 @@ embed it in the YAML config file).
 `getOption`'s output will thus be list of ranges (tuples). We transform it to a
 flat list of every ID to consider with `enumIndices`, and finally we map (in
 parallel) over that list with `parMapTask_`, repeating our `analyseOneUser` once
-per user ID in input. Note the `repIndex "userId"`: this creates a *repetition
-index*. Every function that repeats tasks in porcupine will take one, and this
-is where the `{userId}` variable that we saw in the YAML config comes from. It
-works first by changing the default mappings of the VirtualFiles accessed by
-`analyseOneUser` so that each of them now contains the `{userId}` variable, and
-second by looking up that variable in the physical path and replacing it with
-the user ID currently being considered. All of that so we don't end up reading
-and writing the same files everytime the task is repeated.
+per user ID in input. Note the first argument `"userId"`: this is the
+*repetition index* (you need OverloadedStrings). Every function that repeats
+tasks in porcupine will take one, and this is where the `{userId}` variable that
+we saw in the YAML config comes from. It works first by changing the default
+mappings of the VirtualFiles accessed by `analyseOneUser` so that each of them
+now contains the `{userId}` variable, and second by looking up that variable in
+the physical path and replacing it with the user ID currently being
+considered. All of that so we don't end up reading and writing the same files
+everytime the task is repeated.
 
 So what happens if you remove the variables from the mappings? Let's say you
 change the mappings of `/Outputs/Analysis` to:
@@ -418,16 +443,16 @@ file that doesn't exist.
 
 Every VirtualFile (be it read from embedded data of from external files) can be
 read from _several_ sources instead of one. That requires one thing though: that
-the type `B` you read from a `VirtualFile A B` is an instance of Semigroup (and
-that your VirtualFile is wrapped in `usesLayeredMapping` so it knows about
-that). This way, porcupine has a way to merge all these inputs into just one
-resource. It can come very handy, and can be used depending on your pipeline to
-organize your input resources into several layers, "stacked" so that the first
-layers' content are completed or overriden by the subsequent layers'. It all
-depends on which instance of Semigroup is read from your `VirtualFile`.
+the type `B` you read from a `VirtualFile A B` is an instance of Semigroup (call
+`usesLayeredMapping` so your VirtualFile registers that). This way, porcupine
+has a way to merge all these inputs into just one resource. It can come very
+handy, and can be used depending on your pipeline to organize your input
+resources into several layers, "stacked" so that the first layers' content are
+completed or overriden by the subsequent layers. It all depends on which
+instance of Semigroup is read from your `VirtualFile`.
 
-In a similar fashion, if `B` is a Monoid (and if your `VirtualFile` is wrapped
-in `canBeUnmapped`), this authorizes you to map it to `null` in your config
+In a similar fashion, if `B` is a Monoid (and if `canBeUnmapped` is applied to
+your `VirtualFile`), this authorizes you to map it to `null` in your config
 file, so when this `VirtualFile` is "read", we just get a `mempty`.
 
 Layers also work for output files, although it's much simpler here: the data is
@@ -463,8 +488,8 @@ we want to run it with the `useHTTP` function, imported from
 access to local files and logging). Note that you need to activate the
 `OverloadedLabels` GHC extension.
 
-Note that _nothing_ in the code tells us where the data will actually be
-read. The connection between our dataSource and the REST API will be made in the
+Note that _nothing_ in the code tells us where the data will actually be read
+from. The connection between our dataSource and the REST API will be made in the
 [configuration file](porcupine-http/examples/example-Poke/example-pokeapi.yaml).
 
 ## Logging

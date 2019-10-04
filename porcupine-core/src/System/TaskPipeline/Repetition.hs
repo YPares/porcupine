@@ -5,7 +5,8 @@
 module System.TaskPipeline.Repetition
   ( module System.TaskPipeline.Repetition.Streaming
   , RepInfo(..)
-  , HasTaskRepetitionIndex(..)
+  , TRIndex(..)
+  , HasTRIndex(..)
   , OneOrSeveral(..)
   , parMapTask
   , parMapTask_
@@ -13,6 +14,7 @@ module System.TaskPipeline.Repetition
   , oneIndex
   , oneRange
   , enumIndices
+  , enumTRIndices
   ) where
 
 import           Control.Applicative
@@ -30,7 +32,7 @@ import           System.TaskPipeline.Repetition.Streaming
 
 -- | Makes a 'PTask' repeatable and maps it in parallel over a list.
 parMapTask
-  :: (HasTaskRepetitionIndex a, KatipContext m)
+  :: (HasTRIndex a, KatipContext m)
   => RepInfo
   -> PTask m a b
   -> PTask m [a] [b]
@@ -41,7 +43,7 @@ parMapTask ri =
 -- ignores the end result. See 'RepInfo' for how these indices are
 -- used. See 'parMapTask' for a more complete version.
 parMapTask_
-  :: (Show idx, KatipContext m)
+  :: (HasTRIndex idx, KatipContext m)
   => RepInfo
   -> PTask m () b
   -> PTask m [idx] ()
@@ -113,3 +115,7 @@ enumIndices (IndexRange (OneOrSeveral rs)) = concatMap toL rs
   where
     toL (OneIndex i)   = [i]
     toL (OneRange a b) = [a..b]
+
+-- | Gives a list of TaskRepetitionIndex 
+enumTRIndices :: (Enum i, Show i) => IndexRange i -> [TRIndex]
+enumTRIndices = map (TRIndex . show) . enumIndices

@@ -25,6 +25,8 @@ module Data.Locations.Accessors
   , LocationAccessor(..)
   , LocOf, LocWithVarsOf
   , SomeGLoc(..), SomeLoc, SomeLocWithVars
+  , SomeHashableLocs
+  , toHashableLocs
   , FieldWithAccessors
   , Rec(..), ElField(..)
   , MayProvideLocationAccessors(..)
@@ -40,6 +42,7 @@ module Data.Locations.Accessors
   , writeLazyByte, readLazyByte, readText, writeText
   ) where
 
+import           Control.Funflow.ContentHashable
 import           Control.Lens                      (over, (^.), _1)
 import           Control.Monad.IO.Unlift
 import           Control.Monad.ReaderSoup
@@ -227,6 +230,18 @@ instance ToJSON (SomeLoc m) where
   toJSON (SomeGLoc l) = toJSON l
 instance ToJSON (SomeLocWithVars m) where
   toJSON (SomeGLoc l) = toJSON l
+
+-- | 'SomeLoc' turned into something that can be hashed
+newtype SomeHashableLocs = SomeHashableLocs [Value]
+  -- TODO: We go through Aeson.Value representation of the locations to update
+  -- the hash. That's not terribly efficient, we should measure if that's a
+  -- problem.
+
+instance (Monad m) => ContentHashable m SomeHashableLocs where
+  contentHashUpdate ctx (SomeHashableLocs vals) = contentHashUpdate ctx vals
+
+toHashableLocs :: [SomeLoc m] -> SomeHashableLocs
+toHashableLocs = SomeHashableLocs . map toJSON
 
 -- * Some helper functions to directly read write/read bytestring into/from
 -- locations

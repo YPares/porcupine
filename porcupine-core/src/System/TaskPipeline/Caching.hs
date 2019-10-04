@@ -1,6 +1,18 @@
 {-# LANGUAGE Arrows        #-}
 {-# LANGUAGE TupleSections #-}
 
+-- | Functions in that module are necessary only if you want a fine control over
+-- the caching of some actions. When you want to perform several reads and
+-- writes from and to VirtualFiles as part of a /single/ cached task, the recommended way is
+-- to use:
+--
+-- - 'getVFileReader'/'getVFileWriter' to obtain the accessors
+-- - 'toPTask'' to create the cached task, to which you give the accessors
+--
+-- Given the accessors are hashable, the files that are bound to them are
+-- incorporated to the hash, so binding them to new files will re-trigger the
+-- task.
+
 module System.TaskPipeline.Caching
   ( unsafeLiftToPTaskAndWrite
   , unsafeLiftToPTaskAndWrite_
@@ -15,12 +27,11 @@ module System.TaskPipeline.Caching
 
 import qualified Control.Exception.Safe                as SE
 import           Control.Funflow
-import           Data.Aeson
 import           Data.Default                          (Default (..))
 import           Data.Locations.LogAndErrors
 import           Data.Locations.VirtualFile
+import           System.TaskPipeline.PorcupineTree
 import           System.TaskPipeline.PTask
-import           System.TaskPipeline.ResourceTree
 import           System.TaskPipeline.VirtualFileAccess
 
 import           Prelude                               hiding (id, (.))
@@ -30,7 +41,7 @@ import           Prelude                               hiding (id, (.))
 -- returned.
 unsafeLiftToPTaskAndWrite_
   :: (LogCatch m, Typeable b, Typeable ignored)
-  => Properties (a, [Value]) ()  -- ^ Location types aren't ContentHashable, but
+  => Properties (a, DataWriter m b) ()  -- ^ Location types aren't ContentHashable, but
                                  -- all are convertible to JSON. We need that to
                                  -- hash on locations so the task is repeated if
                                  -- we bind to new locations.
@@ -43,13 +54,13 @@ unsafeLiftToPTaskAndWrite_ props vf f =
 {-# INLINE unsafeLiftToPTaskAndWrite_ #-}
 
 
--- | Similar to unsafeLiftToPTask', but caches a write action of the result
--- too. In this case we use the filepath bound to the VirtualFile to compute the
--- hash. That means that if the VirtualFile is bound to something else, the step
--- will be re-executed.
+-- | Similar to 'toPTask'', but caches a write action of the result too. In this
+-- case we use the filepath bound to the VirtualFile to compute the hash. That
+-- means that if the VirtualFile is bound to something else, the step will be
+-- re-executed.
 unsafeLiftToPTaskAndWrite
   :: (LogCatch m, Typeable b, Typeable ignored)
-  => Properties (a', [Value]) c  -- ^ Location types aren't ContentHashable, but
+  => Properties (a', DataWriter m b) c  -- ^ Location types aren't ContentHashable, but
                                  -- all are convertible to JSON. We need that to
                                  -- hash on locations so the task is repeated if
                                  -- we bind to new locations.
@@ -70,25 +81,23 @@ unsafeLiftToPTaskAndWrite
                                  -- and therefore no @b@ needs to be computed
   -> PTask m a c
 unsafeLiftToPTaskAndWrite props inputHashablePart vf action actionWhenNotMapped = proc input -> do
-  accessor <- getVFileDataAccessor [ATWrite] vf -< ()
-  locs <- throwStringPTask -< daLocsAccessed accessor
-  throwPTask <<< unsafeLiftToPTask' props' cached -< (input,map locToJ locs,accessor)
+  writer <- getVFileWriter vf -< ()
+  throwPTask <<< toPTask' props' cached -< (input,writer)
   where
-    locToJ :: SomeLoc m -> Value
-    locToJ (SomeGLoc l) = toJSON l
-
-    cached (input,[],_) = Right <$> actionWhenNotMapped input
-    cached (input,_,accessor) = do
+    cached (input,writer) | null (dwLocsAccessed writer)
+      = Right <$> actionWhenNotMapped input
+                          | otherwise
+      = do
       res <- SE.try $ action input
       case res of
         Right (outputForVFile, outputForStore) -> do
-          daPerformWrite accessor outputForVFile
+          dwPerformWrite writer outputForVFile
           return $ Right outputForStore
         Left err -> return $ Left (err::SomeException)
 
     props' = props { cache = cache'
                    , mdpolicy = updMdw <$> mdpolicy props }
-    getH (input,locs,_) = (inputHashablePart input, locs)
+    getH (input,writer) = (inputHashablePart input,writer)
     cache' = case cache props of
       NoCache -> NoCache
       Cache key sv rv ->

@@ -58,13 +58,22 @@ dependencies:
   - zlib
   - vector
   - vinyl
-  - void
   - yaml
 
 library:
   source-dirs: src
 
 executables:
+  example0:
+    source-dirs: examples/example0
+    main: Example0.hs
+    dependencies:
+      - porcupine-core
+  example0.1:
+    source-dirs: examples/example0.1
+    main: Example0_1.hs
+    dependencies:
+      - porcupine-core
   example1:
     source-dirs: examples/example1
     main: Example1.hs
@@ -75,3 +84,15 @@ executables:
     main: Example2.hs
     dependencies:
       - porcupine-core
+  example-radon:
+    source-dirs: examples/example-radon
+    main: ExampleRadon.hs
+    dependencies:
+      - porcupine-core
+      - docrecords
+      - aeson
+      - unordered-containers
+      - text
+      - log-domain
+      - monad-bayes
+      - hvega
