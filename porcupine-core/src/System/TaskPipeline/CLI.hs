@@ -11,7 +11,6 @@ module System.TaskPipeline.CLI
   ( module System.TaskPipeline.ConfigurationReader
   , PipelineCommand(..)
   , PipelineConfigMethod(..)
-  , LocTreeLayout(..)
   , BaseInputConfig(..)
   , PostParsingAction(..)
   , PreRun(..)
@@ -49,15 +48,13 @@ import           System.Environment                      (getArgs, withArgs)
 import           System.IO                               (stdin)
 import           System.TaskPipeline.ConfigurationReader
 import           System.TaskPipeline.Logger
+import           System.TaskPipeline.PorcupineTree       (PhysicalFileNodeShowOpts(..))
 
-
--- | How to print a 'LocationTree' or its mappings on stdout
-data LocTreeLayout = NoMappings | FullMappings
 
 -- | The command to parse from the CLI
 data PipelineCommand
   = RunPipeline
-  | ShowLocTree LocTreeLayout
+  | ShowLocTree PhysicalFileNodeShowOpts
 
 -- | Tells whether and how command-line options should be used. @r@ is the type
 -- of the result of the PTask that this PipelineConfigMethod will be use for
@@ -390,12 +387,32 @@ mergeWithDefault path (Object o1) (Object o2) =
 mergeWithDefault _ _ v = pure v
 
 parseShowLocTree :: Parser PipelineCommand
-parseShowLocTree = ShowLocTree <$>
-  (   (flag' FullMappings
-        (long "mappings"
-         <> help "Show mappings of all nodes"))
-  <|> pure NoMappings
-  )
+parseShowLocTree = fmap ShowLocTree $ PhysicalFileNodeShowOpts
+  <$> flag False True
+       (long "mappings"
+        <> short 'm'
+        <> help "Show mappings of virtual files")
+  <*> flag True False
+       (long "no-serials"
+        <> short 'S'
+        <> help "Don't show if the virtual file can be used as a source or a sink")
+  <*> flag False True
+       (long "types"
+        <> short 't'
+        <> help "Show types written to virtual files")
+  <*> flag False True
+       (long "accesses"
+        <> short 'a'
+        <> help "Show how virtual files will be accessed")
+  <*> flag True False
+       (long "no-extensions"
+        <> short 'E'
+        <> help "Don't show the possible extensions for physical files")
+  <*> option auto
+       (long "num-chars"
+        <> short 'c'
+        <> help "The number of characters to show for the type (default: 60)"
+        <> value (60 :: Int))
 
 pipelineCliParser
   :: (ToJSON cfg)
@@ -406,5 +423,5 @@ pipelineCliParser
 pipelineCliParser getCliOverriding progName baseInputConfig =
   cliYamlParser progName baseInputConfig (getCliOverriding $ bicDefaultConfig baseInputConfig)
   [(pure RunPipeline, "run", "Run the pipeline")
-  ,(parseShowLocTree, "show-locations", "Show the location tree of the pipeline")]
+  ,(parseShowLocTree, "show-tree", "Show the porcupine tree of the pipeline")]
   RunPipeline

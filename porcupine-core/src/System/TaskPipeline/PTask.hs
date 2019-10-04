@@ -194,7 +194,7 @@ ptaskRequirements = splittedPTask . _1
 -- | To access and transform all the 'VirtualFiles' used by this 'PTask'. The
 -- parameters of the VirtualFiles will remain hidden, but all the metadata is
 -- accessible. NOTE: The original path of the files isn't settable.
-ptaskUsedFiles :: Traversal' (PTask m a b) (VirtualFile Void ())
+ptaskUsedFiles :: Traversal' (PTask m a b) (VirtualFile NoWrite NoRead)
 ptaskUsedFiles = ptaskRequirements . traversed . vfnodeFileVoided
 
 -- | Permits to access the 'RunnablePTask' inside the PTask. It is the PTask,

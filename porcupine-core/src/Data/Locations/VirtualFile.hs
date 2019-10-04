@@ -5,12 +5,10 @@
 {-# LANGUAGE TemplateHaskell     #-}
 {-# LANGUAGE TypeOperators       #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
-{-# OPTIONS_GHC -fno-warn-orphans #-}
 
 module Data.Locations.VirtualFile
   ( LocationTreePathItem
   , module Data.Locations.SerializationMethod
-  , Void
   , Profunctor(..)
   , VirtualFile(..), LayeredReadScheme(..)
   , BidirVirtualFile, DataSource, DataSink
@@ -33,7 +31,8 @@ module Data.Locations.VirtualFile
   , withEmbeddedValue
   , usesLayeredMapping, canBeUnmapped, unmappedByDefault
   , usesCacherWithIdent
-  , getVirtualFileDescription, describeVFile
+  , getVirtualFileDescription
+  , describeVFileAsSourceSink, describeVFileExtensions, describeVFileTypes
   , clockVFileAccesses
   , defaultCacherWithIdent
   ) where
@@ -62,7 +61,6 @@ import           Data.Store                         (Store)
 import qualified Data.Text                          as T
 import           Data.Type.Equality
 import           Data.Typeable
-import           Data.Void
 import           Katip
 
 
@@ -189,21 +187,34 @@ getVirtualFileDescription vf =
     readableFromConfig = (typeOfAesonVal,Nothing) `HM.member` fromA
     writableInOutput = (typeOfAesonVal,Nothing) `HM.member` toA
 
-describeVFile :: forall a b. (Typeable a, Typeable b) => VirtualFile a b -> String
-describeVFile vf =
+describeVFileAsSourceSink :: VirtualFile a b -> String
+describeVFileAsSourceSink vf =
   (case vfileDescIntent vfd of
     Nothing -> ""
     Just i -> case i of
-      VFForWriting -> "SINK (type: " ++ a ++ "), "
-      VFForReading -> "SOURCE (type: " ++ b ++ "), "
-      VFForRW -> "SINK & SOURCE (writes: " ++ a ++ ", reads: " ++ b ++ "), "
-      VFForCLIOptions -> "OPTION SOURCE, ")
-    ++ (if vfileDescEmbeddableInConfig vfd then "Can be embedded in config file, " else "")
-    ++ "Possible extensions: "
-    ++ T.unpack (T.intercalate (T.pack ",") (vfileDescPossibleExtensions vfd))
+      VFForWriting -> "DATA SINK"
+      VFForReading -> "DATA SOURCE"
+      VFForRW -> "BIDIR VFILE"
+      VFForCLIOptions -> "OPTION SOURCE")
+  ++ (if vfileDescEmbeddableInConfig vfd then " (embeddable)" else "")
   where vfd = getVirtualFileDescription vf
-        a = show (typeOf (undefined :: a))
-        b = show (typeOf (undefined :: b))
+
+describeVFileExtensions :: VirtualFile a b -> String
+describeVFileExtensions vf =
+  "Accepts " ++ T.unpack (T.intercalate (T.pack ",") (vfileDescPossibleExtensions vfd))
+  where vfd = getVirtualFileDescription vf
+
+describeVFileTypes :: forall a b. (Typeable a, Typeable b) => VirtualFile a b -> Int -> String
+describeVFileTypes _ charLimit
+  | a == b = "Receives & emits: " ++ cap (show a)
+  | b == typeOf (undefined :: NoRead) = "Receives " ++ cap (show a)
+  | a == typeOf (undefined :: NoWrite) = "Emits " ++ cap (show b)
+  | otherwise = "Receives " ++ cap (show a) ++ " & emits " ++ cap (show b)
+  where
+    cap x | length x >= charLimit = take charLimit x ++ "..."
+          | otherwise = x
+    a = typeOf (undefined :: a)
+    b = typeOf (undefined :: b)
 
 -- | Just for logs and error messages
 showVFileOriginalPath :: VirtualFile a b -> String
@@ -235,10 +246,6 @@ unmappedByDefault =
 documentedFile :: T.Text -> VirtualFile a b -> VirtualFile a b
 documentedFile doc = vfileDocumentation .~ Just doc
 
--- Not present in funflow. Needed by usesCacherWithIdent
-instance ContentHashable Identity Void where
-  contentHashUpdate ctx _ = contentHashUpdate ctx ()
-
 -- | Sets the file's reads and writes to be cached. Useful if the file is bound
 -- to a source/sink that takes time to respond, such as an HTTP endpoint, or
 -- that uses an expensive text serialization method (like JSON or XML).
@@ -255,10 +262,10 @@ usesCacherWithIdent ident =
 type BidirVirtualFile a = VirtualFile a a
 
 -- | A virtual file that's only readable
-type DataSource a = VirtualFile Void a
+type DataSource a = VirtualFile NoWrite a
 
 -- | A virtual file that's only writable
-type DataSink a = VirtualFile a ()
+type DataSink a = VirtualFile a NoRead
 
 -- | Creates a virtuel file from its virtual path and ways serialize/deserialize
 -- the data. You should prefer 'dataSink' and 'dataSource' for clarity when the
@@ -306,7 +313,7 @@ vfileAsBidir f vf = case eqT :: Maybe (a :~: b) of
 
 -- | Gives access to a version of the VirtualFile without type params. The
 -- original path isn't settable.
-vfileVoided :: Lens' (VirtualFile a b) (VirtualFile Void ())
+vfileVoided :: Lens' (VirtualFile a b) (VirtualFile NoWrite NoRead)
 vfileVoided f (VirtualFile p l v m i d wc rc s) =
   rebuild <$> f (VirtualFile p SingleLayerRead Nothing m i d NoCache NoCache mempty)
   where

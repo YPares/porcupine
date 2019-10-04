@@ -72,6 +72,12 @@ class HasTRIndex a where
 instance HasTRIndex TRIndex where
   getTRIndex = id
 
+instance HasTRIndex Int where
+  getTRIndex = TRIndex . show
+
+instance HasTRIndex Integer where
+  getTRIndex = TRIndex . show
+
 instance (HasTRIndex i) => HasTRIndex (i,a) where
   getTRIndex (i,_) = getTRIndex i
 

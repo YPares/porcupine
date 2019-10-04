@@ -58,7 +58,6 @@ dependencies:
   - zlib
   - vector
   - vinyl
-  - void
   - yaml
 
 library:

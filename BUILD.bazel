@@ -92,7 +92,6 @@ jinko_haskell_library(
         "@hackage//:url",
         "@hackage//:vector",
         "@hackage//:vinyl",
-        "@hackage//:void",
         "@hackage//:yaml",
         "@hackage//:zlib",
         ":docrecords",

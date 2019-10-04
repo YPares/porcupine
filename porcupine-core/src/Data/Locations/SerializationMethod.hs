@@ -20,6 +20,7 @@
 module Data.Locations.SerializationMethod where
 
 import           Control.Lens                hiding ((:>))
+import           Control.Funflow.ContentHashable
 import           Data.Aeson                  as A
 -- import qualified Data.Attoparsec.Lazy        as AttoL
 import qualified Data.Binary.Builder         as BinBuilder
@@ -44,7 +45,6 @@ import qualified Data.Text.Lazy              as LT
 import qualified Data.Text.Lazy.Encoding     as LTE
 import           Data.Typeable
 import qualified Data.Vector                 as V
-import           Data.Void
 import qualified Data.Yaml                   as Y
 import           Katip
 import           GHC.Generics
@@ -620,14 +620,32 @@ data SerialsFor a b = SerialsFor
 
 makeLenses ''SerialsFor
 
+-- | An equivaluent of 'Void', to avoid orphan instances
+data NoWrite
+
+instance (Monad m) => ContentHashable m NoWrite where
+  contentHashUpdate ctx _ = contentHashUpdate ctx ()
+
+-- | Just for symmetry with 'NoWrite'
+data NoRead = NoRead
+  deriving (Eq, Ord, Show)
+
+instance Semigroup NoRead where
+  _ <> _ = NoRead
+instance Monoid NoRead where
+  mempty = NoRead
+
+instance (Monad m) => ContentHashable m NoRead where
+  contentHashUpdate ctx _ = contentHashUpdate ctx ()
+
 -- | Can serialize and deserialize @a@. Use 'dimap' to transform it
 type BidirSerials a = SerialsFor a a
 
 -- | Can only serialize @a@. Use 'lmap' to transform it.
-type PureSerials a = SerialsFor a ()
+type PureSerials a = SerialsFor a NoRead
 
 -- | Can only deserialize @a@. Use 'rmap' to transform it.
-type PureDeserials a = SerialsFor Void a
+type PureDeserials a = SerialsFor NoWrite a
 
 instance Profunctor SerialsFor where
   lmap f (SerialsFor sers desers ext rk) = SerialsFor (contramap f sers) desers ext rk

@@ -130,10 +130,6 @@ runPipelineCommandOnPTask
   -> FunflowOpts m
   -> m o
 runPipelineCommandOnPTask ptask input cmd defRetVal physTree ffopts = do
-  let (virtualTree, runnable) = ptask ^. splittedPTask
-  -- virtualTree is the bare tree of VirtualFiles straight from the
-  -- pipeline. physTree is virtualTree after configuration, with embedded data
-  -- and mappings applied
   case cmd of
     RunPipeline -> do
       dataTree <- traverse resolveDataAccess physTree
@@ -145,11 +141,10 @@ runPipelineCommandOnPTask ptask input cmd defRetVal physTree ffopts = do
                Just l -> "Using remote cache at " ++ show l
                _      -> "")
           Nothing -> identityVar ++ " not specified. The cache will not be used."
-        execRunnablePTask runnable initState input
-    ShowLocTree mode -> do
-      liftIO $ putStrLn $ case mode of
-        NoMappings   -> prettyLocTree virtualTree
-        FullMappings -> prettyLocTree physTree
+        execRunnablePTask (ptask ^. ptaskRunnablePart) initState input
+    ShowLocTree showOpts -> do
+      liftIO $ putStrLn $ prettyLocTree $
+        fmap (PhysicalFileNodeWithShowOpts showOpts) physTree
       case defRetVal of
         Just r -> return r
         Nothing -> error "NOT EXPECTED: runPipelineCommandOnPTask(ShowLocTree) was not given a default\

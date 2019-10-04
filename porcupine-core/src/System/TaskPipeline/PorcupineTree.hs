@@ -125,7 +125,7 @@ data DataAccessor m a b = DataAccessor
   , daPerformRead  :: m b
   , daLocsAccessed :: Either String [SomeLoc m] }
 
-instance (Monad m) => ContentHashable m (DataAccessor m a b) where
+instance (Monad m) => ContentHashable m (DataAccessor m' a b) where
   contentHashUpdate ctx = contentHashUpdate ctx . fmap toHashableLocs . daLocsAccessed
 
 -- | Like a 'DataAccessor' but only with the writer part
@@ -133,7 +133,7 @@ data DataWriter m a = DataWriter
   { dwPerformWrite :: a -> m ()
   , dwLocsAccessed :: Either String [SomeLoc m] }
 
-instance (Monad m) => ContentHashable m (DataWriter m a) where
+instance (Monad m) => ContentHashable m (DataWriter m' a) where
   contentHashUpdate ctx = contentHashUpdate ctx . fmap toHashableLocs . dwLocsAccessed
 
 -- | Like a 'DataAccessor' but only with the reader part
@@ -141,7 +141,7 @@ data DataReader m a = DataReader
   { drPerformRead :: m a
   , drLocsAccessed :: Either String [SomeLoc m] }
 
-instance (Monad m) => ContentHashable m (DataReader m a) where
+instance (Monad m) => ContentHashable m (DataReader m' a) where
   contentHashUpdate ctx = contentHashUpdate ctx . fmap toHashableLocs . drLocsAccessed
 
 -- | The internal part of a 'DataAccessNode, closing over the type params of the
@@ -163,15 +163,16 @@ pattern VirtualFileNode {vfnodeAccesses, vfnodeFile} =
 
 -- | vfnodeFile is a @Traversal'@ into the VirtualFile contained in a
 -- VirtualFileNode, but hiding its real read/write types.
-vfnodeFileVoided :: Traversal' VirtualFileNode (VirtualFile Void ())
+vfnodeFileVoided :: Traversal' VirtualFileNode (VirtualFile NoWrite NoRead)
 vfnodeFileVoided f (VirtualFileNode at vf) =
   VirtualFileNode at <$> vfileVoided f vf
 vfnodeFileVoided _ vfn = pure vfn
 
 -- | The nodes of a "PhysicalTree"
-data PhysicalFileNode m = MbPhysicalFileNode [SomeLocWithVars m] (Maybe SomeVirtualFile)
+data PhysicalFileNode m = MbPhysicalFileNode [SomeLocWithVars m] [VFNodeAccessType] (Maybe SomeVirtualFile)
 -- | A non-empty 'PhysicalFileNode'
-pattern PhysicalFileNode l vf = MbPhysicalFileNode l (Just (SomeVirtualFile vf))
+pattern PhysicalFileNode {pfnodeLayers, pfnodeAccesses, pfnodeFile} =
+  MbPhysicalFileNode pfnodeLayers pfnodeAccesses (Just (SomeVirtualFile pfnodeFile))
 
 -- | The nodes of a "DataAccessTree"
 data DataAccessNode m = MbDataAccessNode [SomeLocWithVars m] (First (SomeDataAccess m))
@@ -193,29 +194,44 @@ instance Semigroup (DataAccessNode m) where
 instance Monoid (DataAccessNode m) where
   mempty = MbDataAccessNode [] mempty
 
-instance Show VirtualFileNode where
-  show VirtualFileNode{..} =
-    describeVFile vfnodeFile
-    ++ "; Accesses: " ++ show vfnodeAccesses
-  show _                   = ""
-
 toJSONTxt :: SomeLocWithVars m -> T.Text
 toJSONTxt (SomeGLoc a) = case toJSON a of
   String s -> s
   v        -> LT.toStrict $ LTE.decodeUtf8 $ encode v
 
-instance Show (PhysicalFileNode m) where
-  show (MbPhysicalFileNode layers mbVF) =
-    (if null layers
-       then "[no mapping]"
-       else T.unpack (mconcat
-              (intersperse " << "
-               (map toJSONTxt layers))))
-    ++ case mbVF of
-         Just (SomeVirtualFile vf) ->
-           " | " ++ describeVFile vf
-         _ -> ""
+-- | How to Show a PhysicalFileNode
+data PhysicalFileNodeShowOpts = PhysicalFileNodeShowOpts
+  { pfshowWithMappings :: Bool
+  , pfshowWithSerials :: Bool
+  , pfshowWithTypes :: Bool
+  , pfshowWithAccesses :: Bool
+  , pfshowWithExtensions :: Bool
+  , pfshowTypeNumChars :: Int }
 
+data PhysicalFileNodeWithShowOpts m =
+  PhysicalFileNodeWithShowOpts PhysicalFileNodeShowOpts (PhysicalFileNode m)
+
+instance Show (PhysicalFileNodeWithShowOpts m) where
+  show (PhysicalFileNodeWithShowOpts PhysicalFileNodeShowOpts{..}
+                                     PhysicalFileNode{..}) =
+    mconcat $ intersperse "\n  " $
+    (showIf pfshowWithMappings $
+      (if null pfnodeLayers
+        then "<no mapping>"
+        else T.unpack (mconcat
+              (intersperse "\n   + "
+               (map toJSONTxt pfnodeLayers)))))
+    ++ (showIf pfshowWithSerials $
+         describeVFileAsSourceSink pfnodeFile)
+    ++ (showIf pfshowWithTypes $
+         describeVFileTypes pfnodeFile pfshowTypeNumChars)
+    ++ (showIf pfshowWithExtensions $
+         describeVFileExtensions pfnodeFile)
+    ++ (showIf pfshowWithAccesses $
+         "Accessed with " ++ show pfnodeAccesses)
+    where
+      showIf cond content = if cond then [content] else []
+  show _ = ""
 
 -- * API for manipulating porcupine trees globally
 
@@ -488,7 +504,7 @@ applyOneVFileMapping :: LocVariableMap -> [SomeLocWithVars m] -> VirtualFileNode
 applyOneVFileMapping variables configLayers mbVF mappingIsExplicit = buildPhysicalNode mbVF
   where
     configLayers' = map (\(SomeGLoc l) -> SomeGLoc $ spliceLocVariables variables l) configLayers
-    buildPhysicalNode VirtualFileNode{..} = PhysicalFileNode layers vfnodeFile
+    buildPhysicalNode VirtualFileNode{..} = PhysicalFileNode layers vfnodeAccesses vfnodeFile
       where
         First defExt = vfnodeFile ^. vfileSerials . serialDefaultExt
         intent = vfileDescIntent $ getVirtualFileDescription vfnodeFile
@@ -501,7 +517,7 @@ applyOneVFileMapping variables configLayers mbVF mappingIsExplicit = buildPhysic
              -- read from external files instead
                | otherwise = map resolveExt configLayers'
         resolveExt (SomeGLoc loc) = SomeGLoc $ setLocTypeIfMissing loc $ T.unpack $ fromMaybe "" defExt
-    buildPhysicalNode _ = MbPhysicalFileNode configLayers' Nothing
+    buildPhysicalNode _ = MbPhysicalFileNode configLayers' [] Nothing
 
 -- | Binds together a 'VirtualTree' with physical locations an splices
 -- in the variables read from the configuration.
@@ -605,7 +621,7 @@ makeDataAccessor vpath (VFileImportance sevRead sevWrite sevError clockAccess)
     fillLoc rkMap loc =
       case fillLoc' rkMap loc of
         Left e  -> katipAddNamespace "dataAccessor" $ throwWithPrefix e
-        Right r -> return r
+        Right r -> return r  
 
 -- | Transform a file node with physical locations in node with a data access
 -- function to run. Matches the location (especially the filetype/extension) to
@@ -614,25 +630,28 @@ resolveDataAccess
   :: forall m m'. (LogMask m, MonadThrow m')
   => PhysicalFileNode m
   -> m' (DataAccessNode m)
-resolveDataAccess (PhysicalFileNode layers vf) = do
-  -- resolveDataAccess performs some checks when we build the pipeline: --
-  -- First, that we aren't illegally binding to no layers:
-  case layers of
-    [] -> case readScheme of
+resolveDataAccess (PhysicalFileNode{pfnodeFile=vf, ..}) = do
+  -- resolveDataAccess performs some checks when we build the pipeline:
+  
+  -- First, that we aren't illegally binding to no layers a VirtualFile that
+  -- will be read without having any default value:
+  case (any (==ATRead) pfnodeAccesses, pfnodeLayers) of
+    (True, [])
+      -> case readScheme of
             LayeredReadWithNull -> return ()
             _ -> case mbEmbeddedVal of
               Just _ -> return ()
               Nothing ->
                 throwM $ TaskConstructionError $
-                vpath ++ " cannot be mapped to null. It doesn't contain any default value."
+                vpath ++ " cannot be mapped to null. It will be read from and doesn't contain any default value."
     _ -> return ()
   -- Then, that we aren't writing to an unsupported filetype:
   writeLocs <- findFunctions (typeOf (undefined :: Lazy.ByteString)) writers
   -- And finally, that we aren't reading from an unsupported filetype:
   readLocs <- findFunctions (typeOf (undefined :: Strict.ByteString)) readers
   return $
-    DataAccessNode layers $
-      makeDataAccessor vpath (vf^.vfileImportance) layers
+    DataAccessNode pfnodeLayers $
+      makeDataAccessor vpath (vf^.vfileImportance) pfnodeLayers
                        mbEmbeddedVal readScheme
                        writeLocs readLocs
   where
@@ -646,7 +665,7 @@ resolveDataAccess (PhysicalFileNode layers vf) = do
 
     findFunctions :: TypeRep -> HM.HashMap (TypeRep,Maybe FileExt) v -> m' [(v, SomeLocWithVars m)]
     findFunctions typeRep hm | HM.null hm = return []
-                             | otherwise  = mapM findFunction layers
+                             | otherwise  = mapM findFunction pfnodeLayers
       where
         findFunction (SomeGLoc loc) = case HM.lookup (typeRep, Just $ T.pack $ getLocType loc) hm of
           Just f -> return (f, SomeGLoc loc)
@@ -656,5 +675,5 @@ resolveDataAccess (PhysicalFileNode layers vf) = do
             "'. Accepted filetypes here are: " ++
             mconcat (intersperse "," [T.unpack ext | (_,Just ext) <- HM.keys hm]) ++ "."
 
-resolveDataAccess (MbPhysicalFileNode locs _) =
-  return $ MbDataAccessNode locs $ First Nothing
+resolveDataAccess (MbPhysicalFileNode layers _ _) =
+  return $ MbDataAccessNode layers $ First Nothing

@@ -17,7 +17,91 @@ of a bigger pipeline).
 `porcupine` specifically targets teams containing skills ranging from those of data scientists
 to those of data/software engineers.
 
-Porcupine provides three core abstractions: _serials_, _tasks_ and _trees_.
+## First example
+
+The following example does something very stupid. We want to generate a text
+file containing n times the letter 'a', n being a parameter given by the user:
+
+```haskell
+generateTxt :: Int -> T.Text -- A pure function generating the text
+generateTxt n = T.replicate n "a"
+
+serialMethod :: SerialsFor T.Text NoRead -- The serialization method
+serialMethod = somePureSerial (PlainTextSerial (Just "txt"))
+	-- Here the serialization method is very stupid, as it's basically just identity
+
+resultFile :: VirtualFile T.Text NoRead  -- A sink in which we will write a Text
+resultFile = dataSink ["result"] serialMethod
+    -- The sinks knows about our serialization method
+
+myTask :: (LogThrow m) => PTask m () ()  -- The task that performs all the operations
+myTask =
+      getOption ["options"]  -- First we request value for a parameter
+                (docField @"text-length" (10::Int)
+				   -- The param is name "text-length" and will by default have a value of 10
+                          "The length of the text to output")
+  >>> arr generateTxt -- Then we create a text of that length
+  >>> writeData resultFile -- And finally we write it in the sink
+```
+
+This example is located [here](porcupine-core/examples/example0/Example0.hs). Run it with
+
+```
+$ stack build porcupine-core:example0
+$ stack exec example0
+```
+
+This should create a file `./result.txt`.
+
+### Changing the parameters
+
+The "text-length" parameter has automatically been exposed via the command-line
+arguments. So for instance you can run
+
+```
+$ stack exec example0 -- --text-length 100
+```
+
+and see that `./result.txt` now contains 100 characters.
+
+Another thing you can already do is remap (redirect) our sink to another file:
+
+```
+$stack exec example0 -- --loc /result=other-result.txt
+```
+
+and see that the program now writes to `./other-result.txt` instead of
+`./result.txt`.
+
+### Showing the dependencies and parameters of our program
+
+One final thing we can do on this example is print the tree of sinks, sources
+and options that it uses:
+
+```
+$stack exec example0 -- show-tree -m
+```
+
+this should print:
+
+```
+/: 
+|
++- result: ./result.txt
+|    DATA SINK
+|    Accepts txt
+|
+`- options: <no mapping>
+     OPTION SOURCE (embeddable)
+     Accepts yaml,json,yml
+```
+
+Where you can see the resources that our program needs, and their default
+mappings to physical files.
+
+This example is extremely contrived, but it already shows the main tools that
+`porcupine` provides to build a data pipeline and interact with it: _serials_,
+_virtual files_, _tasks_ and _trees_.
 
 ## Serials
 
@@ -28,19 +112,6 @@ implements standard serialization interfaces, such as `aeson`'s `To/FromJSON` or
 already have. A `SerialsFor A B` is a collection of `A -> i` and `i -> B`
 functions, where `i` can be any intermediary type, most often `ByteString`,
 `Data.Aeson.Value` or `Text`.
-
-`SerialsFor` is a [profunctor]. That means that once you know how to
-(de)serialize an `A` (ie. if you have a `SerialsFor A A`), then you can just use
-`dimap` to get a `SerialsFor B B` if you know how to convert `A` to & from
-`B`. Handling only one-way serialization or deserialization is perfectly
-possible, that just mean you will have `SerialsFor Void B` or `SerialsFor A ()`
-and use only `lmap` or `rmap`. Any `SerialsFor a b` is also a semigroup, where
-`(<>)` merges together the collections of serialization functions they contain,
-meaning that you can for instance gather default serials, or serials from an
-external source and add to them your custom serialization methods, before using
-it in a task pipeline.
-
-[profunctor]: https://www.stackage.org/haddock/lts-12.21/lens-4.16.1/Control-Lens-Combinators.html#t:Profunctor
 
 The end goal of `SerialsFor` is that the user writing a task pipeline will not
 have to care about how the input data will be serialized. As long as the data it
@@ -53,11 +124,28 @@ than marshall and curate input data so that it matches the pipeline
 expectations, you augment the pipeline so that it can deal with more data
 sources.
 
-## Porcupine's trees
+If you are experienced with Haskell typeclasses and abstractions, it is
+interesting to note that `SerialsFor` is a [profunctor]. This means that once
+you know how to (de)serialize an `A` (ie. if you have a `SerialsFor A A`), then
+you can just use `dimap` to get a `SerialsFor B B` if you know how to convert
+`A` to & from `B`. Handling only one-way serialization or deserialization is
+perfectly possible, that just mean you will have `SerialsFor NoWrite B` or
+`SerialsFor A NoRead` and use only `lmap` or `rmap`. A `SerialsFor a b` is also
+a semigroup, where `(<>)` merges together the collections of serialization
+functions they contain, meaning that you can for instance gather default
+serials, or serials from an external source and add to them your custom
+serialization methods, before using it in a task pipeline.
 
-Every task in Porcupine exposes a _virtual tree_. A virtual tree is a
-hierarchy (like a filesystem) of `VirtualFiles`. A `VirtualFile A B` just groups
-together a logical path and a `SerialsFor A B`, so it is just something with an
+`NoWrite` and `NoRead` are equivalent respectively to `Void` and `()`. We use
+them for clarity reasons, and also to avoid orphan instances.
+
+[profunctor]: https://www.stackage.org/haddock/lts-12.21/lens-4.16.1/Control-Lens-Combinators.html#t:Profunctor
+
+## Porcupine's trees of virtual files
+
+Every task in Porcupine exposes a _virtual tree_. A virtual tree is a hierarchy
+(like a filesystem) of `VirtualFiles`. A `VirtualFile A B` just groups together
+a logical path and a `SerialsFor A B`, so it is just something with an
 identifier (like `"/Inputs/Config"` or `"/Ouputs/Results"`) in which we can
 write a `A` and/or from which we can read a `B`. We say the path is "logical"
 because it doesn't necessary have to correspond to some physical path on the
@@ -69,18 +157,21 @@ paths are a convenient and customary way to organise resources, and we can
 conveniently use them as a default layout for when your logical paths do
 correspond to actual paths on your hard drive.
 
-So once the user has their serials, they just need to create a
-`VirtualFile`. For instance, this is how you create a readonly resource that can
-be mapped to a JSON or YAML file in the end:
+Most often we use the aliases `DataSource` and `DataSink` instead of directly
+`VirtualFile`, as our programs will most often use just read from or just write
+to files.
+
+This is how you create a readonly resource that can be mapped to a JSON or YAML
+file in the end:
 
 ```haskell
-myInput :: VirtualFile Void MyConfig
+myInput :: DataSource MyConfig  -- DataSource is just `VirtualFile NoWrite`
 	-- MyConfig must be an instance of FromJSON here
 myInput = dataSource
             ["Inputs", "Config"] -- The logical path '/Inputs/Config'
-	        (somePureDeserial JSONSerial)
+            (somePureDeserial JSONSerial)
 
-somePureDeserial :: (DeserializesWith s a) => s -> SerialsFor Void a
+somePureDeserial :: (DeserializesWith s a) => s -> SerialsFor NoWrite a
 dataSource :: [LocationTreePathItem] -> SerialsFor a b -> DataSource b
 ```
 
@@ -89,12 +180,11 @@ actual locations and will become a `DataAccessTree`.
 
 ## Tasks
 
-A `PTask` is an arrow, that is to say a computation with an input and an
-output. Here we just call these computations "tasks". PTasks run in a base monad
-`m` that can depend on the application but that should always implement
-`KatipContext` (for logging), `MonadCatch`, `MonadResource` and `MonadUnliftIO`.
-However you usually don't have to worry about that, as porcupine takes care of
-these dependencies for you.
+A `PTask` is a computation with an input and an output. Here we just call these
+computations "tasks". PTasks run in a base monad `m` that can depend on the
+application but that should always implement `KatipContext` (for logging),
+`MonadCatch`, `MonadResource` and `MonadUnliftIO`.  However you usually don't
+have to worry about that, as porcupine takes care of these dependencies for you.
 
 This is how we create a task that reads the `myInput` VirtualFile we defined
 previously:
@@ -113,16 +203,17 @@ So `PTasks` can access resources or perform computations, as any pure function
 `(a -> b)` can be lifted to a `PTask m a b`. Each `PTask` will expose the
 VirtualFiles it accesses (we call them the _requirements_ of the task, as it
 requires these files to be present and bound to physical locations so it can
-run) in the form of a virtual tree. `PTasks` compose much like functions do, and
-they merge their requirements as they compose, so in the end if you whole
-application runs in a `PTask`, then it will expose and make bindable the
-totality of the resources accessed by your application. So a `PTask` _exposes_ a
-`VirtualTree` as its requirements, and when it actually runs it _receives_ a
-`DataAccessTree` that contains the functions to actually pull the data it needs
-or output the data it generates. Both trees are editable in the task, so a
-`PTask` can be altered from the outside, in order to adapt it to work in a
-different context than the one it was conceived for, which boosts code
-reusability.
+run) in the form of a virtual tree. `PTasks` are
+[arrows](https://wiki.haskell.org/Arrow_tutorial), and as such they compose much
+like functions do. The main difference with functions is that tasks merge their
+requirements as they compose. So in the end if you whole application runs in a
+`PTask`, then it will expose and make bindable the totality of the resources
+accessed by your application. A `PTask` _exposes_ a `VirtualTree` as its
+requirements, and when it actually runs it _receives_ a `DataAccessTree` that
+contains the functions to actually pull the data it needs or output the data it
+generates. Both trees are editable in the task, so a `PTask` can be altered from
+the outside, in order to adapt it to work in a different context than the one it
+was conceived for, which boosts code reusability.
 
 Once you have e.g. a `mainTask :: PTask () ()` that corresponds to your whole
 pipeline, your application just needs to call:
@@ -136,8 +227,10 @@ main = runLocalPipelineTask cfg mainTask
 
 ## Running a Porcupine application
 
-Once you have built your executable, what you will usually want is to expose its
-configuration. Just run it with:
+We saw in our [first example](#first-example) that the parameters of our tasks
+are exposed via the command-line. But it isn't the only source of configuration
+you can use. You can also create a YAML or JSON file that will hold that
+configuration. Once you have built your executable, run:
 
 ```sh
 $ my-exe write-config-template
@@ -160,9 +253,9 @@ $ my-exe run
 ```
 
 and the pipeline will run (logging its accesses along). The `run` is optional,
-it's the default subcommand. Any option you defined inside your pipeline is also
-exposed on the CLI, and shown by `my-exe --help`. Specifying it on the CLI
-overrides the value set in the yaml config file.
+it's the default subcommand. As we saw any option you defined inside your
+pipeline is also exposed on the CLI, and shown by `my-exe --help`. Specifying it
+on the CLI overrides the value set in the YAML config file.
 
 A note about the `FullConfig` option you saw earlier. Porcupine is quite a
 high-level tool and handles configuration file and CLI parsing for you, and this
@@ -205,10 +298,11 @@ with her different set of skills.
 
 # Walking through an example
 
-Let's have a look at [example1](porcupine-core/examples/example1/Example1.hs). It carries
-out a very simple analysis: counting the number of times each letter of the
-alphabet appears in some users' first name and last name. Each user data is read
-from [a json file specific to that user](porcupine-core/examples/example1/data/Inputs)
+Let's now have a look at
+[example1](porcupine-core/examples/example1/Example1.hs). It carries out a
+simple analysis: it counts the number of times each letter of the alphabet
+appears in some users' first name and last name. Each user data is read from [a
+json file specific to that user](porcupine-core/examples/example1/data/Inputs)
 named `User-{userId}.json`, and the result for that user is written to another
 json file named `Analysis-{userId}.json`. This very basic process is repeated
 once per user ID to consider.
@@ -235,6 +329,29 @@ locations:
   /Inputs/User: _-{userId}.json
   /: porcupine-core/examples/data
   /Outputs/Analysis: _-{userId}.json
+```
+
+You can compare it to the output of `show-tree`:
+
+```sh
+$ stack exec example1 -- show-tree
+```
+
+```
+/: 
+|
++- Settings: OPTION SOURCE (embeddable)
+|    Accepts yaml,json,yml
+|
++- Inputs: 
+|  |
+|  `- User: DATA SOURCE (embeddable)
+|       Accepts json,yml,yaml
+|
+`- Outputs: 
+   |
+   `- Analysis: DATA SINK
+        Accepts json,yml,yaml
 ```
 
 This hierarchy of virtual paths filled with data and mappings to physical paths
@@ -412,6 +529,36 @@ VirtualFiles specify their paths explicitely.
 Aside from the general usage exposed previously, porcupine proposes several
 features to facilitate iterative development of pipelines and reusability of
 tasks.
+
+## Ahead-of-time sanity checks and overview of resources
+
+`porcupine` allows you to have a preliminary view of _every_ resource needed at
+some point by your pipeline, every parameter customizable in you tasks, before
+anything needs to run. This is extremely powerful as this permits a much, much
+larger amount of checks to be carried out ahead of time. Notably `porcupine`
+doesn't allow a virtual file to be mapped to a physical file that doesn't have
+an expected extension.
+
+The main tool you can use to gain insight on you pipeline is the `show-tree`
+subcommand we already saw. It accepts a few flags:
+
+- `-m`: Show the mappings
+- `-t`: Show the datatypes written/read
+- `-a`: Show the accesses that will be performed (you can know in advance
+  eg. how many times a file will be read)
+- `-S`: Don't show the SOURCE/SINK labels
+- `-E`: Don't show the filetypes (extensions) the virtual file accepts
+
+In the future, we plan on adding new, optional ahead of time sanity checks that
+could be performed with a specific subcommand, like:
+
+- Checking the existence of all files,
+- Performing a dry run of the serials to verify that all inputs are correctly
+  formatted,
+- Checking that every server we will try to write to is actually attainable.
+
+And given a `PTask` exposes its `VirtualTree` via the `ptaskRequirements` lens,
+you can even perform you own sanity checks before calling `runPipelineTask`.
 
 ## Configuration, data embedded in config file, and external input files/resources
 
