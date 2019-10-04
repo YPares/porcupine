@@ -161,7 +161,7 @@ writeDataStream
 writeDataStream lv vf =
       arr StreamES
   >>> accessVirtualFile' (DoWrite id) lv vf
-  >>> unsafeLiftToPTask runES
+  >>> toPTask runES
 
 -- | The simplest way to consume a stream of data inside a pipeline. Just write
 -- it to repeated occurences of a 'VirtualFile'.
