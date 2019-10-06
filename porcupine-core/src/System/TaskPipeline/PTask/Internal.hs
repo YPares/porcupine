@@ -16,7 +16,7 @@
 module System.TaskPipeline.PTask.Internal
   ( PTask(..)
   , PTaskState
-  , RunnablePTask
+  , RunnableTask
   , FunflowRunConfig(..)
   , CanRunPTask
   , FunflowOpts(..)
@@ -24,16 +24,16 @@ module System.TaskPipeline.PTask.Internal
   , ptrsKatipNamespace
   , ptrsFunflowRunConfig
   , ptrsDataAccessTree
-  , splitPTask
-  , runnablePTaskReaderState
+  , splitTask
+  , runnableTaskReaderState
   , makeTask
   , makeTask'
   , modifyingRuntimeState
   , withRunnableState
   , withRunnableState'
-  , execRunnablePTask
+  , execRunnableTask
   , runnableWithoutReqs
-  , withPTaskState
+  , withTaskState
   ) where
 
 import           Prelude                                     hiding (id, (.))
@@ -89,9 +89,9 @@ makeLenses ''PTaskState
 
 -- | The part of a 'PTask' that will be ran once the whole pipeline is composed
 -- and the tree of requirements has been bound to physical locations. Is is
--- important to note that while both 'PTask' and 'RunnablePTask' are Arrows,
--- only 'RunnablePTask' is an ArrowChoice.
-type RunnablePTask m =
+-- important to note that while both 'PTask' and 'RunnableTask' are Arrows,
+-- only 'RunnableTask' is an ArrowChoice.
+type RunnableTask m =
   AppArrow
     (Reader (PTaskState m)) -- The reader layer contains the mapped
                                   -- tree. Will be used only as an applicative.
@@ -101,11 +101,11 @@ type RunnablePTask m =
 -- m@ can be run
 type CanRunPTask m = (MonadBaseControl IO m, LogMask m)
 
--- | Runs a 'RunnablePTask' given its state
-execRunnablePTask
+-- | Runs a 'RunnableTask' given its state
+execRunnableTask
   :: (CanRunPTask m)
-  => RunnablePTask m a b -> PTaskState m -> a -> m b
-execRunnablePTask
+  => RunnableTask m a b -> PTaskState m -> a -> m b
+execRunnableTask
   (AppArrow act)
   st@PTaskState{_ptrsFunflowRunConfig=FunflowRunConfig{..}}
   input =
@@ -126,7 +126,7 @@ newtype PTask m a b = PTask
   (AppArrow
     (Writer VirtualTree)  -- The writer layer accumulates the requirements. It will
                       -- be used only as an applicative.
-    (RunnablePTask m)
+    (RunnableTask m)
     a b)
   deriving (Category, Arrow, ArrowError SomeException, Functor, Applicative)
   -- PTask doesn't instanciate ArrowChoice. That's intentional, even if an
@@ -145,7 +145,7 @@ flowToPTask :: Flow (InnerEffect m) SomeException a b -> PTask m a b
 flowToPTask = PTask . appArrow . appArrow
 
 -- | The type of effects we can run. The reader layer is executed by 'wrap',
--- this is why it doesn't appear in the Flow part of the 'RunnablePTask' type.
+-- this is why it doesn't appear in the Flow part of the 'RunnableTask' type.
 type OuterEffect m =
   AsyncA (ReaderT (PTaskState m) m)
 
@@ -185,8 +185,8 @@ modifyingRuntimeState
   :: (Monad m)
   => (a -> PTaskState m -> PTaskState m)
   -> (a -> a')
-  -> RunnablePTask m a' b
-  -> RunnablePTask m a b
+  -> RunnableTask m a' b
+  -> RunnableTask m a b
 modifyingRuntimeState alterState alterInput ar = pushState >>> ar >>> popState
   where
     pushState =
@@ -201,9 +201,9 @@ modifyingRuntimeState alterState alterInput ar = pushState >>> ar >>> popState
       "modifyingRunnableState: Modifiers list shouldn't be empty!"
     popMod (_:ms) = ms
 
--- | At the 'RunnablePTask' level, access the reader state and run an action
+-- | At the 'RunnableTask' level, access the reader state and run an action
 withRunnableState' :: (KatipContext m)
-                   => Properties a b -> (PTaskState m -> a -> m b) -> RunnablePTask m a b
+                   => Properties a b -> (PTaskState m -> a -> m b) -> RunnableTask m a b
 withRunnableState' props f = withOuterState props $ \outerState input -> do
   mods <- get
   let ptrs = foldr ($) outerState mods
@@ -214,27 +214,27 @@ withRunnableState' props f = withOuterState props $ \outerState input -> do
 
 -- | 'withRunnableState'' without caching.
 withRunnableState :: (KatipContext m)
-                  => (PTaskState m -> a -> m b) -> RunnablePTask m a b
+                  => (PTaskState m -> a -> m b) -> RunnableTask m a b
 withRunnableState = withRunnableState' def
 
--- | Wraps a 'RunnablePTask' into a 'PTask' that declares no requirements
-runnableWithoutReqs :: RunnablePTask m a b -> PTask m a b
+-- | Wraps a 'RunnableTask' into a 'PTask' that declares no requirements
+runnableWithoutReqs :: RunnableTask m a b -> PTask m a b
 runnableWithoutReqs = PTask . appArrow
 
 -- | An Iso to the requirements and the runnable part of a 'PTask'
-splitPTask :: Iso (PTask m a b) (PTask m a' b')
-                     (VirtualTree, RunnablePTask m a b)
-                     (VirtualTree, RunnablePTask m a' b')
-splitPTask = iso to_ from_
+splitTask :: Iso (PTask m a b) (PTask m a' b')
+                     (VirtualTree, RunnableTask m a b)
+                     (VirtualTree, RunnableTask m a' b')
+splitTask = iso to_ from_
   where
     to_ (PTask (AppArrow wrtrAct)) = swap $ runWriter wrtrAct
     from_ = PTask . AppArrow . writer . swap
     swap (a,b) = (b,a)
 
--- | Permits to apply a function to the Reader state of a 'RunnablePTask' when
+-- | Permits to apply a function to the Reader state of a 'RunnableTask' when
 -- in runs.
-runnablePTaskReaderState :: Setter' (RunnablePTask m a b) (PTaskState m)
-runnablePTaskReaderState = lens unAppArrow (const AppArrow) . setting local
+runnableTaskReaderState :: Setter' (RunnableTask m a b) (PTaskState m)
+runnableTaskReaderState = lens unAppArrow (const AppArrow) . setting local
 
 -- | Makes a task from a tree of requirements and a function. The 'Properties'
 -- indicate whether we can cache this task.
@@ -244,7 +244,7 @@ makeTask' :: (KatipContext m)
            -> (DataAccessTree m -> a -> m b)
            -> PTask m a b
 makeTask' props tree f =
-  (tree, withRunnableState' props (f . _ptrsDataAccessTree)) ^. from splitPTask
+  (tree, withRunnableState' props (f . _ptrsDataAccessTree)) ^. from splitTask
 
 -- | Makes a task from a tree of requirements and a function. This is the entry
 -- point to PTasks
@@ -274,12 +274,12 @@ withFunflowRunConfig ffopts f = do
     f $ FunflowRunConfig SQLite coordPath' store (flowIdentity ffopts) cacher)
 
 -- | Given a 'KatipContext' and a 'DataAccessTree', gets the initial state to
--- give to 'execRunnablePTask'
-withPTaskState :: (LogMask m)
+-- give to 'execRunnableTask'
+withTaskState :: (LogMask m)
                => FunflowOpts m
                -> DataAccessTree m
                -> (PTaskState m -> m r) -> m r
-withPTaskState ffPaths tree f =
+withTaskState ffPaths tree f =
   withFunflowRunConfig ffPaths $ \ffconfig -> do
     ctx <- getKatipContext
     ns  <- getKatipNamespace

@@ -557,7 +557,7 @@ could be performed with a specific subcommand, like:
   formatted,
 - Checking that every server we will try to write to is actually attainable.
 
-And given a `PTask` exposes its `VirtualTree` via the `ptaskRequirements` lens,
+And given a `PTask` exposes its `VirtualTree` via the `taskRequirements` lens,
 you can even perform you own sanity checks before calling `runPipelineTask`.
 
 ## Configuration, data embedded in config file, and external input files/resources

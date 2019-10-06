@@ -8,8 +8,8 @@ module System.TaskPipeline.Repetition.Fold
   , RepInfo(..)
   , TRIndex(..)
   , HasTRIndex(..)
-  , ptaskFold
-  , ptaskFold_
+  , taskFold
+  , taskFold_
   , unsafeGeneralizeM
   , unsafeGeneralizeFnM
   , foldlTask
@@ -57,20 +57,20 @@ unsafeGeneralizeFnM f =
         (toTask $ \(RFM _ acc done) -> done acc)
 
 -- | Creates a 'FoldA' from a 'PTask'.
-ptaskFold :: PTask m (acc,input) acc -- ^ The folding task
+taskFold :: PTask m (acc,input) acc -- ^ The folding task
           -> FoldA' (PTask m) input acc
-ptaskFold step =
+taskFold step =
   FoldA (arr onInput >>> step) id id
   where
     onInput (Pair acc x) = (acc,x)
 
 -- | Creates a 'FoldA' that will never alter its accumulator's initial value,
 -- just pass it around
-ptaskFold_ :: PTask m (acc,input) ()
+taskFold_ :: PTask m (acc,input) ()
            -> FoldA (PTask m) acc input ()
-ptaskFold_ task =
+taskFold_ task =
   rmap (const ()) $
-  ptaskFold $ proc (acc,input) -> do
+  taskFold $ proc (acc,input) -> do
     task -< (acc,input)
     returnA -< acc
 
@@ -88,7 +88,7 @@ makeStepRepeatable :: (HasTRIndex a, KatipContext m)
 makeStepRepeatable ri step =
   arr PWR >>> makeTaskRepeatable ri (arr unPWR >>> step)
 
--- | Consumes a Stream with a 'FoldA' created with 'ptaskFold', 'generalizeA',
+-- | Consumes a Stream with a 'FoldA' created with 'taskFold', 'generalizeA',
 -- 'unsafeGeneralizeM', or a composition of such folds.
 foldStreamTask
   :: (HasTRIndex a, KatipContext m)
@@ -96,11 +96,11 @@ foldStreamTask
   -> FoldA (PTask m) i a b
   -> PTask m (i, Stream (Of a) m r) (b, r)
 foldStreamTask ri (FoldA step_ start done) =
-  (reqs, runnable) ^. from splitPTask
+  (reqs, runnable) ^. from splitTask
   where
-    (reqsStep, runnableStep)   = makeStepRepeatable ri step_ ^. splitPTask
-    (reqsStart, runnableStart) = start ^. splitPTask
-    (reqsDone, runnableDone)   = done ^. splitPTask
+    (reqsStep, runnableStep)   = makeStepRepeatable ri step_ ^. splitTask
+    (reqsStart, runnableStart) = start ^. splitTask
+    (reqsDone, runnableDone)   = done ^. splitTask
     reqs = reqsStart <> reqsStep <> reqsDone
     runnable =
       first runnableStart >>> loopStep >>> first runnableDone
@@ -128,7 +128,7 @@ premapMaybe :: (a -> Maybe a')
             -> FoldA (PTask m) i a b
 premapMaybe f (FoldA step start done) = FoldA step' start done
   where
-    step' = step & over ptaskRunnablePart
+    step' = step & over taskRunnablePart
       (\run -> proc (Pair acc input) ->
           case f input of
             Nothing     -> returnA -< acc

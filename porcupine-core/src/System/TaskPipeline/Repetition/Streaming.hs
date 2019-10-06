@@ -68,17 +68,17 @@ mappingOverStream
                        -- appended to every Loc mapped to every leaf in the
                        -- LocationTree given to X.
 mappingOverStream repetitionKey mbVerb =
-    over ptaskRunnablePart mappingRunnableOverStream
+    over taskRunnablePart mappingRunnableOverStream
   . makeTaskRepeatable (RepInfo repetitionKey mbVerb)
 
 {-# DEPRECATED mappingOverStream "Prefer the FoldA API to repeat tasks and consume streams" #-}
 
--- | IMPORTANT: That requires the RunnablePTask to be repeatable. See
+-- | IMPORTANT: That requires the RunnableTask to be repeatable. See
 -- 'makeTaskRepeatable'.
 mappingRunnableOverStream
   :: (CanRunPTask m)
-  => RunnablePTask m a b
-  -> RunnablePTask m
+  => RunnableTask m a b
+  -> RunnableTask m
        (Stream (Of a) m r)
        (Stream (Of b) m r)
 mappingRunnableOverStream runnable =
@@ -91,7 +91,7 @@ mappingRunnableOverStream runnable =
         return $
           firstResult `S.cons` S.mapM (go state) inputStream'
   where
-    go = execRunnablePTask runnable
+    go = execRunnableTask runnable
          -- NOTE: We "cheat" here: we run the funflow layer of the inner
          -- task. We should find a way not to have to do that, but when using
          -- Streaming (which delays effects in a monad) it's really problematic.

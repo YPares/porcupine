@@ -93,7 +93,7 @@ makeTaskRepeatable
   -> PTask m a b
   -> PTask m a b
 makeTaskRepeatable (RepInfo repetitionKey mbVerb) =
-  over splitPTask
+  over splitTask
     (\(reqTree, runnable) ->
       ( fmap addKeyToVirtualFile reqTree
       , modifyingRuntimeState alterState id runnable ))

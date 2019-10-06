@@ -22,14 +22,14 @@ module System.TaskPipeline.PTask
   , Properties
   , tryTask, throwTask, clockTask, clockTask'
   , catchAndLog, throwStringTask
-  , ptaskOnJust, ptaskOnRight
+  , taskOnJust, taskOnRight
   , toTask, toTask'
   , ioTask, stepIO, stepIO'
-  , ptaskUsedFiles
-  , ptaskRequirements
-  , ptaskRunnablePart
-  , ptaskDataAccessTree
-  , ptaskInSubtree
+  , taskUsedFiles
+  , taskRequirements
+  , taskRunnablePart
+  , taskDataAccessTree
+  , taskInSubtree
   , voidTask
   , addContextToTask
   , addStaticContextToTask
@@ -97,15 +97,15 @@ throwStringTask = toTask $ \i ->
     Right r -> return r
 
 -- | Runs a PTask only if its input is Just
-ptaskOnJust :: PTask m a b -> PTask m (Maybe a) (Maybe b)
-ptaskOnJust = over ptaskRunnablePart $ \run -> proc input ->
+taskOnJust :: PTask m a b -> PTask m (Maybe a) (Maybe b)
+taskOnJust = over taskRunnablePart $ \run -> proc input ->
   case input of
     Nothing -> returnA -< Nothing
     Just x  -> arr Just <<< run -< x
 
 -- | Runs a PTask only if its input is Right
-ptaskOnRight :: PTask m a b -> PTask m (Either e a) (Either e b)
-ptaskOnRight = over ptaskRunnablePart $ \run -> proc input ->
+taskOnRight :: PTask m a b -> PTask m (Either e a) (Either e b)
+taskOnRight = over taskRunnablePart $ \run -> proc input ->
   case input of
     Left e  -> returnA -< Left e
     Right x -> arr Right <<< run -< x
@@ -160,30 +160,30 @@ logWarning = arr (WarningS,) >>> logTask
 logError = arr (ErrorS,) >>> logTask
 
 -- | To access and transform the requirements of the PTask before it runs
-ptaskRequirements :: Lens' (PTask m a b) (LocationTree VirtualFileNode)
-ptaskRequirements = splitPTask . _1
+taskRequirements :: Lens' (PTask m a b) (LocationTree VirtualFileNode)
+taskRequirements = splitTask . _1
 
 -- | To access and transform all the 'VirtualFiles' used by this 'PTask'. The
 -- parameters of the VirtualFiles will remain hidden, but all the metadata is
 -- accessible. NOTE: The original path of the files isn't settable.
-ptaskUsedFiles :: Traversal' (PTask m a b) (VirtualFile NoWrite NoRead)
-ptaskUsedFiles = ptaskRequirements . traversed . vfnodeFileVoided
+taskUsedFiles :: Traversal' (PTask m a b) (VirtualFile NoWrite NoRead)
+taskUsedFiles = taskRequirements . traversed . vfnodeFileVoided
 
--- | Permits to access the 'RunnablePTask' inside the PTask. It is the PTask,
+-- | Permits to access the 'RunnableTask' inside the PTask. It is the PTask,
 -- devoid of its requirements. It is also and Arrow, and additionally it's an
 -- ArrowChoice, so by using 'over ptaskRunnablePart' you can access a structure
 -- in which you can use /case/ and /if/ statements.
-ptaskRunnablePart :: Lens (PTask m a b) (PTask m a' b')
-                     (RunnablePTask m a b) (RunnablePTask m a' b')
-ptaskRunnablePart = splitPTask . _2
+taskRunnablePart :: Lens (PTask m a b) (PTask m a' b')
+                    (RunnableTask m a b) (RunnableTask m a' b')
+taskRunnablePart = splitTask . _2
 
 -- | To transform the state of the PTask when it will run
-ptaskReaderState :: Setter' (PTask m a b) (PTaskState m)
-ptaskReaderState = ptaskRunnablePart . runnablePTaskReaderState
+taskReaderState :: Setter' (PTask m a b) (PTaskState m)
+taskReaderState = taskRunnablePart . runnableTaskReaderState
 
 -- | To transform the 'DataAccessTree' of the PTask when it will run
-ptaskDataAccessTree :: Setter' (PTask m a b) (LocationTree (DataAccessNode m))
-ptaskDataAccessTree = ptaskReaderState . ptrsDataAccessTree
+taskDataAccessTree :: Setter' (PTask m a b) (LocationTree (DataAccessNode m))
+taskDataAccessTree = taskReaderState . ptrsDataAccessTree
 
 -- | Adds some context to a task, that will be used by the logger. That bit of
 -- context is dynamic, that's why what we do is wrap the task into a new one,
@@ -191,7 +191,7 @@ ptaskDataAccessTree = ptaskReaderState . ptrsDataAccessTree
 -- known statically (ie. before the pipeline actually runs), prefer
 -- 'addStaticContextToTask'.
 addContextToTask :: (LogItem i, Monad m) => PTask m a b -> PTask m (i,a) b
-addContextToTask = over ptaskRunnablePart $ modifyingRuntimeState
+addContextToTask = over taskRunnablePart $ modifyingRuntimeState
   (\(item,_) -> over ptrsKatipContext (<> liftPayload item))
   snd
 
@@ -199,19 +199,19 @@ addContextToTask = over ptaskRunnablePart $ modifyingRuntimeState
 -- 'LogItem' to add is therefore static and can be given just as an argument.
 addStaticContextToTask :: (LogItem i) => i -> PTask m a b -> PTask m a b
 addStaticContextToTask item =
-  over (ptaskReaderState . ptrsKatipContext) (<> liftPayload item)
+  over (taskReaderState . ptrsKatipContext) (<> liftPayload item)
 
 -- | Adds a namespace to the task. See 'katipAddNamespace'. Like context in
 -- 'addStaticContextToTask', the namespace is meant to be static, that's why we
 -- give it as a parameter to 'addNamespaceToTask', instead of creating a PTask
 -- that expects the namespace as an input.
 --
--- NOTE: Prefer the use of 'namePTask', which records the time spent within the
+-- NOTE: Prefer the use of 'nameTask', which records the time spent within the
 -- task. Directly use 'addNamespaceToTask' only if that time tracking hurts
 -- performance.
 addNamespaceToTask :: String -> PTask m a b -> PTask m a b
 addNamespaceToTask ns =
-    over (ptaskReaderState . ptrsKatipNamespace) (<> fromString ns)
+    over (taskReaderState . ptrsKatipNamespace) (<> fromString ns)
 
 -- | This gives the task a name, making porcupine aware that this task should be
 -- considered a entity by itself. This has a few effects:
@@ -233,9 +233,9 @@ nameTask ns task =
 -- 'LocationTree's that are identical (for instance input files for a model if
 -- you want to solve several models, in which case you'd want for instance to
 -- add an extra level at the root of the tree with the model name).
-ptaskInSubtree :: [LocationTreePathItem] -> PTask m a b -> PTask m a b
-ptaskInSubtree path = over splitPTask $ \(reqTree, runnable) ->
+taskInSubtree :: [LocationTreePathItem] -> PTask m a b -> PTask m a b
+taskInSubtree path = over splitTask $ \(reqTree, runnable) ->
   let reqTree' = foldr (\pathItem rest -> folderNode [pathItem :/ rest]) reqTree path
-      runnable' = runnable & over (runnablePTaskReaderState . ptrsDataAccessTree)
+      runnable' = runnable & over (runnableTaskReaderState . ptrsDataAccessTree)
                                   (view $ atSubfolderRec path)
   in (reqTree', runnable')

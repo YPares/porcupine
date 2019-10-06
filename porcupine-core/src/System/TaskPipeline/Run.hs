@@ -90,7 +90,7 @@ runPipelineTaskWithExceptionHandlers
   -> i                 -- ^ The pipeline task input
   -> IO o              -- ^ The pipeline task output
 runPipelineTaskWithExceptionHandlers exceptionHandlers configMethod accessors ptask input = do
-  let tree = ptask ^. ptaskRequirements
+  let tree = ptask ^. taskRequirements
   catches
     (bindVirtualTreeAndRun configMethod accessors tree $
       runPipelineCommandOnPTask ptask input)
@@ -133,7 +133,7 @@ runPipelineCommandOnPTask ptask input cmd defRetVal physTree ffopts = do
   case cmd of
     RunPipeline -> do
       dataTree <- traverse resolveDataAccess physTree
-      withPTaskState ffopts dataTree $ \initState -> do
+      withTaskState ffopts dataTree $ \initState -> do
         $(logTM) NoticeS $ logStr $ case flowIdentity ffopts of
           Just i -> "Using funflow store at '" ++ storePath ffopts ++ "' with identity "
             ++ show i ++ "." ++
@@ -141,7 +141,7 @@ runPipelineCommandOnPTask ptask input cmd defRetVal physTree ffopts = do
                Just l -> "Using remote cache at " ++ show l
                _      -> "")
           Nothing -> identityVar ++ " not specified. The cache will not be used."
-        execRunnablePTask (ptask ^. ptaskRunnablePart) initState input
+        execRunnableTask (ptask ^. taskRunnablePart) initState input
     ShowLocTree showOpts -> do
       liftIO $ putStrLn $ prettyLocTree $
         fmap (PhysicalFileNodeWithShowOpts showOpts) physTree
