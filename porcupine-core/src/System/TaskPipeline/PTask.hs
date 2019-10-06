@@ -7,9 +7,7 @@
 {-# LANGUAGE TupleSections        #-}
 {-# LANGUAGE TypeFamilies         #-}
 {-# LANGUAGE TypeOperators        #-}
-{-# LANGUAGE UndecidableInstances #-}
 {-# OPTIONS_GHC -Wall #-}
-{-# OPTIONS_GHC -fno-warn-orphans       #-}
 
 
 module System.TaskPipeline.PTask
@@ -108,12 +106,6 @@ toTask = makeTask mempty . const
 toTask' :: (KatipContext m)
          => Properties a b -> (a -> m b) -> PTask m a b
 toTask' props = makeTask' props mempty . const
-
-
--- This orphan instance is necessary so clockTask may work over an 'Either
--- SomeException a'
-instance NFData SomeException where
-  rnf e = rnf $ displayException e
 
 -- | Measures the time taken by a 'PTask'.
 clockTask
