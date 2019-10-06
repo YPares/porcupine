@@ -22,7 +22,6 @@ module System.TaskPipeline.PTask
   , Properties
   , tryTask, throwTask, clockTask, clockTask'
   , catchAndLog, throwStringTask
-  , taskOnJust, taskOnRight
   , toTask, toTask'
   , ioTask, stepIO, stepIO'
   , taskUsedFiles
@@ -95,20 +94,6 @@ throwStringTask = toTask $ \i ->
   case i of
     Left e  -> throwWithPrefix e
     Right r -> return r
-
--- | Runs a PTask only if its input is Just
-taskOnJust :: PTask m a b -> PTask m (Maybe a) (Maybe b)
-taskOnJust = over taskRunnablePart $ \run -> proc input ->
-  case input of
-    Nothing -> returnA -< Nothing
-    Just x  -> arr Just <<< run -< x
-
--- | Runs a PTask only if its input is Right
-taskOnRight :: PTask m a b -> PTask m (Either e a) (Either e b)
-taskOnRight = over taskRunnablePart $ \run -> proc input ->
-  case input of
-    Left e  -> returnA -< Left e
-    Right x -> arr Right <<< run -< x
 
 -- | Turn an action into a PTask. BEWARE! The resulting 'PTask' will have NO
 -- requirements, so if the action uses files or resources, they won't appear in
