@@ -145,7 +145,7 @@ logWarning = arr (WarningS,) >>> logTask
 logError = arr (ErrorS,) >>> logTask
 
 -- | To access and transform the requirements of the PTask before it runs
-taskRequirements :: Lens' (PTask m a b) (LocationTree VirtualFileNode)
+taskRequirements :: Lens' (PTask m a b) VirtualTree
 taskRequirements = splitTask . _1
 
 -- | To access and transform all the 'VirtualFiles' used by this 'PTask'. The
@@ -167,7 +167,7 @@ taskReaderState :: Setter' (PTask m a b) (PTaskState m)
 taskReaderState = taskRunnablePart . runnableTaskReaderState
 
 -- | To transform the 'DataAccessTree' of the PTask when it will run
-taskDataAccessTree :: Setter' (PTask m a b) (LocationTree (DataAccessNode m))
+taskDataAccessTree :: Setter' (PTask m a b) (DataAccessTree m)
 taskDataAccessTree = taskReaderState . ptrsDataAccessTree
 
 -- | Adds some context to a task, that will be used by the logger. That bit of
@@ -213,9 +213,9 @@ nameTask ns task =
             logFM InfoS $ logStr $ "Finished task '" ++ ns ++ "' in " ++ showTimeSpec time
           return output)
 
--- | Moves the 'LocationTree' associated to the task deeper in the final
+-- | Moves the 'VirtualTree' associated to the task deeper in the final
 -- tree. This can be used to solve conflicts between tasks that have
--- 'LocationTree's that are identical (for instance input files for a model if
+-- 'VirtualTree's that are identical (for instance input files for a model if
 -- you want to solve several models, in which case you'd want for instance to
 -- add an extra level at the root of the tree with the model name).
 taskInSubtree :: [LocationTreePathItem] -> PTask m a b -> PTask m a b
