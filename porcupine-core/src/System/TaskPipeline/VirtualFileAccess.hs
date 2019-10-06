@@ -24,7 +24,7 @@ module System.TaskPipeline.VirtualFileAccess
   , writeEffData
   , writeDataFold
   , DataWriter(..), DataReader(..)
-  , getVFileWriter, getVFileReader
+  , getDataWriter, getDataReader
 
     -- * Lower-level API
   , EffectSeq(..), EffectSeqFromList(..)
@@ -34,7 +34,7 @@ module System.TaskPipeline.VirtualFileAccess
   , VFNodeAccessType(..)
   , SomeGLoc(..), SomeLoc
   , accessVirtualFile'
-  , getVFileAccessFunction
+  , getDataAccessorFn
   , getLocsMappedTo
 
     -- * Internal API
@@ -75,7 +75,7 @@ loadData
   => VirtualFile a b -- ^ Use as a 'DataSource'
   -> PTask m ignored b  -- ^ The resulting task. Ignores its input.
 loadData vf =
-  getVFileReader vf >>> toPTask' props drPerformRead
+  getDataReader vf >>> toPTask' props drPerformRead
   where
     cacher = case _vfileReadCacher vf of
       NoCache -> NoCache
@@ -128,7 +128,7 @@ writeData
   => VirtualFile a b  -- ^ Used as a 'DataSink'
   -> PTask m a ()
 writeData vf =
-  id &&& getVFileWriter vf >>> toPTask' props (uncurry $ flip dwPerformWrite)
+  id &&& getDataWriter vf >>> toPTask' props (uncurry $ flip dwPerformWrite)
   where
     cacher = case _vfileWriteCacher vf of
       NoCache -> NoCache
@@ -183,31 +183,31 @@ writeDataFold vf = F.premapInitA (arr $ const ()) $ F.ptaskFold (arr snd >>> wri
 
 -- | Gets a 'DataAccessor' to the 'VirtualFile', ie. doesn't read or write it
 -- immediately but gets a function that will make it possible.
-getVFileAccessFunction
+getDataAccessorFn
   :: (LogThrow m, Typeable a, Typeable b)
   => [VFNodeAccessType] -- ^ The accesses that will be performed on the DataAccessor
   -> VirtualFile a b
   -> PTask m () (LocVariableMap -> DataAccessor m a b)
-getVFileAccessFunction accesses vfile = withVFileInternalAccessFunction def accesses vfile
+getDataAccessorFn accesses vfile = withVFileInternalAccessFunction def accesses vfile
   (\mkAccessor _ _ -> return mkAccessor)
 
 -- | Gets a 'DataWriter' to the 'VirtualFile', ie. a function to write to it
 -- that can be passed to cached tasks.
-getVFileWriter
+getDataWriter
   :: (LogThrow m, Typeable a, Typeable b)
   => VirtualFile a b
   -> PTask m ignored (DataWriter m a)
-getVFileWriter vfile = withVFileInternalAccessFunction def [ATWrite] vfile
+getDataWriter vfile = withVFileInternalAccessFunction def [ATWrite] vfile
   (\mkAccessor _ _ -> case mkAccessor mempty of
       DataAccessor w _ l -> return $ DataWriter w l)
 
 -- | Gets a 'DataReader' from the 'VirtualFile', ie. a function to read from it
 -- than can be passed to cached tasks.
-getVFileReader
+getDataReader
   :: (LogThrow m, Typeable a, Typeable b)
   => VirtualFile a b
   -> PTask m ignored (DataReader m b)
-getVFileReader vfile = withVFileInternalAccessFunction def [ATRead] vfile
+getDataReader vfile = withVFileInternalAccessFunction def [ATRead] vfile
   (\mkAccessor _ _ -> case mkAccessor mempty of
       DataAccessor _ r l -> return $ DataReader r l)
 

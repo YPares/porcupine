@@ -6,7 +6,7 @@
 -- writes from and to VirtualFiles as part of a /single/ cached task, the recommended way is
 -- to use:
 --
--- - 'getVFileReader'/'getVFileWriter' to obtain the accessors
+-- - 'getDataReader'/'getDataWriter' to obtain the accessors
 -- - 'toPTask'' to create the cached task, to which you give the accessors
 --
 -- Given the accessors are hashable, the files that are bound to them are
@@ -81,7 +81,7 @@ unsafeLiftToPTaskAndWrite
                                  -- and therefore no @b@ needs to be computed
   -> PTask m a c
 unsafeLiftToPTaskAndWrite props inputHashablePart vf action actionWhenNotMapped = proc input -> do
-  writer <- getVFileWriter vf -< ()
+  writer <- getDataWriter vf -< ()
   throwPTask <<< toPTask' props' cached -< (input,writer)
   where
     cached (input,writer) | null (dwLocsAccessed writer)
