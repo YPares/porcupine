@@ -13,10 +13,7 @@ import           Data.Aeson
 import           Data.DocRecord
 import qualified Data.Text                     as T
 import           GHC.Generics
-import           Porcupine.Run
-import           Porcupine.Serials
-import           Porcupine.Tasks
--- import qualified Streaming.Prelude   as S
+import           Porcupine
 
 import           Prelude                       hiding (id, (.))
 

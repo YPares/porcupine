@@ -4,9 +4,7 @@
 
 import           Data.DocRecord
 import qualified Data.Text as T
-import           Porcupine.Run
-import           Porcupine.Serials
-import           Porcupine.Tasks
+import           Porcupine
 import           Prelude hiding (id, (.))
 
 

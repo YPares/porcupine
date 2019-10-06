@@ -22,9 +22,7 @@ import qualified Data.Text                     as T
 import qualified Data.Vector                   as V
 import Data.Functor
 import           GHC.Generics
-import           Porcupine.Run
-import           Porcupine.Serials
-import           Porcupine.Tasks
+import           Porcupine
 import           Prelude                       hiding (id, (.))
 import Control.Lens
 import qualified Control.Foldl as L

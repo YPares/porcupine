@@ -4,9 +4,7 @@
 
 import           Data.DocRecord
 import qualified Data.Text as T
-import           Porcupine.Run
-import           Porcupine.Serials
-import           Porcupine.Tasks
+import           Porcupine
 
 
 generateTxt :: Int -> T.Text

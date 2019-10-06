@@ -18,9 +18,7 @@ import           Data.Aeson
 import           Data.DocRecord
 import qualified Data.Text                     as T
 import           GHC.Generics
-import           Porcupine.Run
-import           Porcupine.Serials
-import           Porcupine.Tasks
+import           Porcupine
 import           Prelude                       hiding (id, (.))
 import           Graphics.Vega.VegaLite        as VL
 
