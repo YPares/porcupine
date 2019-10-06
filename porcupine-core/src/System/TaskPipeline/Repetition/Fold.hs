@@ -34,9 +34,9 @@ import           System.TaskPipeline.Repetition.Internal
 unsafeGeneralizeM :: (KatipContext m)
                   => FoldM m a b -> FoldA (PTask m) i a b
 unsafeGeneralizeM (FoldM step start done) =
-  FoldA (toPTask $ \(Pair a x) -> step a x)
-        (toPTask $ const start)
-        (toPTask done)
+  FoldA (toTask $ \(Pair a x) -> step a x)
+        (toTask $ const start)
+        (toTask done)
 
 data RunningFoldM m a b =
   forall x. RFM (x -> a -> m x) !x (x -> m b)
@@ -46,15 +46,15 @@ unsafeGeneralizeFnM :: (KatipContext m)
                     => (i -> FoldM m a b)
                     -> FoldA (PTask m) i a b
 unsafeGeneralizeFnM f =
-  FoldA (toPTask $ \(Pair (RFM step acc done) x) -> do
+  FoldA (toTask $ \(Pair (RFM step acc done) x) -> do
             acc' <- step acc x
             return $ RFM step acc' done)
-        (toPTask $ \i ->
+        (toTask $ \i ->
             case f i of
               FoldM step start done -> do
                 initAcc <- start
                 return $ RFM step initAcc done)
-        (toPTask $ \(RFM _ acc done) -> done acc)
+        (toTask $ \(RFM _ acc done) -> done acc)
 
 -- | Creates a 'FoldA' from a 'PTask'.
 ptaskFold :: PTask m (acc,input) acc -- ^ The folding task
@@ -86,7 +86,7 @@ makeStepRepeatable :: (HasTRIndex a, KatipContext m)
                    -> PTask m (Pair acc a) b
                    -> PTask m (Pair acc a) b
 makeStepRepeatable ri step =
-  arr PWR >>> makeRepeatable ri (arr unPWR >>> step)
+  arr PWR >>> makeTaskRepeatable ri (arr unPWR >>> step)
 
 -- | Consumes a Stream with a 'FoldA' created with 'ptaskFold', 'generalizeA',
 -- 'unsafeGeneralizeM', or a composition of such folds.
@@ -96,11 +96,11 @@ foldStreamTask
   -> FoldA (PTask m) i a b
   -> PTask m (i, Stream (Of a) m r) (b, r)
 foldStreamTask ri (FoldA step_ start done) =
-  (reqs, runnable) ^. from splittedPTask
+  (reqs, runnable) ^. from splitPTask
   where
-    (reqsStep, runnableStep)   = makeStepRepeatable ri step_ ^. splittedPTask
-    (reqsStart, runnableStart) = start ^. splittedPTask
-    (reqsDone, runnableDone)   = done ^. splittedPTask
+    (reqsStep, runnableStep)   = makeStepRepeatable ri step_ ^. splitPTask
+    (reqsStart, runnableStart) = start ^. splitPTask
+    (reqsDone, runnableDone)   = done ^. splitPTask
     reqs = reqsStart <> reqsStep <> reqsDone
     runnable =
       first runnableStart >>> loopStep >>> first runnableDone

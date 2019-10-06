@@ -69,12 +69,12 @@ mappingOverStream
                        -- LocationTree given to X.
 mappingOverStream repetitionKey mbVerb =
     over ptaskRunnablePart mappingRunnableOverStream
-  . makeRepeatable (RepInfo repetitionKey mbVerb)
+  . makeTaskRepeatable (RepInfo repetitionKey mbVerb)
 
 {-# DEPRECATED mappingOverStream "Prefer the FoldA API to repeat tasks and consume streams" #-}
 
 -- | IMPORTANT: That requires the RunnablePTask to be repeatable. See
--- 'makeRepeatable'.
+-- 'makeTaskRepeatable'.
 mappingRunnableOverStream
   :: (CanRunPTask m)
   => RunnablePTask m a b
@@ -103,7 +103,7 @@ runStreamTask :: (KatipContext m)
               => PTask m
                        (Stream (Of t) m r)
                        r
-runStreamTask = toPTask S.effects
+runStreamTask = toTask S.effects
 
 -- | An 'PTask' converting a list to a stream
 listToStreamTask :: (Monad m)
@@ -121,4 +121,4 @@ streamToListTask :: (KatipContext m)
                  => PTask m
                           (Stream (Of t) m r)
                           [t]
-streamToListTask = toPTask (S.toList_ . void)
+streamToListTask = toTask (S.toList_ . void)

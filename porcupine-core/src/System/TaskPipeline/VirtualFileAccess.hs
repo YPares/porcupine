@@ -75,7 +75,7 @@ loadData
   => VirtualFile a b -- ^ Use as a 'DataSource'
   -> PTask m ignored b  -- ^ The resulting task. Ignores its input.
 loadData vf =
-  getDataReader vf >>> toPTask' props drPerformRead
+  getDataReader vf >>> toTask' props drPerformRead
   where
     cacher = case _vfileReadCacher vf of
       NoCache -> NoCache
@@ -108,7 +108,7 @@ loadDataList
 loadDataList lv vf =
       arr (ListES . map (return . (,error "loadDataList: THIS IS VOID")))
   >>> accessVirtualFile' (DoRead id) lv vf
-  >>> toPTask (sequence . getListFromES)
+  >>> toTask (sequence . getListFromES)
 
 -- | Like 'loadDataStream', but won't stop on a failure on a single file
 tryLoadDataStream
@@ -128,7 +128,7 @@ writeData
   => VirtualFile a b  -- ^ Used as a 'DataSink'
   -> PTask m a ()
 writeData vf =
-  id &&& getDataWriter vf >>> toPTask' props (uncurry $ flip dwPerformWrite)
+  id &&& getDataWriter vf >>> toTask' props (uncurry $ flip dwPerformWrite)
   where
     cacher = case _vfileWriteCacher vf of
       NoCache -> NoCache
@@ -145,7 +145,7 @@ writeEffData
 writeEffData vf =
       arr (SingletonES . (fmap ([] :: [TRIndex],)))
   >>> accessVirtualFile (DoWrite id) [] vf
-  >>> toPTask runES
+  >>> toTask runES
 
 -- | Like 'writeDataList', but takes a stream as an input instead of a list. If
 -- the VirtualFile is not mapped to any physical file (this can be authorized if
@@ -161,7 +161,7 @@ writeDataStream
 writeDataStream lv vf =
       arr StreamES
   >>> accessVirtualFile' (DoWrite id) lv vf
-  >>> toPTask runES
+  >>> toTask runES
 
 -- | The simplest way to consume a stream of data inside a pipeline. Just write
 -- it to repeated occurences of a 'VirtualFile'.
@@ -173,7 +173,7 @@ writeDataList
 writeDataList lv vf =
       arr (ListES . map return)
   >>> accessVirtualFile' (DoWrite id) lv vf
-  >>> toPTask runES
+  >>> toTask runES
 
 -- | A very simple fold that will just repeatedly write the data to different
 -- occurences of a 'VirtualFile'.
@@ -365,7 +365,7 @@ withFolderDataAccessNodes
   -> (t (DataAccessNode m) -> i -> m o)  -- ^ What to run with these items
   -> PTask m i o                         -- ^ The resulting PTask
 withFolderDataAccessNodes props path filesToAccess accessFn =
-  makePTask' props tree runAccess
+  makeTask' props tree runAccess
   where
     tree = foldr (\pathItem subtree -> folderNode [ pathItem :/ subtree ])
                  (folderNode $ F.toList filesToAccess) path

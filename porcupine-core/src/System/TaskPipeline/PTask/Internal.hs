@@ -24,10 +24,10 @@ module System.TaskPipeline.PTask.Internal
   , ptrsKatipNamespace
   , ptrsFunflowRunConfig
   , ptrsDataAccessTree
-  , splittedPTask
+  , splitPTask
   , runnablePTaskReaderState
-  , makePTask
-  , makePTask'
+  , makeTask
+  , makeTask'
   , modifyingRuntimeState
   , withRunnableState
   , withRunnableState'
@@ -222,10 +222,10 @@ runnableWithoutReqs :: RunnablePTask m a b -> PTask m a b
 runnableWithoutReqs = PTask . appArrow
 
 -- | An Iso to the requirements and the runnable part of a 'PTask'
-splittedPTask :: Iso (PTask m a b) (PTask m a' b')
+splitPTask :: Iso (PTask m a b) (PTask m a' b')
                      (VirtualTree, RunnablePTask m a b)
                      (VirtualTree, RunnablePTask m a' b')
-splittedPTask = iso to_ from_
+splitPTask = iso to_ from_
   where
     to_ (PTask (AppArrow wrtrAct)) = swap $ runWriter wrtrAct
     from_ = PTask . AppArrow . writer . swap
@@ -238,21 +238,21 @@ runnablePTaskReaderState = lens unAppArrow (const AppArrow) . setting local
 
 -- | Makes a task from a tree of requirements and a function. The 'Properties'
 -- indicate whether we can cache this task.
-makePTask' :: (KatipContext m)
+makeTask' :: (KatipContext m)
            => Properties a b
            -> LocationTree VirtualFileNode
            -> (DataAccessTree m -> a -> m b)
            -> PTask m a b
-makePTask' props tree f =
-  (tree, withRunnableState' props (f . _ptrsDataAccessTree)) ^. from splittedPTask
+makeTask' props tree f =
+  (tree, withRunnableState' props (f . _ptrsDataAccessTree)) ^. from splitPTask
 
 -- | Makes a task from a tree of requirements and a function. This is the entry
 -- point to PTasks
-makePTask :: (KatipContext m)
+makeTask :: (KatipContext m)
           => LocationTree VirtualFileNode
           -> (DataAccessTree m -> a -> m b)
           -> PTask m a b
-makePTask = makePTask' def
+makeTask = makeTask' def
 
 data FunflowOpts m = FunflowOpts
   { storePath      :: FilePath

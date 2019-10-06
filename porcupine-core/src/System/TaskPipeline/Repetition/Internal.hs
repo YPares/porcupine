@@ -6,7 +6,7 @@ module System.TaskPipeline.Repetition.Internal
   ( RepInfo(..)
   , TRIndex(..)
   , HasTRIndex(..)
-  , makeRepeatable
+  , makeTaskRepeatable
   ) where
 
 import           Control.Category
@@ -87,13 +87,13 @@ instance (HasTRIndex i) => HasTRIndex (i,a) where
 -- will appear in the configuration file in the default bindings for the
 -- VirtualFiles accessed by this task. The second one controls whether we want
 -- to add to the logging context which repetition is currently running.
-makeRepeatable
+makeTaskRepeatable
   :: (HasTRIndex a, KatipContext m)
   => RepInfo
   -> PTask m a b
   -> PTask m a b
-makeRepeatable (RepInfo repetitionKey mbVerb) =
-  over splittedPTask
+makeTaskRepeatable (RepInfo repetitionKey mbVerb) =
+  over splitPTask
     (\(reqTree, runnable) ->
       ( fmap addKeyToVirtualFile reqTree
       , modifyingRuntimeState alterState id runnable ))

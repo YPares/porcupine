@@ -7,15 +7,15 @@
 -- to use:
 --
 -- - 'getDataReader'/'getDataWriter' to obtain the accessors
--- - 'toPTask'' to create the cached task, to which you give the accessors
+-- - 'toTask'' to create the cached task, to which you give the accessors
 --
 -- Given the accessors are hashable, the files that are bound to them are
 -- incorporated to the hash, so binding them to new files will re-trigger the
 -- task.
 
 module System.TaskPipeline.Caching
-  ( toPTaskAndWrite
-  , toPTaskAndWrite_
+  ( toTaskAndWrite
+  , toTaskAndWrite_
 
   -- * Re-exports
 
@@ -39,7 +39,7 @@ import           Prelude                               hiding (id, (.))
 
 -- | For when the result of the lifted function just needs to be written, not
 -- returned.
-toPTaskAndWrite_
+toTaskAndWrite_
   :: (LogCatch m, Typeable b, Typeable ignored)
   => Properties (a, DataWriter m b) ()  -- ^ Location types aren't ContentHashable, but
                                  -- all are convertible to JSON. We need that to
@@ -49,16 +49,16 @@ toPTaskAndWrite_
   -> (a -> m b)                  -- ^ The function to lift. Won't be executed if
                                  -- the file isn't mapped
   -> PTask m a ()
-toPTaskAndWrite_ props vf f =
-  toPTaskAndWrite props id vf (fmap (,()) . f) (const $ return ())
-{-# INLINE toPTaskAndWrite_ #-}
+toTaskAndWrite_ props vf f =
+  toTaskAndWrite props id vf (fmap (,()) . f) (const $ return ())
+{-# INLINE toTaskAndWrite_ #-}
 
 
--- | Similar to 'toPTask'', but caches a write action of the result too. In this
+-- | Similar to 'toTask'', but caches a write action of the result too. In this
 -- case we use the filepath bound to the VirtualFile to compute the hash. That
 -- means that if the VirtualFile is bound to something else, the step will be
 -- re-executed.
-toPTaskAndWrite
+toTaskAndWrite
   :: (LogCatch m, Typeable b, Typeable ignored)
   => Properties (a', DataWriter m b) c  -- ^ Location types aren't ContentHashable, but
                                  -- all are convertible to JSON. We need that to
@@ -80,9 +80,9 @@ toPTaskAndWrite
   -> (a -> m c)                  -- ^ Called when the VirtualFile isn't mapped,
                                  -- and therefore no @b@ needs to be computed
   -> PTask m a c
-toPTaskAndWrite props inputHashablePart vf action actionWhenNotMapped = proc input -> do
+toTaskAndWrite props inputHashablePart vf action actionWhenNotMapped = proc input -> do
   writer <- getDataWriter vf -< ()
-  throwPTask <<< toPTask' props' cached -< (input,writer)
+  throwTask <<< toTask' props' cached -< (input,writer)
   where
     cached (input,writer) | null (dwLocsAccessed writer)
       = Right <$> actionWhenNotMapped input
@@ -103,7 +103,7 @@ toPTaskAndWrite props inputHashablePart vf action actionWhenNotMapped = proc inp
       Cache key sv rv ->
         let key' salt = key salt . getH
             sv' (Left e) = error $
-              "toPTaskAndWrite: An exception occured during the cached function: "
+              "toTaskAndWrite: An exception occured during the cached function: "
               ++ displayException e
             sv' (Right x) = sv x
             rv' = Right . rv

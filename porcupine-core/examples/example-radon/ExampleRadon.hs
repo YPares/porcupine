@@ -144,14 +144,14 @@ sampleFlatLinRegModel = proc () -> do
                              ,(yLbl, VL.Numbers ys)])
   nsamples <- getOption ["sampling", "options"]
               (docField @"nsamples" 5000 "Number of samples to draw") -< ()
-  samples <- ioPTask -<
+  samples <- ioTask -<
     sampleIOfixed $ prior $ mh nsamples $ model (zip xs ys)
   writeViz "2" -< plot vizSize
                        (H [[density2DPlot "radonWithB" "radonWithoutB" (0,2) (0,2)]
                           ,[density2DPlot "noiseWithB" "noiseWithoutB" (0,2) (0,2)]])
                        (J samples)
 
-  samples <- ioPTask -<
+  samples <- ioTask -<
     sampleIOfixed $ prior $ mh nsamples $ posteriorForward $ model (zip xs ys)
   let (xModel, yModel) = unzip samples
   writeViz "3" -< plot vizSize

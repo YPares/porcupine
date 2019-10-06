@@ -20,11 +20,11 @@ module System.TaskPipeline.PTask
   , Severity(..)
   , CanRunPTask
   , Properties
-  , tryPTask, throwPTask, clockPTask, clockPTask'
-  , catchAndLog, throwStringPTask
+  , tryTask, throwTask, clockTask, clockTask'
+  , catchAndLog, throwStringTask
   , ptaskOnJust, ptaskOnRight
-  , toPTask, toPTask'
-  , ioPTask, stepIO, stepIO'
+  , toTask, toTask'
+  , ioTask, stepIO, stepIO'
   , ptaskUsedFiles
   , ptaskRequirements
   , ptaskRunnablePart
@@ -34,7 +34,7 @@ module System.TaskPipeline.PTask
   , addContextToTask
   , addStaticContextToTask
   , addNamespaceToTask
-  , namePTask
+  , nameTask
   , logTask
   , logDebug, logInfo, logNotice, logWarning, logError
   ) where
@@ -62,21 +62,21 @@ voidTask :: PTask m a ()
 voidTask = arr (const ())
 
 -- | Just a shortcut for when you want an IO step that requires no input
-ioPTask :: (KatipContext m) => PTask m (IO a) a
-ioPTask = stepIO id
+ioTask :: (KatipContext m) => PTask m (IO a) a
+ioTask = stepIO id
 
 -- | Catches an error happening in a task. Leaves the tree intact if an error
 -- occured.
-tryPTask
+tryTask
   :: PTask m a b -> PTask m a (Either SomeException b)
-tryPTask = AF.try
+tryTask = AF.try
 
 -- | An version of 'tryPTask' that just logs when an error happens
 catchAndLog :: (KatipContext m)
             => Severity -> PTask m a b -> PTask m a (Maybe b)
 catchAndLog severity task =
-  tryPTask task
-  >>> toPTask (\i ->
+  tryTask task
+  >>> toTask (\i ->
         case i of
           Left e -> do
             logFM severity $ logStr $ displayException (e::SomeException)
@@ -85,13 +85,13 @@ catchAndLog severity task =
 
 -- | Fails the whole pipeline if an exception occured, or just continues as
 -- normal
-throwPTask :: (Exception e, LogThrow m) => PTask m (Either e b) b
-throwPTask = arr (over _Left displayException) >>> throwStringPTask
+throwTask :: (Exception e, LogThrow m) => PTask m (Either e b) b
+throwTask = arr (over _Left displayException) >>> throwStringTask
 
 -- | Fails the whole pipeline if an exception occured, or just continues as
 -- normal
-throwStringPTask :: (LogThrow m) => PTask m (Either String b) b
-throwStringPTask = toPTask $ \i ->
+throwStringTask :: (LogThrow m) => PTask m (Either String b) b
+throwStringTask = toTask $ \i ->
   case i of
     Left e  -> throwWithPrefix e
     Right r -> return r
@@ -113,27 +113,27 @@ ptaskOnRight = over ptaskRunnablePart $ \run -> proc input ->
 -- | Turn an action into a PTask. BEWARE! The resulting 'PTask' will have NO
 -- requirements, so if the action uses files or resources, they won't appear in
 -- the LocationTree.
-toPTask :: (KatipContext m)
+toTask :: (KatipContext m)
         => (a -> m b) -> PTask m a b
-toPTask = makePTask mempty . const
+toTask = makeTask mempty . const
 
--- | A version of 'toPTask' that can perform caching. It's analog to
+-- | A version of 'toTask' that can perform caching. It's analog to
 -- funflow wrap' except the action passed here is just a simple function (it
 -- will be wrapped later as a funflow effect).
-toPTask' :: (KatipContext m)
+toTask' :: (KatipContext m)
          => Properties a b -> (a -> m b) -> PTask m a b
-toPTask' props = makePTask' props mempty . const
+toTask' props = makeTask' props mempty . const
 
 
--- This orphan instance is necessary so clockPTask may work over an 'Either
+-- This orphan instance is necessary so clockTask may work over an 'Either
 -- SomeException a'
 instance NFData SomeException where
   rnf e = rnf $ displayException e
 
 -- | Measures the time taken by a 'PTask'.
-clockPTask
+clockTask
   :: (KatipContext m) => PTask m a b -> PTask m a (b, TimeSpec)
-clockPTask task = proc input -> do
+clockTask task = proc input -> do
   start <- time -< ()
   output <- task -< input
   end <- time -< ()
@@ -142,14 +142,14 @@ clockPTask task = proc input -> do
     time = stepIO $ const $ getTime Realtime
 
 -- | Measures the time taken by a 'PTask' and the deep evaluation of its result.
-clockPTask'
+clockTask'
   :: (NFData b, KatipContext m) => PTask m a b -> PTask m a (b, TimeSpec)
-clockPTask' task = clockPTask $
+clockTask' task = clockTask $
   task >>> stepIO (evaluate . force)
 
 -- | Logs a message during the pipeline execution
 logTask :: (KatipContext m) => PTask m (Severity, String) ()
-logTask = toPTask $ \(sev, s) -> logFM sev $ logStr s
+logTask = toTask $ \(sev, s) -> logFM sev $ logStr s
 
 -- | Logs a message at a predefined severity level
 logDebug, logInfo, logNotice, logWarning, logError :: (KatipContext m) => PTask m String ()
@@ -161,7 +161,7 @@ logError = arr (ErrorS,) >>> logTask
 
 -- | To access and transform the requirements of the PTask before it runs
 ptaskRequirements :: Lens' (PTask m a b) (LocationTree VirtualFileNode)
-ptaskRequirements = splittedPTask . _1
+ptaskRequirements = splitPTask . _1
 
 -- | To access and transform all the 'VirtualFiles' used by this 'PTask'. The
 -- parameters of the VirtualFiles will remain hidden, but all the metadata is
@@ -175,7 +175,7 @@ ptaskUsedFiles = ptaskRequirements . traversed . vfnodeFileVoided
 -- in which you can use /case/ and /if/ statements.
 ptaskRunnablePart :: Lens (PTask m a b) (PTask m a' b')
                      (RunnablePTask m a b) (RunnablePTask m a' b')
-ptaskRunnablePart = splittedPTask . _2
+ptaskRunnablePart = splitPTask . _2
 
 -- | To transform the state of the PTask when it will run
 ptaskReaderState :: Setter' (PTask m a b) (PTaskState m)
@@ -219,11 +219,11 @@ addNamespaceToTask ns =
 -- change the logging output by wrapping it in a namespace (as per
 -- 'addNamespaceToTask') and measure and log (InfoS level) the time spent within
 -- that task
-namePTask :: (KatipContext m) => String -> PTask m a b -> PTask m a b
-namePTask ns task =
+nameTask :: (KatipContext m) => String -> PTask m a b -> PTask m a b
+nameTask ns task =
   addNamespaceToTask ns $
-    clockPTask task
-    >>> toPTask (\(output, time) -> do
+    clockTask task
+    >>> toTask (\(output, time) -> do
           katipAddContext time $
             logFM InfoS $ logStr $ "Finished task '" ++ ns ++ "' in " ++ showTimeSpec time
           return output)
@@ -234,7 +234,7 @@ namePTask ns task =
 -- you want to solve several models, in which case you'd want for instance to
 -- add an extra level at the root of the tree with the model name).
 ptaskInSubtree :: [LocationTreePathItem] -> PTask m a b -> PTask m a b
-ptaskInSubtree path = over splittedPTask $ \(reqTree, runnable) ->
+ptaskInSubtree path = over splitPTask $ \(reqTree, runnable) ->
   let reqTree' = foldr (\pathItem rest -> folderNode [pathItem :/ rest]) reqTree path
       runnable' = runnable & over (runnablePTaskReaderState . ptrsDataAccessTree)
                                   (view $ atSubfolderRec path)
