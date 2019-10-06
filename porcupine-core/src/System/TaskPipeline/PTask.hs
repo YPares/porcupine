@@ -25,7 +25,6 @@ module System.TaskPipeline.PTask
   , ptaskOnJust, ptaskOnRight
   , toPTask, toPTask'
   , ioPTask, stepIO, stepIO'
-  , unsafeLiftToPTask, unsafeLiftToPTask', unsafeRunIOTask
   , ptaskUsedFiles
   , ptaskRequirements
   , ptaskRunnablePart
@@ -49,7 +48,6 @@ import           Control.DeepSeq                    (NFData (..), force)
 import           Control.Exception                  (evaluate)
 import           Control.Funflow                    (Properties, stepIO, stepIO')
 import           Control.Lens
-import           Control.Monad.IO.Class
 import           Data.Locations
 import           Data.Locations.LogAndErrors
 import           Data.String
@@ -62,14 +60,6 @@ import           System.TaskPipeline.PTask.Internal
 -- | a tasks that discards its inputs and returns ()
 voidTask :: PTask m a ()
 voidTask = arr (const ())
-
--- | Runs an IO action. IT MUST NOT BE PERFORMING READS OR WRITES.
-unsafeRunIOTask
-  :: (KatipContext m)
-  => (i -> IO o)
-  -> PTask m i o
-unsafeRunIOTask f = toPTask (liftIO . f)
-                    -- TODO: implement it using stepIO instead
 
 -- | Just a shortcut for when you want an IO step that requires no input
 ioPTask :: (KatipContext m) => PTask m (IO a) a
@@ -123,27 +113,9 @@ ptaskOnRight = over ptaskRunnablePart $ \run -> proc input ->
 -- | Turn an action into a PTask. BEWARE! The resulting 'PTask' will have NO
 -- requirements, so if the action uses files or resources, they won't appear in
 -- the LocationTree.
---
--- Old name for 'toPTask'
-unsafeLiftToPTask :: (KatipContext m)
-                  => (a -> m b) -> PTask m a b
-unsafeLiftToPTask = makePTask mempty . const
-
--- | Turn an action into a PTask. BEWARE! The resulting 'PTask' will have NO
--- requirements, so if the action uses files or resources, they won't appear in
--- the LocationTree.
 toPTask :: (KatipContext m)
         => (a -> m b) -> PTask m a b
 toPTask = makePTask mempty . const
-
--- | A version of 'toPTask' that can perform caching. It's analog to funflow
--- wrap' except the action passed here is just a simple function (it will be
--- wrapped later as a funflow effect).
---
--- Old name for 'toPTask''
-unsafeLiftToPTask' :: (KatipContext m)
-                   => Properties a b -> (a -> m b) -> PTask m a b
-unsafeLiftToPTask' props = makePTask' props mempty . const
 
 -- | A version of 'toPTask' that can perform caching. It's analog to
 -- funflow wrap' except the action passed here is just a simple function (it
@@ -167,13 +139,13 @@ clockPTask task = proc input -> do
   end <- time -< ()
   returnA -< (output, end `diffTimeSpec` start)
   where
-    time = unsafeRunIOTask $ const $ getTime Realtime
+    time = stepIO $ const $ getTime Realtime
 
 -- | Measures the time taken by a 'PTask' and the deep evaluation of its result.
 clockPTask'
   :: (NFData b, KatipContext m) => PTask m a b -> PTask m a (b, TimeSpec)
 clockPTask' task = clockPTask $
-  task >>> unsafeRunIOTask (evaluate . force)
+  task >>> stepIO (evaluate . force)
 
 -- | Logs a message during the pipeline execution
 logTask :: (KatipContext m) => PTask m (Severity, String) ()

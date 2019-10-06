@@ -14,8 +14,8 @@
 -- task.
 
 module System.TaskPipeline.Caching
-  ( unsafeLiftToPTaskAndWrite
-  , unsafeLiftToPTaskAndWrite_
+  ( toPTaskAndWrite
+  , toPTaskAndWrite_
 
   -- * Re-exports
 
@@ -39,7 +39,7 @@ import           Prelude                               hiding (id, (.))
 
 -- | For when the result of the lifted function just needs to be written, not
 -- returned.
-unsafeLiftToPTaskAndWrite_
+toPTaskAndWrite_
   :: (LogCatch m, Typeable b, Typeable ignored)
   => Properties (a, DataWriter m b) ()  -- ^ Location types aren't ContentHashable, but
                                  -- all are convertible to JSON. We need that to
@@ -49,16 +49,16 @@ unsafeLiftToPTaskAndWrite_
   -> (a -> m b)                  -- ^ The function to lift. Won't be executed if
                                  -- the file isn't mapped
   -> PTask m a ()
-unsafeLiftToPTaskAndWrite_ props vf f =
-  unsafeLiftToPTaskAndWrite props id vf (fmap (,()) . f) (const $ return ())
-{-# INLINE unsafeLiftToPTaskAndWrite_ #-}
+toPTaskAndWrite_ props vf f =
+  toPTaskAndWrite props id vf (fmap (,()) . f) (const $ return ())
+{-# INLINE toPTaskAndWrite_ #-}
 
 
 -- | Similar to 'toPTask'', but caches a write action of the result too. In this
 -- case we use the filepath bound to the VirtualFile to compute the hash. That
 -- means that if the VirtualFile is bound to something else, the step will be
 -- re-executed.
-unsafeLiftToPTaskAndWrite
+toPTaskAndWrite
   :: (LogCatch m, Typeable b, Typeable ignored)
   => Properties (a', DataWriter m b) c  -- ^ Location types aren't ContentHashable, but
                                  -- all are convertible to JSON. We need that to
@@ -80,7 +80,7 @@ unsafeLiftToPTaskAndWrite
   -> (a -> m c)                  -- ^ Called when the VirtualFile isn't mapped,
                                  -- and therefore no @b@ needs to be computed
   -> PTask m a c
-unsafeLiftToPTaskAndWrite props inputHashablePart vf action actionWhenNotMapped = proc input -> do
+toPTaskAndWrite props inputHashablePart vf action actionWhenNotMapped = proc input -> do
   writer <- getDataWriter vf -< ()
   throwPTask <<< toPTask' props' cached -< (input,writer)
   where
@@ -103,7 +103,7 @@ unsafeLiftToPTaskAndWrite props inputHashablePart vf action actionWhenNotMapped 
       Cache key sv rv ->
         let key' salt = key salt . getH
             sv' (Left e) = error $
-              "unsafeLiftToPTaskAndWrite: An exception occured during the cached function: "
+              "toPTaskAndWrite: An exception occured during the cached function: "
               ++ displayException e
             sv' (Right x) = sv x
             rv' = Right . rv
