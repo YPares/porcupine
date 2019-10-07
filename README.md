@@ -595,6 +595,9 @@ subcommand we already saw. It accepts a few flags:
 - `-E`: Don't show the filetypes (extensions) the virtual file accepts
 - `-F`: Don't show the option fields that are contained is this virtual file
 
+Additionally, `show-tree /data/stuff` will show you only the part of the
+porcupine tree starting from path `/data/stuff`.
+
 In the future, we plan on adding new, optional ahead of time sanity checks that
 could be performed with a specific subcommand, like:
 

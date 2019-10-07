@@ -142,12 +142,14 @@ runPipelineCommandOnPTask ptask input cmd defRetVal physTree ffopts = do
                _      -> "")
           Nothing -> identityVar ++ " not specified. The cache will not be used."
         execRunnableTask (ptask ^. taskRunnablePart) initState input
-    ShowLocTree showOpts -> do
-      liftIO $ putStrLn $ prettyLocTree $
-        fmap (PhysicalFileNodeWithShowOpts showOpts) physTree
+    ShowTree root showOpts -> do
+      liftIO $ putStrLn $ prettyLocTree root $
+        case physTree ^. inLocTree root of
+          Just t -> fmap (PhysicalFileNodeWithShowOpts showOpts) t
+          _ -> error $ "Path `" ++ showLTP root ++ "' doesn't exist in the porcupine tree"
       case defRetVal of
         Just r -> return r
-        Nothing -> error "NOT EXPECTED: runPipelineCommandOnPTask(ShowLocTree) was not given a default\
+        Nothing -> error "NOT EXPECTED: runPipelineCommandOnPTask(ShowTree) was not given a default\
                          \value to return. Please submit this as a bug."
 
 storeVar,remoteCacheVar,identityVar,coordVar :: String

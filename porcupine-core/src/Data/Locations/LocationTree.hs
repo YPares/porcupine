@@ -39,6 +39,7 @@ module Data.Locations.LocationTree
   , locTreeToDataTree
   , prettyLocTree
   , apLocationTree
+  , showLTP
   )
 where
 
@@ -128,6 +129,9 @@ instance Representable LocationTreePath where
   toTextRepr (LTP l) = mconcat $ "/" : intersperse "/" (map _ltpiName l)
   fromTextRepr =
     pure . LTP . map singleFolder . filter (not . T.null) . T.splitOn "/"
+
+showLTP :: LocationTreePath -> String
+showLTP = T.unpack . toTextRepr
 
 instance ToJSON LocationTreePath where
   toJSON = String . toTextRepr
@@ -263,14 +267,17 @@ atSubfolderRec :: (Applicative f, Foldable t) => t LocationTreePathItem -> (Loca
 atSubfolderRec path =
   foldr (\pathItem subtree -> atSubfolder pathItem . subtree) id path
 
-locTreeToDataTree :: LocationTree b -> DT.Tree (LocationTreePathItem, b)
-locTreeToDataTree t = toCanonicalTree "/" t
+locTreeToDataTree :: LocationTreePath -> LocationTree b -> DT.Tree (LocationTreePathItem, b)
+locTreeToDataTree (LTP root) t = toCanonicalTree root' t
   where
+    root' = case root of
+      [] -> "/"
+      _ -> last root
     toCanonicalTree p (LocationTree n sub) =
       DT.Node (p,n) $ map (uncurry toCanonicalTree) $ HM.toList sub
 
-prettyLocTree :: (Show a) => LocationTree a -> String
-prettyLocTree t = DT.drawTree t'
+prettyLocTree :: (Show a) => LocationTreePath -> LocationTree a -> String
+prettyLocTree root t = DT.drawTree t'
   where
     str (p,n) = T.unpack (_ltpiName p) ++ ": " ++ show n
-    t' = str <$> locTreeToDataTree t
+    t' = str <$> locTreeToDataTree root t
