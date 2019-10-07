@@ -383,6 +383,7 @@ virtualTreeConfigurationReader VirtualTreeAndMappings{vtamTree=defTree} =
         mappingsParser =
           many (option (eitherReader locBinding)
                  (long "loc"
+               <> short 'l'
                <> help "Map a virtual file path to a physical location"))
         parseLocBinding vpath locOp loc = do
           p <- fromTextRepr vpath

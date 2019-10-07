@@ -67,11 +67,12 @@ and see that `./result.txt` now contains 100 characters.
 Another thing you can already do is remap (redirect) our sink to another file:
 
 ```
-$stack exec example0 -- --loc /result=other-result.txt
+$stack exec example0 -- -l /result=other-result.txt
 ```
 
 and see that the program now writes to `./other-result.txt` instead of
-`./result.txt`.
+`./result.txt`. `-l` (or `--loc`) is one of the default CLI options of
+`porcupine`, present in all the executables compiled with CLI support.
 
 ### Showing the dependencies and parameters of our program
 
@@ -530,6 +531,42 @@ Aside from the general usage exposed previously, porcupine proposes several
 features to facilitate iterative development of pipelines and reusability of
 tasks.
 
+## Splicing variables in physical paths
+
+We already saw in [this section](#walking-through-an-example) that the physical
+paths specified in the configuration need not correspond _fully_ to physical
+paths. Sometimes, these paths will contain one or several _variables_ to be
+spliced if the task which reads/writes these paths will be repeated several
+times over a set of _task repetition indices_ (TRIndices), which can be as
+simple as an integer growing from 0 to some number. In such case, the variable
+name in the path will by everytime replaced by the current value of the TRIndex.
+
+You can also add variables in a configuration file even in the absence of
+repeated tasks, to gain some very light templating capabilities, for instance:
+
+```yaml
+variables:
+  folder: experiment1
+data:
+  Settings:
+    users: 0
+  Inputs: {}
+  Outputs: {}
+locations:
+  /Input: data/{folder}/input.json
+  /Output: data/{folder}/output.json
+```
+
+In this case, `{folder}` will just be replaced by `experiment1` by default. This
+makes it so you only have to change once the `folder` variable when you want to
+target another folder. Also, you can set the variable's value with CLI:
+
+```my-exe --var folder=experiment143```
+
+This is convenient when you often want to quickly change some paths, but if you
+need more complex templating then we suggest you use a full-fledged solution,
+like [jsonnet](https://jsonnet.org/).
+
 ## Ahead-of-time sanity checks and overview of resources
 
 `porcupine` allows you to have a preliminary view of _every_ resource needed at
@@ -641,10 +678,16 @@ from. The connection between our dataSource and the REST API will be made in the
 
 ## Logging
 
-Porcupine uses `katip` to do logging. It's quite a versatile tool, and we
+`porcupine` uses `katip` to do logging. It's quite a versatile tool, and we
 benefit from it. By default, logging uses a custom readable format. You can
 switch to more standard formats using:
 
 ```sh
 $ my-exe --log-format json
 ```
+
+In any case, any executable using `porcupine` will output a log whose verbosity
+can be controlled with `-q`/`-v` (increase/decrease the minimal severity level
+that will be displayed, default being Notice). The `-c` (or `--context-verb`)
+parameter controls the amount of context that will be displayed per item logged,
+it takes a parameter from 0 to 3.

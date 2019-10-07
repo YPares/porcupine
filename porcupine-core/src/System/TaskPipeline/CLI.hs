@@ -270,6 +270,7 @@ parseScribeParams = LoggerScribeParams
   <*> (numToVerbosity <$>
        option auto
          (  long "context-verb"
+         <> short 'c'
          <> help "A number from 0 to 3 (default: 0). Controls the amount of context to show per log line"
          <> value (0 :: Int)))
   <*> (option (eitherReader loggerFormatParser)
