@@ -346,12 +346,12 @@ $ stack exec example1 -- show-tree
 |
 +- Inputs: 
 |  |
-|  `- User: DATA SOURCE (embeddable)
+|  `- User: DATA SOURCE (embeddable) repeated over "userId"
 |       Accepts json,yml,yaml
 |
 `- Outputs: 
    |
-   `- Analysis: DATA SINK
+   `- Analysis: DATA SINK repeated over "userId"
         Accepts json,yml,yaml
 ```
 

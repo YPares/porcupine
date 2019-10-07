@@ -49,6 +49,7 @@ import           Data.List.NonEmpty                 (NonEmpty (..))
 import           Data.Locations.Accessors
 import           Data.Locations.Loc
 import           Data.Locations.LocationTree
+import           Data.Locations.LocVariable
 import           Data.Locations.Mappings            (HasDefaultMappingRule (..),
                                                      LocShortcut (..))
 import           Data.Locations.SerializationMethod
@@ -189,19 +190,25 @@ getVFileDescription vf =
 
 describeVFileAsSourceSink :: VirtualFile a b -> String
 describeVFileAsSourceSink vf =
-  (case vfileDescIntent vfd of
-    Nothing -> ""
-    Just i -> case i of
-      VFForWriting -> "DATA SINK"
-      VFForReading -> "DATA SOURCE"
-      VFForRW -> "BIDIR VFILE"
-      VFForCLIOptions -> "OPTION SOURCE")
+  sourceSink
   ++ (if vfileDescEmbeddableInConfig vfd then " (embeddable)" else "")
-  where vfd = getVFileDescription vf
+  ++ (case vf ^. vfileSerials.serialRepetitionKeys of
+        [] -> ""
+        lvs -> " repeated over " ++ concat
+          (intersperse ", " (map (("\""++) . (++"\"") . unLocVariable) lvs)))
+  where
+    sourceSink = case vfileDescIntent vfd of
+      Nothing -> ""
+      Just i -> case i of
+        VFForWriting -> "DATA SINK"
+        VFForReading -> "DATA SOURCE"
+        VFForRW -> "BIDIR VFILE"
+        VFForCLIOptions -> "OPTION SOURCE"
+    vfd = getVFileDescription vf
 
 describeVFileExtensions :: VirtualFile a b -> String
 describeVFileExtensions vf =
-  "Accepts " ++ T.unpack (T.intercalate (T.pack ",") (vfileDescPossibleExtensions vfd))
+  "Accepts " ++ T.unpack (T.intercalate (T.pack ", ") (vfileDescPossibleExtensions vfd))
   where vfd = getVFileDescription vf
 
 describeVFileTypes :: forall a b. (Typeable a, Typeable b) => VirtualFile a b -> Int -> String
