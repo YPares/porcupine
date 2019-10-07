@@ -9,7 +9,7 @@
 {-# LANGUAGE TypeApplications      #-}
 {-# LANGUAGE TupleSections         #-}
 {-# LANGUAGE Arrows #-}
-{-# OPTIONS_GHC -Wwarn #-}
+{-# OPTIONS_GHC -Wwarn -Wno-missing-signatures -Wno-name-shadowing #-}
 
 -- This example is loosely based on the series of blog posts by Thomas Wiecki
 -- https://twiecki.io/blog/2014/03/17/bayesian-glms-3/ .
@@ -24,7 +24,6 @@ import Data.Functor
 import           GHC.Generics
 import           Porcupine
 import           Prelude                       hiding (id, (.))
-import Control.Lens
 import qualified Control.Foldl as L
 import           Graphics.Vega.VegaLite        as VL
 import Control.Monad.Bayes.Class
