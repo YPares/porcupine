@@ -48,7 +48,7 @@ import           System.Environment                      (getArgs, withArgs)
 import           System.IO                               (stdin)
 import           System.TaskPipeline.ConfigurationReader
 import           System.TaskPipeline.Logger
-import           System.TaskPipeline.PorcupineTree       (PhysicalFileNodeShowOpts(..))
+import           System.TaskPipeline.PorcupineTree       (PhysicalFileNodeShowOpts (..))
 
 
 -- | The command to parse from the CLI

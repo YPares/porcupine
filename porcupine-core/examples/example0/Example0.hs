@@ -1,9 +1,9 @@
-{-# LANGUAGE DataKinds           #-}
-{-# LANGUAGE TypeApplications    #-}
-{-# LANGUAGE OverloadedStrings   #-}
+{-# LANGUAGE DataKinds         #-}
+{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE TypeApplications  #-}
 
 import           Data.DocRecord
-import qualified Data.Text as T
+import qualified Data.Text         as T
 import           Porcupine.Run
 import           Porcupine.Serials
 import           Porcupine.Tasks

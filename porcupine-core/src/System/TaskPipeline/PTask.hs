@@ -47,7 +47,8 @@ import qualified Control.Arrow.Free                 as AF
 import           Control.Category
 import           Control.DeepSeq                    (NFData (..), force)
 import           Control.Exception                  (evaluate)
-import           Control.Funflow                    (Properties, stepIO, stepIO')
+import           Control.Funflow                    (Properties, stepIO,
+                                                     stepIO')
 import           Control.Lens
 import           Control.Monad.IO.Class
 import           Data.Locations

@@ -19,38 +19,38 @@
 
 module Data.Locations.SerializationMethod where
 
-import           Control.Lens                hiding ((:>))
 import           Control.Funflow.ContentHashable
-import           Data.Aeson                  as A
+import           Control.Lens                    hiding ((:>))
+import           Data.Aeson                      as A
 -- import qualified Data.Attoparsec.Lazy        as AttoL
-import qualified Data.Binary.Builder         as BinBuilder
-import qualified Data.ByteString             as BS
-import qualified Data.ByteString.Lazy        as LBS
-import qualified Data.ByteString.Streaming   as BSS
-import           Data.Char                   (ord)
-import qualified Data.Csv                    as Csv
-import qualified Data.Csv.Builder            as CsvBuilder
+import qualified Data.Binary.Builder             as BinBuilder
+import qualified Data.ByteString                 as BS
+import qualified Data.ByteString.Lazy            as LBS
+import qualified Data.ByteString.Streaming       as BSS
+import           Data.Char                       (ord)
+import qualified Data.Csv                        as Csv
+import qualified Data.Csv.Builder                as CsvBuilder
 -- import qualified Data.Csv.Parser             as CsvParser
-import           Codec.Compression.Zlib      as Zlib
+import           Codec.Compression.Zlib          as Zlib
 import           Data.DocRecord
-import           Data.DocRecord.OptParse     (RecordUsableWithCLI)
-import qualified Data.HashMap.Strict         as HM
+import           Data.DocRecord.OptParse         (RecordUsableWithCLI)
+import qualified Data.HashMap.Strict             as HM
 import           Data.Locations.LocVariable
 import           Data.Locations.LogAndErrors
 import           Data.Maybe
-import           Data.Monoid                 (First (..))
-import qualified Data.Text                   as T
-import qualified Data.Text.Encoding          as TE
-import qualified Data.Text.Lazy              as LT
-import qualified Data.Text.Lazy.Encoding     as LTE
+import           Data.Monoid                     (First (..))
+import qualified Data.Text                       as T
+import qualified Data.Text.Encoding              as TE
+import qualified Data.Text.Lazy                  as LT
+import qualified Data.Text.Lazy.Encoding         as LTE
 import           Data.Typeable
-import qualified Data.Vector                 as V
-import qualified Data.Yaml                   as Y
-import           Katip
+import qualified Data.Vector                     as V
+import qualified Data.Yaml                       as Y
 import           GHC.Generics
+import           Katip
 import           Streaming
-import qualified Streaming.Prelude           as S
-import qualified Streaming.Zip               as SZip
+import qualified Streaming.Prelude               as S
+import qualified Streaming.Zip                   as SZip
 
 
 -- | A file extension
@@ -401,7 +401,7 @@ class FromByteStream serial a where
                                  -- it needs to be
     case fromLazyByteString s bs of
       Left msg -> throwWithPrefix msg
-      Right y -> return y
+      Right y  -> return y
 
 getSerialWriters_ToBinaryBuilder
   :: (SerializationMethod srl, ToBinaryBuilder srl a) => srl -> SerialWriters a
@@ -425,7 +425,7 @@ getSerialReaders_FromByteStream srl = mempty
 -- keeping track of the header
 data Tabular a = Tabular
   { tabularHeader :: Maybe [T.Text]
-  , tabularData :: a }
+  , tabularData   :: a }
   deriving (Show, Generic, ToJSON, FromJSON)
 
 -- | Data that can be converted to/from CSV, with previous knowledge of the
@@ -505,7 +505,7 @@ instance (Csv.FromRecord a) => DeserializesWith CSVSerial (Tabular (V.Vector a))
 instance (Csv.FromNamedRecord a) => DeserializesWith CSVSerial (Records (V.Vector a)) where
   getSerialReaders = getSerialReaders_FromByteStream
 
--- instance (Csv.ToNamedRecord a, Foldable f) => 
+-- instance (Csv.ToNamedRecord a, Foldable f) =>
 
 -- TODO: recover header when deserializing CSV (which cassava doesn't return)
 -- decodeTabular :: Bool -> Char -> LBS.ByteString -> Either String (Tabular (V.Vector a))

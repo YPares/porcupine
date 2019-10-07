@@ -1,14 +1,14 @@
-{-# LANGUAGE DeriveGeneric       #-}
-{-# LANGUAGE FlexibleContexts    #-}
-{-# LANGUAGE FlexibleInstances   #-}
-{-# LANGUAGE GADTs               #-}
-{-# LANGUAGE OverloadedStrings   #-}
-{-# LANGUAGE PatternSynonyms     #-}
-{-# LANGUAGE RecordWildCards     #-}
-{-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE TypeOperators       #-}
-{-# LANGUAGE ViewPatterns        #-}
+{-# LANGUAGE DeriveGeneric         #-}
+{-# LANGUAGE FlexibleContexts      #-}
+{-# LANGUAGE FlexibleInstances     #-}
+{-# LANGUAGE GADTs                 #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE OverloadedStrings     #-}
+{-# LANGUAGE PatternSynonyms       #-}
+{-# LANGUAGE RecordWildCards       #-}
+{-# LANGUAGE ScopedTypeVariables   #-}
+{-# LANGUAGE TypeOperators         #-}
+{-# LANGUAGE ViewPatterns          #-}
 {-# OPTIONS_GHC -fno-warn-missing-pattern-synonym-signatures #-}
 {-# OPTIONS_GHC -fno-warn-name-shadowing #-}
 
@@ -138,7 +138,7 @@ instance (Monad m) => ContentHashable m (DataWriter m' a) where
 
 -- | Like a 'DataAccessor' but only with the reader part
 data DataReader m a = DataReader
-  { drPerformRead :: m a
+  { drPerformRead  :: m a
   , drLocsAccessed :: Either String [SomeLoc m] }
 
 instance (Monad m) => ContentHashable m (DataReader m' a) where
@@ -201,12 +201,12 @@ toJSONTxt (SomeGLoc a) = case toJSON a of
 
 -- | How to Show a PhysicalFileNode
 data PhysicalFileNodeShowOpts = PhysicalFileNodeShowOpts
-  { pfshowWithMappings :: Bool
-  , pfshowWithSerials :: Bool
-  , pfshowWithTypes :: Bool
-  , pfshowWithAccesses :: Bool
+  { pfshowWithMappings   :: Bool
+  , pfshowWithSerials    :: Bool
+  , pfshowWithTypes      :: Bool
+  , pfshowWithAccesses   :: Bool
   , pfshowWithExtensions :: Bool
-  , pfshowTypeNumChars :: Int }
+  , pfshowTypeNumChars   :: Int }
 
 data PhysicalFileNodeWithShowOpts m =
   PhysicalFileNodeWithShowOpts PhysicalFileNodeShowOpts (PhysicalFileNode m)
@@ -621,7 +621,7 @@ makeDataAccessor vpath (VFileImportance sevRead sevWrite sevError clockAccess)
     fillLoc rkMap loc =
       case fillLoc' rkMap loc of
         Left e  -> katipAddNamespace "dataAccessor" $ throwWithPrefix e
-        Right r -> return r  
+        Right r -> return r
 
 -- | Transform a file node with physical locations in node with a data access
 -- function to run. Matches the location (especially the filetype/extension) to
@@ -632,7 +632,7 @@ resolveDataAccess
   -> m' (DataAccessNode m)
 resolveDataAccess (PhysicalFileNode{pfnodeFile=vf, ..}) = do
   -- resolveDataAccess performs some checks when we build the pipeline:
-  
+
   -- First, that we aren't illegally binding to no layers a VirtualFile that
   -- will be read without having any default value:
   case (any (==ATRead) pfnodeAccesses, pfnodeLayers) of

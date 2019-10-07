@@ -116,6 +116,6 @@ enumIndices (IndexRange (OneOrSeveral rs)) = concatMap toL rs
     toL (OneIndex i)   = [i]
     toL (OneRange a b) = [a..b]
 
--- | Gives a list of TaskRepetitionIndex 
+-- | Gives a list of TaskRepetitionIndex
 enumTRIndices :: (Enum i, Show i) => IndexRange i -> [TRIndex]
 enumTRIndices = map (TRIndex . show) . enumIndices

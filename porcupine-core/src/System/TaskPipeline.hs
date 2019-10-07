@@ -9,7 +9,7 @@ module System.TaskPipeline
 
 import           Data.Locations.LogAndErrors
 import           System.TaskPipeline.Options
+import           System.TaskPipeline.PorcupineTree
 import           System.TaskPipeline.PTask
 import           System.TaskPipeline.Repetition
-import           System.TaskPipeline.PorcupineTree
 import           System.TaskPipeline.VirtualFileAccess
