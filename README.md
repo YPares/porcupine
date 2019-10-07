@@ -38,7 +38,7 @@ myTask :: (LogThrow m) => PTask m () ()  -- The task that performs all the opera
 myTask =
       getOption ["options"]  -- First we request value for a parameter
                 (docField @"text-length" (10::Int)
-				   -- The param is name "text-length" and will by default have a value of 10
+	     -- The param is named "text-length" and will by default have a value of 10
                           "The length of the text to output")
   >>> arr generateTxt -- Then we create a text of that length
   >>> writeData resultFile -- And finally we write it in the sink
@@ -67,7 +67,7 @@ and see that `./result.txt` now contains 100 characters.
 Another thing you can already do is remap (redirect) our sink to another file:
 
 ```
-$stack exec example0 -- -l /result=other-result.txt
+$ stack exec example0 -- -l /result=other-result.txt
 ```
 
 and see that the program now writes to `./other-result.txt` instead of
@@ -192,7 +192,7 @@ previously:
 
 ```haskell
 readMyConfig :: (KatipContext m, MonadThrow m)
-	         => PTask m () MyConfig
+             => PTask m () MyConfig
   -- The input of the task is just (), as we are just reading something
 readMyConfig = loadData myInput
 ```
@@ -523,7 +523,7 @@ locations:
 ```
 
 In that scheme, the `Inputs`/`Ouputs` level has disappeared, and the
-VirtualFiles specify their paths explicitely.
+VirtualFiles specify their paths explicitly.
 
 # Specific features
 
@@ -539,7 +539,7 @@ paths. Sometimes, these paths will contain one or several _variables_ to be
 spliced if the task which reads/writes these paths will be repeated several
 times over a set of _task repetition indices_ (TRIndices), which can be as
 simple as an integer growing from 0 to some number. In such case, the variable
-name in the path will by everytime replaced by the current value of the TRIndex.
+name in the path will be everytime replaced by the current value of the TRIndex.
 
 You can also add variables in a configuration file even in the absence of
 repeated tasks, to gain some very light templating capabilities, for instance:
@@ -666,7 +666,7 @@ main = runPipelineTask (FullConfig .......)
                        mainTask ()
 ```
 
-We explicitely state that we want to use the `#http` LocationAccessor (and that
+We explicitly state that we want to use the `#http` LocationAccessor (and that
 we want to run it with the `useHTTP` function, imported from
 `Data.Locations.Accessors.HTTP`) on top of the `baseContexts` (which provide
 access to local files and logging). Note that you need to activate the
