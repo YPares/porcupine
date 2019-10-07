@@ -349,14 +349,14 @@ handleOptions progName (BaseInputConfig mbCfgFile mbCfg defCfg) cliOverriding mb
       case mbCmd of
         Nothing -> (Nothing, lsp, allWarnings ++
                                   [PostParsingWrite (fromJust mbCfgFile) cfgOverriden])
-        Just (cmd, cmdShown) ->
+        Just (cmd, _cmdShown) ->
             let actions =
                   allWarnings ++
                   (if saveOverridesAlong
                      then [PostParsingWrite (fromJust mbCfgFile) cfgOverriden]
                      else []) ++
                   [PostParsingLog DebugS $ logStr $ "Running `" <> T.pack progName
-                      <> " " <> T.pack cmdShown <> "' with the following config:\n"
+                      <> "' with the following config:\n"
                       <> T.decodeUtf8 (Y.encode cfgOverriden)]
             in (Just (cfgOverriden, cmd), lsp, actions)
     Left err -> dispErr err
