@@ -15,7 +15,7 @@ resultFile = dataSink ["result"] $
 
 myTask :: (LogThrow m) => PTask m () ()
 myTask = proc () -> do
-  (OptF char :& OptF num :& _) <- getMyOptions -< ()
+  (FV char :& FV num :& _) <- getMyOptions -< ()
   let txt = T.replicate (fromIntegral num) (T.singleton char)
   writeData resultFile -< txt
   where

@@ -17,7 +17,7 @@ module System.TaskPipeline.Options
   , DocRec, Rec(..), (^^.), (^^?), (^^?!), (=:)
   , PathWithType(..)
   , docField
-  , pattern OptF
+  , pattern FV
   ) where
 
 import           Data.Aeson
@@ -33,10 +33,10 @@ import           System.TaskPipeline.VirtualFileAccess
 import           Prelude                               hiding (id, (.))
 
 
--- | Allows you to directly pattern match on the output of
+-- | Field Value. Allows you to directly pattern match on the output of
 -- 'getOptions'/'loadData'
-pattern OptF :: a -> DocField (s:|:a)
-pattern OptF v <- DocField _ (Right (Field v))
+pattern FV :: a -> DocField (s:|:a)
+pattern FV v <- DocField _ (Right (Field v))
 
 -- | Creates a 'VirtualFile' from a default set of options (as a DocRec). To be
 -- used with 'loadData'.

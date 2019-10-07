@@ -23,7 +23,7 @@ resultFile = dataSink ["result"] $
 
 myTask :: (LogThrow m) => PTask m () ()
 myTask = proc () -> do
-  (OptF chars :& OptF nums :& _) <-
+  (FV chars :& FV nums :& _) <-
     getOptions ["options"]
       (  docField @"chars"        "a"       "The chars to repeat"
       :& docField @"replications" [10::Int] "The numbers of replications"
