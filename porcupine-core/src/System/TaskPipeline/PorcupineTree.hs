@@ -153,7 +153,10 @@ data SomeDataAccess m where
 -- | Tells the type of accesses that some VirtualFile will undergo. They are
 -- accumulated though the whole pipeline.
 data VFNodeAccessType = ATWrite | ATRead
-  deriving (Eq, Show)
+  deriving (Eq, Show, Generic)
+
+instance ToJSON VFNodeAccessType
+instance FromJSON VFNodeAccessType
 
 -- | The nodes of a "VirtualTree"
 data VirtualFileNode = MbVirtualFileNode [VFNodeAccessType] (Maybe SomeVirtualFile)
@@ -542,6 +545,7 @@ instance Exception TaskConstructionError
 -- TODO: Is this dead-code?
 data DataAccessContext = DAC
   { locationAccessed     :: Value
+  , locationAccessType   :: VFNodeAccessType
   , requiredLocVariables :: [LocVariable]
   , providedLocVariables :: LocVariableMap
   , splicedLocation      :: Value }
@@ -552,13 +556,13 @@ instance ToObject DataAccessContext
 instance LogItem DataAccessContext where
   payloadKeys v _
     | v == V3   = AllKeys
-    | v >= V1   = SomeKeys ["locationAccessed"]
+    | v >= V1   = SomeKeys ["locationAccessed", "locationAccessType"]
     | otherwise = SomeKeys []
 
 makeDataAccessor
-  :: forall m a b. (LogMask m)
+  :: forall m a b a' b'. (LogMask m)
   => String  -- ^ VirtualFile path (for doc)
-  -> VFileImportance  -- ^ How to log the accesses
+  -> VirtualFile a' b'  -- ^ The virtual file
   -> [SomeLocWithVars m]  -- ^ Every mapped layer (for doc)
   -> Maybe b -- ^ Default value (used as base layer)
   -> LayeredReadScheme b  -- ^ How to handle the different layers
@@ -566,10 +570,11 @@ makeDataAccessor
   -> [(FromStreamFn b, SomeLocWithVars m)] -- ^ Layers to read from
   -> LocVariableMap  -- ^ The map of the values of the repetition indices
   -> DataAccessor m a b
-makeDataAccessor vpath (VFileImportance sevRead sevWrite sevError clockAccess)
-                 layers mbDefVal readScheme writeLocs readLocs repetKeyMap =
+makeDataAccessor vpath vf layers mbDefVal readScheme writeLocs readLocs repetKeyMap =
   DataAccessor{..}
   where
+    (VFileImportance sevRead sevWrite sevError clockAccess) = vf ^. vfileImportance
+    rkeys = vf ^. vfileSerials.serialRepetitionKeys
     timeAccess :: String -> Severity -> String -> m t -> m t
     timeAccess prefix sev loc action
       | clockAccess = do
@@ -583,25 +588,25 @@ makeDataAccessor vpath (VFileImportance sevRead sevWrite sevError clockAccess)
           return r
     daLocsAccessed = traverse (\(SomeGLoc loc) -> SomeGLoc <$> fillLoc' repetKeyMap loc) layers
     daPerformWrite input =
-        forM_ writeLocs $ \(ToAtomicFn {-rkeys-} f, SomeGLoc loc) ->
+        forM_ writeLocs $ \(ToAtomicFn f, SomeGLoc loc) ->
           case cast (f input) of
             Nothing -> error "Some atomic serializer isn't converting to a lazy ByteString"
             Just bs -> do
               loc' <- fillLoc repetKeyMap loc
               katipAddNamespace "dataAccessor" $ katipAddNamespace "writer" $
-                katipAddContext (DAC (toJSON loc) {-rkeys-}mempty repetKeyMap (toJSON loc')) $ do
+                katipAddContext (DAC (toJSON loc) ATWrite rkeys repetKeyMap (toJSON loc')) $ do
                   let runWrite = writeBSS loc' (BSS.fromLazy bs)
                   timeAccess "Wrote" sevWrite (show loc') $
                     withException runWrite $ \ioError ->
                       logFM sevError $ logStr $ displayException (ioError :: IOException)
     daPerformRead = do
-        dataFromLayers <- forM readLocs (\(FromStreamFn {-rkeys-} (f :: Stream (Of i) m () -> m b), SomeGLoc loc) ->
+        dataFromLayers <- forM readLocs (\(FromStreamFn (f :: Stream (Of i) m () -> m b), SomeGLoc loc) ->
           case eqT :: Maybe (i :~: Strict.ByteString) of
             Nothing -> error "Some stream reader isn't expecting a stream of strict ByteStrings"
             Just Refl -> do
               loc' <- fillLoc repetKeyMap loc
               katipAddNamespace "dataAccessor" $ katipAddNamespace "reader" $
-                katipAddContext (DAC (toJSON loc) {-rkeys-}mempty repetKeyMap (toJSON loc')) $ do
+                katipAddContext (DAC (toJSON loc) ATRead rkeys repetKeyMap (toJSON loc')) $ do
                   let runRead = readBSS loc' (f . BSS.toChunks)
                   r <- timeAccess "Read" sevRead (show loc') $ withException runRead $ \ioError ->
                     logFM sevError $ logStr $ displayException (ioError :: IOException)
@@ -651,8 +656,8 @@ resolveDataAccess (PhysicalFileNode{pfnodeFile=vf, ..}) = do
   -- And finally, that we aren't reading from an unsupported filetype:
   readLocs <- findFunctions (typeOf (undefined :: Strict.ByteString)) readers
   return $
-    DataAccessNode pfnodeLayers $
-      makeDataAccessor vpath (vf^.vfileImportance) pfnodeLayers
+    DataAccessNode pfnodeLayers $ 
+      makeDataAccessor vpath vf pfnodeLayers
                        mbEmbeddedVal readScheme
                        writeLocs readLocs
   where
