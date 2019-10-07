@@ -206,6 +206,7 @@ toJSONTxt (SomeGLoc a) = case toJSON a of
 data PhysicalFileNodeShowOpts = PhysicalFileNodeShowOpts
   { pfshowWithMappings :: Bool
   , pfshowWithSerials :: Bool
+  , pfshowWithOptions :: Bool
   , pfshowWithTypes :: Bool
   , pfshowWithAccesses :: Bool
   , pfshowWithExtensions :: Bool
@@ -232,8 +233,11 @@ instance Show (PhysicalFileNodeWithShowOpts m) where
          describeVFileExtensions pfnodeFile)
     ++ (showIf pfshowWithAccesses $
          "Accessed with " ++ show pfnodeAccesses)
+    ++ (showIf pfshowWithOptions $
+         describeVFileAsRecOfOptions pfnodeFile pfshowTypeNumChars)
     where
-      showIf cond content = if cond then [content] else []
+      showIf cond content =
+        if cond && (not $ null content) then [content] else []
   show _ = ""
 
 -- * API for manipulating porcupine trees globally

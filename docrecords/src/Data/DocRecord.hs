@@ -48,7 +48,6 @@ module Data.DocRecord
   -- * Types
   , PathWithType(..)
   , FieldWithTag, fieldTag
-  , HasDocumentation(..)
   , Field(..)
   , Tagged(..)
   , WithDoc
@@ -107,6 +106,7 @@ module Data.DocRecord
   , recFrom
   , invertRecBij, (<<|>>), bijectField, bijectField', renameField, addConstField
   , bijectUnder
+  , showDocumentation
   ) where
 
 import           Control.Applicative
@@ -399,23 +399,25 @@ type ToJSONFields fields =
 -- age (Int) : This is the field giving the age
 -- name ([Char]) : This is the field giving the name
 -- size (Double) : This is the field giving the size (in cm)
-class HasDocumentation a where
-  showDocumentation :: a -> T.Text
-
-instance (ShowPath `AllFst` rs, Typeable `AllSnd` rs)
-      => HasDocumentation (Rec (F.Compose WithDoc field) rs) where
-  showDocumentation (f :& fs) =
-    showF f <> case fs of
-                 (_ :& _) -> "\n" <> showDocumentation fs
-                 RNil     -> ""
-    where
-      showF :: forall r. (ShowPath (Fst r), Typeable (Snd r))
-            => F.Compose WithDoc field r -> T.Text
-      showF (F.Compose (Tagged  doc _)) =
-        showPath (Proxy @(Fst r)) <> " (" <>
-        T.pack (show $ typeRep $ Proxy @(Snd r)) <> ") : " <>
-        doc
-  showDocumentation RNil = ""
+showDocumentation
+  :: forall rs field. (ShowPath `AllFst` rs, Typeable `AllSnd` rs)
+  => Int  -- ^ Character limit for types
+  -> Rec (F.Compose WithDoc field) rs
+  -> T.Text
+showDocumentation charLimit (f :& fs) =
+  showF f <> case fs of
+               (_ :& _) -> "\n" <> showDocumentation charLimit fs
+               RNil     -> ""
+  where
+    showF :: forall r. (ShowPath (Fst r), Typeable (Snd r))
+          => F.Compose WithDoc field r -> T.Text
+    showF (F.Compose (Tagged  doc _)) =
+      showPath (Proxy @(Fst r))
+      <> " :: " <> T.pack (cap $ show $ typeRep $ Proxy @(Snd r))
+      <> " : " <> doc
+    cap x | length x >= charLimit = take charLimit x ++ "..."
+          | otherwise = x
+showDocumentation _ RNil = ""
 
 -- | Redefines @rfield@ and @(=:)@ from Data.Vinyl.Derived so they can work over
 -- different kinds of fields.

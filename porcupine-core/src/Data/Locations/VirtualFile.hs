@@ -4,6 +4,7 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TemplateHaskell     #-}
 {-# LANGUAGE TypeOperators       #-}
+{-# LANGUAGE DataKinds           #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 
 module Data.Locations.VirtualFile
@@ -33,6 +34,7 @@ module Data.Locations.VirtualFile
   , usesCacherWithIdent
   , getVFileDescription
   , describeVFileAsSourceSink, describeVFileExtensions, describeVFileTypes
+  , describeVFileAsRecOfOptions
   , clockVFileAccesses
   , defaultCacherWithIdent
   ) where
@@ -42,6 +44,7 @@ import           Control.Funflow.ContentHashable
 import           Control.Lens
 import           Data.Aeson                         (Value)
 import           Data.Default
+import           Data.DocRecord
 import qualified Data.HashMap.Strict                as HM
 import qualified Data.HashSet                       as HS
 import           Data.List                          (intersperse)
@@ -205,6 +208,13 @@ describeVFileAsSourceSink vf =
         VFForRW -> "BIDIR VFILE"
         VFForCLIOptions -> "OPTION SOURCE"
     vfd = getVFileDescription vf
+
+describeVFileAsRecOfOptions :: (Typeable a, Typeable b) => VirtualFile a b -> Int -> String
+describeVFileAsRecOfOptions vf charLimit =
+  case (vf ^? vfileAsBidir) >>= getConvertedEmbeddedValue of
+    Just (RecOfOptions record :: DocRecOfOptions) ->
+      "\n--- Fields ---\n" ++ T.unpack (showDocumentation charLimit record)
+    _ -> ""
 
 describeVFileExtensions :: VirtualFile a b -> String
 describeVFileExtensions vf =

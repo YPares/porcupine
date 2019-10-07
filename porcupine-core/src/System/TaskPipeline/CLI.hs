@@ -397,6 +397,10 @@ parseShowLocTree = fmap ShowLocTree $ PhysicalFileNodeShowOpts
        (long "no-serials"
         <> short 'S'
         <> help "Don't show if the virtual file can be used as a source or a sink")
+  <*> flag True False
+       (long "no-fields"
+       <> short 'F'
+       <> help "Don't show the option fields and their docstrings")
   <*> flag False True
        (long "types"
         <> short 't'

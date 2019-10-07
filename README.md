@@ -94,11 +94,14 @@ this should print:
 |
 `- options: <no mapping>
      OPTION SOURCE (embeddable)
-     Accepts yaml,json,yml
+     Accepts yaml, json, yml
+     
+   --- Fields ---
+   text-length :: Int : The length of the text to output
 ```
 
-Where you can see the resources that our program needs, and their default
-mappings to physical files.
+Where you can see the resources that our program needs, their default mappings
+to physical files, and the option field we declared with its type and docstring.
 
 This example is extremely contrived, but it already shows the main tools that
 `porcupine` provides to build a data pipeline and interact with it: _serials_,
@@ -342,17 +345,20 @@ $ stack exec example1 -- show-tree
 /: 
 |
 +- Settings: OPTION SOURCE (embeddable)
-|    Accepts yaml,json,yml
+|    Accepts yaml, json, yml
+|
+|  --- Fields ---
+|  users :: IndexRange Int : The user ids to load
 |
 +- Inputs: 
 |  |
 |  `- User: DATA SOURCE (embeddable) repeated over "userId"
-|       Accepts json,yml,yaml
+|       Accepts json, yml, yaml
 |
 `- Outputs: 
    |
    `- Analysis: DATA SINK repeated over "userId"
-        Accepts json,yml,yaml
+        Accepts json, yml, yaml
 ```
 
 This hierarchy of virtual paths filled with data and mappings to physical paths
@@ -561,7 +567,9 @@ In this case, `{folder}` will just be replaced by `experiment1` by default. This
 makes it so you only have to change once the `folder` variable when you want to
 target another folder. Also, you can set the variable's value with CLI:
 
-```my-exe --var folder=experiment143```
+```
+my-exe --var folder=experiment143
+```
 
 This is convenient when you often want to quickly change some paths, but if you
 need more complex templating then we suggest you use a full-fledged solution,
@@ -585,6 +593,7 @@ subcommand we already saw. It accepts a few flags:
   eg. how many times a file will be read)
 - `-S`: Don't show the SOURCE/SINK labels
 - `-E`: Don't show the filetypes (extensions) the virtual file accepts
+- `-F`: Don't show the option fields that are contained is this virtual file
 
 In the future, we plan on adding new, optional ahead of time sanity checks that
 could be performed with a specific subcommand, like:

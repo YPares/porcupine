@@ -134,7 +134,7 @@ sampleFlatLinRegModel = proc () -> do
   logInfo -< show summary
   
   vizSize <- getOption ["viz", "options"]
-             (docField @"vizSize" (400,400) "(w,h) of visualisations") -< ()
+             (docField @"vizSize" (400,400) "Width & height of visualisations") -< ()
   writeViz "1" -< plot vizSize
                        (S $ scatter2 xLbl yLbl (-3,5))
                        (Cols [(xLbl, VL.Booleans xs)
