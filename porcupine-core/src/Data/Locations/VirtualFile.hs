@@ -87,7 +87,7 @@ data VFileImportance = VFileImportance
 makeLenses ''VFileImportance
 
 instance Default VFileImportance where
-  def = VFileImportance DebugS NoticeS ErrorS False
+  def = VFileImportance InfoS NoticeS ErrorS False
 
 -- | A virtual file in the location tree to which we can write @a@ and from
 -- which we can read @b@.
