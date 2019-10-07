@@ -263,7 +263,7 @@ virtualTreeToMappings tree = mappingsFromLocTree <$> over filteredLocsInTree rmO
       | Just VFForCLIOptions <- intent = Nothing  -- Nodes with default data are
                                                   -- by default not put in the
                                                   -- mappings
-      where intent = vfileDescIntent $ getVirtualFileDescription vfnodeFile
+      where intent = vfileDescIntent $ getVFileDescription vfnodeFile
     rmOpts n = Just n
 
 -- | Filters the tree to get only the nodes than can be embedded in the config file
@@ -284,7 +284,7 @@ embedDataInVirtualTree = over filteredLocsInTree keepOpts
     keepOpts n@VirtualFileNode{..}
       | Just VFForCLIOptions <- intent = Just n
       | otherwise = Nothing
-      where intent = vfileDescIntent $ getVirtualFileDescription vfnodeFile
+      where intent = vfileDescIntent $ getVFileDescription vfnodeFile
     keepOpts n = Just n
 
 variablesSection :: T.Text
@@ -508,7 +508,7 @@ applyOneVFileMapping variables configLayers mbVF mappingIsExplicit = buildPhysic
     buildPhysicalNode VirtualFileNode{..} = PhysicalFileNode layers vfnodeAccesses vfnodeFile
       where
         First defExt = vfnodeFile ^. vfileSerials . serialDefaultExt
-        intent = vfileDescIntent $ getVirtualFileDescription vfnodeFile
+        intent = vfileDescIntent $ getVFileDescription vfnodeFile
         -- TODO: It seems to be the case that the are some constraints to meet
         -- on a valid physical tree. For instance, that having a VFForCLIOptions
         -- node with derived layers is invalid?

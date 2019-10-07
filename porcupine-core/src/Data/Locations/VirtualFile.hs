@@ -12,7 +12,7 @@ module Data.Locations.VirtualFile
   , Profunctor(..)
   , VirtualFile(..), LayeredReadScheme(..)
   , BidirVirtualFile, DataSource, DataSink
-  , VirtualFileIntent(..), VirtualFileDescription(..)
+  , VFileIntent(..), VFileDescription(..)
   , RecOfOptions(..)
   , VFileImportance(..)
   , Cacher(..)
@@ -31,7 +31,7 @@ module Data.Locations.VirtualFile
   , withEmbeddedValue
   , usesLayeredMapping, canBeUnmapped, unmappedByDefault
   , usesCacherWithIdent
-  , getVirtualFileDescription
+  , getVFileDescription
   , describeVFileAsSourceSink, describeVFileExtensions, describeVFileTypes
   , clockVFileAccesses
   , defaultCacherWithIdent
@@ -141,14 +141,14 @@ instance Profunctor VirtualFile where
 -- * Obtaining a description of how the 'VirtualFile' should be used
 
 -- | Describes how a virtual file is meant to be used
-data VirtualFileIntent =
+data VFileIntent =
   VFForWriting | VFForReading | VFForRW | VFForCLIOptions
   deriving (Show, Eq)
 
 -- | Gives the purpose of the 'VirtualFile'. Used to document the pipeline and check
 -- mappings to physical files.
-data VirtualFileDescription = VirtualFileDescription
-  { vfileDescIntent             :: Maybe VirtualFileIntent
+data VFileDescription = VFileDescription
+  { vfileDescIntent             :: Maybe VFileIntent
                         -- ^ How is the 'VirtualFile' meant to be used
   , vfileDescEmbeddableInConfig :: Bool
                         -- ^ True if the data can be read directly from the
@@ -163,9 +163,9 @@ data VirtualFileDescription = VirtualFileDescription
 
 -- | Gives a 'VirtualFileDescription'. To be used on files stored in the
 -- VirtualTree.
-getVirtualFileDescription :: VirtualFile a b -> VirtualFileDescription
-getVirtualFileDescription vf =
-  VirtualFileDescription intent readableFromConfig writableInOutput exts
+getVFileDescription :: VirtualFile a b -> VFileDescription
+getVFileDescription vf =
+  VFileDescription intent readableFromConfig writableInOutput exts
   where
     (SerialsFor
       (SerialWriters toA)
@@ -197,12 +197,12 @@ describeVFileAsSourceSink vf =
       VFForRW -> "BIDIR VFILE"
       VFForCLIOptions -> "OPTION SOURCE")
   ++ (if vfileDescEmbeddableInConfig vfd then " (embeddable)" else "")
-  where vfd = getVirtualFileDescription vf
+  where vfd = getVFileDescription vf
 
 describeVFileExtensions :: VirtualFile a b -> String
 describeVFileExtensions vf =
   "Accepts " ++ T.unpack (T.intercalate (T.pack ",") (vfileDescPossibleExtensions vfd))
-  where vfd = getVirtualFileDescription vf
+  where vfd = getVFileDescription vf
 
 describeVFileTypes :: forall a b. (Typeable a, Typeable b) => VirtualFile a b -> Int -> String
 describeVFileTypes _ charLimit
