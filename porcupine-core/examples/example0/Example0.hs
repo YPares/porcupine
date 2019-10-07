@@ -15,7 +15,7 @@ resultFile = dataSink ["result"] $
 myTask :: (LogThrow m) => PTask m () ()
 myTask =
       getOptions ["options"]
-        (  docField @"char"        "A"       "The characters to repeat"
+        (  docField @"chars"        "A"      "The characters to repeat"
         :& docField @"text-length" (10::Int) "The length of the text to output"
         :& RNil)
   >>> arr (\(OptF char :& OptF len :& _)

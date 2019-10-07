@@ -219,12 +219,18 @@ instance (Monoid tag) => Applicative (Tagged tag) where
 -- one. Right field is returned if both tags are equal.
 chooseHighestPriority
   :: Ord a
-  => F.Compose (Tagged a) f x
-  -> F.Compose (Tagged a) f x
-  -> F.Compose (Tagged a) f x
-chooseHighestPriority f1@(F.Compose (Tagged s1 _))
-                      f2@(F.Compose (Tagged s2 _)) =
-  if s2 >= s1 then f2 else f1
+  => F.Compose (Tagged a) (F.Compose (Tagged T.Text) f) x
+  -> F.Compose (Tagged a) (F.Compose (Tagged T.Text) f) x
+  -> F.Compose (Tagged a) (F.Compose (Tagged T.Text) f) x
+chooseHighestPriority (F.Compose (Tagged s1 (F.Compose (Tagged doc1 f1))))
+                      (F.Compose (Tagged s2 (F.Compose (Tagged doc2 f2)))) =
+  if s2 >= s1
+  then F.Compose (Tagged s2 (F.Compose (Tagged doc f2)))
+  else F.Compose (Tagged s1 (F.Compose (Tagged doc f1)))
+  where  -- DocRecords parsed from json don't contain any doc, so we have to
+         -- take care of which tag we select for documentation
+    doc | doc1 == "" = doc2
+        | otherwise = doc1
 
 -- | Just a type-level tuple, for easier to read type signatures
 data PathWithType a b = a :|: b
@@ -411,7 +417,7 @@ showDocumentation charLimit (f :& fs) =
   where
     showF :: forall r. (ShowPath (Fst r), Typeable (Snd r))
           => F.Compose WithDoc field r -> T.Text
-    showF (F.Compose (Tagged  doc _)) =
+    showF (F.Compose (Tagged doc _)) =
       showPath (Proxy @(Fst r))
       <> " :: " <> T.pack (cap $ show $ typeRep $ Proxy @(Snd r))
       <> " : " <> doc
