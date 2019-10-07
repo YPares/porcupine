@@ -1,14 +1,11 @@
 {-# LANGUAGE DataKinds           #-}
 {-# LANGUAGE TypeApplications    #-}
 {-# LANGUAGE OverloadedStrings   #-}
+{-# LANGUAGE GADTs               #-}
 
 import           Data.DocRecord
 import qualified Data.Text as T
 import           Porcupine
-
-
-generateTxt :: Int -> T.Text
-generateTxt n = T.replicate n "a"
 
 
 resultFile :: DataSink T.Text
@@ -17,10 +14,12 @@ resultFile = dataSink ["result"] $
 
 myTask :: (LogThrow m) => PTask m () ()
 myTask =
-      getOption ["options"]
-                (docField @"text-length" (10::Int)
-                          "The length of the text to output")
-  >>> arr generateTxt
+      getOptions ["options"]
+        (  docField @"char"        "A"       "The characters to repeat"
+        :& docField @"text-length" (10::Int) "The length of the text to output"
+        :& RNil)
+  >>> arr (\(OptF char :& OptF len :& _)
+            -> T.replicate len char)
   >>> writeData resultFile
 
 main :: IO ()
