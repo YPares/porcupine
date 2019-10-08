@@ -8,10 +8,8 @@ module System.TaskPipeline.Repetition.Fold
   , RepInfo(..)
   , TRIndex(..)
   , HasTRIndex(..)
-  , taskFold
-  , taskFold_
-  , unsafeGeneralizeM
-  , unsafeGeneralizeFnM
+  , generalizeM
+  , generalizeM_
   , foldlTask
   , foldStreamTask
   , premapMaybe
@@ -30,22 +28,14 @@ import           System.TaskPipeline.Repetition.Internal
 
 -- * Folding data with a PTask
 
--- | Turns a 'FoldM' in some monad to a 'FoldA' compatible with 'foldTask'
-unsafeGeneralizeM :: (KatipContext m)
-                  => FoldM m a b -> FoldA (PTask m) i a b
-unsafeGeneralizeM (FoldM step start done) =
-  FoldA (toTask $ \(Pair a x) -> step a x)
-        (toTask $ const start)
-        (toTask done)
-
 data RunningFoldM m a b =
   forall x. RFM (x -> a -> m x) !x (x -> m b)
 
 -- | Turns a function creating a 'FoldM' into a 'FoldA' over 'PTasks'
-unsafeGeneralizeFnM :: (KatipContext m)
-                    => (i -> FoldM m a b)
-                    -> FoldA (PTask m) i a b
-unsafeGeneralizeFnM f =
+generalizeM :: (KatipContext m)
+            => (i -> FoldM m a b)
+            -> FoldA (PTask m) i a b
+generalizeM f =
   FoldA (toTask $ \(Pair (RFM step acc done) x) -> do
             acc' <- step acc x
             return $ RFM step acc' done)
@@ -56,23 +46,16 @@ unsafeGeneralizeFnM f =
                 return $ RFM step initAcc done)
         (toTask $ \(RFM _ acc done) -> done acc)
 
--- | Creates a 'FoldA' from a 'PTask'.
-taskFold :: PTask m (acc,input) acc -- ^ The folding task
-          -> FoldA' (PTask m) input acc
-taskFold step =
-  FoldA (arr onInput >>> step) id id
-  where
-    onInput (Pair acc x) = (acc,x)
-
--- | Creates a 'FoldA' that will never alter its accumulator's initial value,
--- just pass it around
-taskFold_ :: PTask m (acc,input) ()
-           -> FoldA (PTask m) acc input ()
-taskFold_ task =
-  rmap (const ()) $
-  taskFold $ proc (acc,input) -> do
-    task -< (acc,input)
-    returnA -< acc
+-- | Turns a 'FoldM' in some monad to a 'FoldA' compatible with 'foldTask'
+--
+-- This is a version of 'generalizeM' for when your initial accumulator doesn't
+-- need to be computed by a PTask
+generalizeM_ :: (KatipContext m)
+             => FoldM m a b -> FoldA (PTask m) i a b
+generalizeM_ (FoldM step start done) =
+  FoldA (toTask $ \(Pair a x) -> step a x)
+        (toTask $ const start)
+        (toTask done)
 
 newtype PairWithRepeatable x a = PWR { unPWR :: Pair x a }
 
@@ -119,10 +102,13 @@ foldlTask
   -> FoldA (PTask m) i a b
   -> PTask m (i,[a]) b
 foldlTask ri fld = arr (second S.each)
-            >>> foldStreamTask ri fld >>> arr fst
+               >>> foldStreamTask ri fld >>> arr fst
 
 -- | Allows to filter out some data before it is taken into account by the FoldA
 -- of PTask
+--
+-- We provide a implementation specific to PTask because a general
+-- implementation requires ArrowChoice
 premapMaybe :: (a -> Maybe a')
             -> FoldA (PTask m) i a' b
             -> FoldA (PTask m) i a b

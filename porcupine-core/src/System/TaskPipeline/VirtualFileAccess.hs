@@ -179,7 +179,7 @@ writeDataList lv vf =
 -- occurences of a 'VirtualFile'.
 writeDataFold :: (LogThrow m, Typeable a, Typeable b)
               => VirtualFile a b -> F.FoldA (PTask m) i a ()
-writeDataFold vf = F.premapInitA (arr $ const ()) $ F.taskFold (arr snd >>> writeData vf)
+writeDataFold vf = F.premapInitA (arr $ const ()) $ F.arrowFold (arr snd >>> writeData vf)
 
 -- | Gets a 'DataAccessor' to the 'VirtualFile', ie. doesn't read or write it
 -- immediately but gets a function that will make it possible.
