@@ -54,7 +54,7 @@ extra-deps:
 - json-stream-0.4.2.4
 - hvega-0.4.1.0
 - git: https://github.com/tweag/funflow
-  commit: af227eadf7e1afed08473d47d54ea4ef6c76d303 # Branch 'remote-cache'
+  commit: v1.5.0
   subdirs:
     - funflow
 - git: https://github.com/tweag/monad-bayes
