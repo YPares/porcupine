@@ -6,7 +6,7 @@
 -- from the `foldl` package.
 --
 -- This module intentionally doesn't provide a function to run the FoldA over a
--- list in any arrow, because that running function may depend on the arrow.
+-- Foldable in any arrow, because that function may depend on the arrow.
 module Control.Arrow.FoldA
   ( module Control.Foldl
   , FoldA(..)

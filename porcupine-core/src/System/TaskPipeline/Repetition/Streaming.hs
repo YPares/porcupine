@@ -1,5 +1,8 @@
 {-# LANGUAGE FlexibleContexts #-}
 
+-- | This module contains functions that map a task over a stream. Delaying
+-- effects of tasks like this plays badly with caching. This interface will be
+-- removed in a future version of porcupine.
 
 module System.TaskPipeline.Repetition.Streaming
   ( STask, ISTask, OSTask

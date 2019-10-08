@@ -3,8 +3,7 @@
 {-# LANGUAGE TupleSections              #-}
 
 module System.TaskPipeline.Repetition
-  ( module System.TaskPipeline.Repetition.Streaming
-  , RepInfo(..)
+  ( RepInfo(..)
   , TRIndex(..)
   , HasTRIndex(..)
   , OneOrSeveral(..)
@@ -27,7 +26,6 @@ import qualified Data.Text                                as T
 import           Prelude                                  hiding ((.))
 import           System.TaskPipeline.PTask
 import           System.TaskPipeline.Repetition.Internal
-import           System.TaskPipeline.Repetition.Streaming
 
 
 -- | Makes a 'PTask' repeatable and maps it in parallel over a list.
