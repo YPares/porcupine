@@ -63,7 +63,7 @@ overlayHaskell = _:pkgs:
       owner = "tweag";
       repo = "funflow";
       rev = "v1.5.0";
-      sha256 = "05k4icz3lls135aasvf7f7riniw5cmyg8y6phcz4qiikhswlbs0x";
+      sha256 = "1bldpi1fcr6l7qcr7kkwycvp1i9jgpd6b8m4190z9lsiddz0pkav";
     };
     monadBayesSource = pkgs.fetchFromGitHub {
       owner = "tweag"; # Using our fork until https://github.com/adscib/monad-bayes/pull/54 is merged
