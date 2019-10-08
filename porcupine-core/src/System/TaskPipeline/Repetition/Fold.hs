@@ -1,7 +1,8 @@
 {-# LANGUAGE Arrows                    #-}
 {-# LANGUAGE ExistentialQuantification #-}
 {-# LANGUAGE FlexibleContexts          #-}
-
+{-# LANGUAGE RankNTypes                #-}
+{-# LANGUAGE BangPatterns              #-}
 
 module System.TaskPipeline.Repetition.Fold
   ( module Control.Arrow.FoldA
@@ -12,13 +13,14 @@ module System.TaskPipeline.Repetition.Fold
   , generalizeM_
   , foldlTask
   , foldStreamTask
+  , runFoldAOverPTask
   , premapMaybe
   ) where
 
 import           Control.Arrow.FoldA
 import           Control.Lens                            hiding (Fold)
 import           Data.Locations
-import           Prelude                                 hiding (id)
+import           Prelude                                 hiding ((.), id)
 import           Streaming                               (Of (..), Stream)
 import qualified Streaming.Prelude                       as S
 import           System.TaskPipeline.PTask
@@ -71,14 +73,23 @@ makeStepRepeatable :: (HasTRIndex a, KatipContext m)
 makeStepRepeatable ri step =
   arr PWR >>> makeTaskRepeatable ri (arr unPWR >>> step)
 
--- | Consumes a Stream with a 'FoldA' created with 'taskFold', 'generalizeA',
--- 'unsafeGeneralizeM', or a composition of such folds.
-foldStreamTask
+-- | Runs a 'FoldA' created with 'arrowFold', 'generalizeA', 'unsafeGeneralizeM',
+-- or a composition of such folds.
+--
+-- You shouldn't use 'runFoldAOverPTask' directly in client code, rather you should
+-- specialize it to some collection. See e.g 'foldStreamTask' or 'foldlTask'.
+runFoldAOverPTask
   :: (HasTRIndex a, KatipContext m)
-  => RepInfo  -- ^ How to log the repeated task
-  -> FoldA (PTask m) i a b
-  -> PTask m (i, Stream (Of a) m r) (b, r)
-foldStreamTask ri (FoldA step_ start done) =
+  => (forall ar x. (ArrowChoice ar)
+       => (forall inp out. (inp -> m out) -> ar inp out)
+       -> ar (Pair x a) x
+       -> ar (x, col) (x, r))
+       -- ^ This function receives a function to wrap an action in the @m@ monad
+       -- and the step to repeat. It should consume the collection
+  -> RepInfo  -- ^ How to log the repeated task
+  -> FoldA (PTask m) i a b  -- ^ The 'FoldA' to run
+  -> PTask m (i, col) (b, r)
+runFoldAOverPTask loopStep ri (FoldA step_ start done) =
   (reqs, runnable) ^. from splitTask
   where
     (reqsStep, runnableStep)   = makeStepRepeatable ri step_ ^. splitTask
@@ -86,23 +97,37 @@ foldStreamTask ri (FoldA step_ start done) =
     (reqsDone, runnableDone)   = done ^. splitTask
     reqs = reqsStart <> reqsStep <> reqsDone
     runnable =
-      first runnableStart >>> loopStep >>> first runnableDone
-    loopStep = proc (acc, stream) -> do
-      firstElem <- withRunnableState (const S.next) -< stream
+      first runnableStart >>> loopStep (withRunnableState . const) runnableStep
+                          >>> first runnableDone
+
+-- | Consumes a Stream with a 'FoldA' created with 'arrowFold', 'generalizeA',
+-- 'unsafeGeneralizeM', or a composition of such folds.
+foldStreamTask
+  :: (HasTRIndex a, KatipContext m)
+  => RepInfo  -- ^ How to log the repeated task
+  -> FoldA (PTask m) i a b  -- ^ The FoldA to run
+  -> PTask m (i, Stream (Of a) m r) (b, r)
+foldStreamTask = runFoldAOverPTask $ \wrap step ->
+  let
+    consumeStream = proc (acc, stream) -> do
+      firstElem <- wrap S.next -< stream
       case firstElem of
         Left r -> returnA -< (acc, r)
         Right (a, stream') -> do
-          acc' <- runnableStep -< Pair acc a
-          loopStep -< (acc', stream')
+          !acc' <- step -< Pair acc a
+          consumeStream -< (acc', stream')
+  in consumeStream
 
--- | Consumes a list with a 'FoldA' over 'PTask'
+-- | Consumes a Foldable with a 'FoldA' over 'PTask'.
+--
+-- See 'arrowFold' to create such a 'FoldA'
 foldlTask
-  :: (HasTRIndex a, KatipContext m)
+  :: (Foldable f, HasTRIndex a, KatipContext m)
   => RepInfo  -- ^ How to log the repeated task
   -> FoldA (PTask m) i a b
-  -> PTask m (i,[a]) b
-foldlTask ri fld = arr (second S.each)
-               >>> foldStreamTask ri fld >>> arr fst
+  -> PTask m (i, f a) b
+foldlTask ri fld =
+  arr (second S.each) >>> foldStreamTask ri fld >>> arr fst
 
 -- | Allows to filter out some data before it is taken into account by the FoldA
 -- of PTask
