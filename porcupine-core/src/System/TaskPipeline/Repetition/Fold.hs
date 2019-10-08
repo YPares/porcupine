@@ -3,6 +3,7 @@
 {-# LANGUAGE FlexibleContexts          #-}
 {-# LANGUAGE RankNTypes                #-}
 {-# LANGUAGE BangPatterns              #-}
+{-# OPTIONS_GHC -fno-warn-orphans #-}
 
 module System.TaskPipeline.Repetition.Fold
   ( module Control.Arrow.FoldA
@@ -59,19 +60,9 @@ generalizeM_ (FoldM step start done) =
         (toTask $ const start)
         (toTask done)
 
-newtype PairWithRepeatable x a = PWR { unPWR :: Pair x a }
-
 instance (HasTRIndex a)
-      => HasTRIndex (PairWithRepeatable x a) where
-  getTRIndex (PWR (Pair _ a)) = getTRIndex a
-
--- | Just before running the fold, we have to make the step part repeatable
-makeStepRepeatable :: (HasTRIndex a, KatipContext m)
-                   => RepInfo
-                   -> PTask m (Pair acc a) b
-                   -> PTask m (Pair acc a) b
-makeStepRepeatable ri step =
-  arr PWR >>> makeTaskRepeatable ri (arr unPWR >>> step)
+      => HasTRIndex (Pair x a) where
+  getTRIndex (Pair _ a) = getTRIndex a
 
 -- | Runs a 'FoldA' created with 'arrowFold', 'generalizeA', 'unsafeGeneralizeM',
 -- or a composition of such folds.
@@ -92,7 +83,7 @@ runFoldAOverPTask
 runFoldAOverPTask loopStep ri (FoldA step_ start done) =
   (reqs, runnable) ^. from splitTask
   where
-    (reqsStep, runnableStep)   = makeStepRepeatable ri step_ ^. splitTask
+    (reqsStep, runnableStep)   = makeTaskRepeatable ri step_ ^. splitTask
     (reqsStart, runnableStart) = start ^. splitTask
     (reqsDone, runnableDone)   = done ^. splitTask
     reqs = reqsStart <> reqsStep <> reqsDone
