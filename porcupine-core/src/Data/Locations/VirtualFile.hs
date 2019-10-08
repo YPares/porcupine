@@ -119,7 +119,7 @@ instance HasDefaultMappingRule (VirtualFile a b) where
           let toVar rkey = SoV_Variable rkey
               locStr = StringWithVars $ (SoV_String "-")
                        : intersperse (SoV_String "-") (map toVar rkeys)
-          in LocFilePath locStr $ T.unpack defExt
+          in PathWithExtension locStr $ T.unpack defExt
     else Nothing
     where
       defExt =

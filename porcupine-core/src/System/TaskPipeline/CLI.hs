@@ -104,11 +104,11 @@ withCliParser progName progDesc_ cliParser defRetVal f = do
    processAction (PostParsingWrite configFile cfg) = do
      let rawFile = configFile ^. locFilePathAsRawFilePath
      case configFile of
-       LocFilePath "-" _ ->
+       PathWithExtension "-" _ ->
          error "Config was read from stdin, cannot overwrite it"
-       LocFilePath _ e | e `elem` ["yaml","yml"] ->
+       PathWithExtension _ e | e `elem` ["yaml","yml"] ->
          liftIO $ Y.encodeFile rawFile cfg
-       LocFilePath _ "json" ->
+       PathWithExtension _ "json" ->
          liftIO $ LBS.writeFile rawFile $ A.encodePretty cfg
        _ -> error $ "Config file has unknown format"
      logFM NoticeS $ logStr $ "Wrote file '" ++ rawFile ++ "'"
@@ -127,7 +127,7 @@ withConfigFileSourceFromCLI f = do
     filename : rest -> do
       case parseURLLikeLoc filename of
         Left _ -> f Nothing
-        Right (LocalFile (LocFilePath "-" ext)) ->
+        Right (LocalFile (PathWithExtension "-" ext)) ->
           if ext == "" || allowedExt ext
           then withArgs rest $ f $ Just YAMLStdin
           else error $ filename ++ ": Only JSON or YAML config can be read from stdin"

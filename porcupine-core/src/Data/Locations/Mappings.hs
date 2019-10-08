@@ -124,10 +124,10 @@ data LocShortcut a
   = DeriveWholeLocFromTree FileExt
     -- ^ Means that this loc path and name should be inherited from locs up the
     -- virtual tree.
-  | DeriveLocPrefixFromTree (LocFilePath StringWithVars)
+  | DeriveLocPrefixFromTree (PathWithExtension StringWithVars)
     -- ^ Means that this loc path should be inherited from locs up the resource
     -- tree. Its name should be a concatenation of the corresponding name in the
-    -- tree and the LocFilePath provided
+    -- tree and the PathWithExtension provided
   | FullySpecifiedLoc a
     -- ^ Means that this shortcut is a full location
   deriving (Show)
