@@ -11,7 +11,7 @@ jobs:
             find . -name "*.cabal" -o -name "stack.yaml" -type f | sort | xargs cat > /tmp/stack-deps
       - restore_cache:
           keys:
-            - porcupine-stack-deps-{{arch}}-{{checksum "/tmp/stack-deps"}}
+            - porcupine-stack-{{arch}}-{{checksum "/tmp/stack-deps"}}
       - run:
           name: Setup build toolchain
           command: stack setup
