@@ -102,7 +102,7 @@ withCliParser progName progDesc_ cliParser defRetVal f = do
  where
    processAction (PostParsingLog s l) = logFM s l
    processAction (PostParsingWrite configFile cfg) = do
-     let rawFile = configFile ^. locFilePathAsRawFilePath
+     let rawFile = configFile ^. pathWithExtensionAsRawFilePath
      case configFile of
        PathWithExtension "-" _ ->
          error "Config was read from stdin, cannot overwrite it"
@@ -125,7 +125,7 @@ withConfigFileSourceFromCLI f = do
   case cliArgs of
     [] -> f Nothing
     filename : rest -> do
-      case parseURLLikeLoc filename of
+      case parseURL filename of
         Left _ -> f Nothing
         Right (LocalFile (PathWithExtension "-" ext)) ->
           if ext == "" || allowedExt ext
@@ -145,7 +145,7 @@ tryReadConfigFileSource configFileSource ifRemote =
     YAMLStdin ->
       Just <$> (BS.hGetContents stdin >>= Y.decodeThrow)
     ConfigFileURL (LocalFile lfp) -> do
-      let p = lfp ^. locFilePathAsRawFilePath
+      let p = lfp ^. pathWithExtensionAsRawFilePath
       yamlFound <- doesFileExist p
       if yamlFound
         then Just <$> Y.decodeFileThrow p
@@ -206,7 +206,7 @@ pureCliParser progName baseInputConfig cfgCLIParsing cmds defCmd =
         (info
          (pure (Nothing, maxVerbosityLoggerScribeParams
                ,[PostParsingWrite f (bicDefaultConfig baseInputConfig)]))
-         (progDesc $ "Write a default configuration file in " <> (f^.locFilePathAsRawFilePath))))
+         (progDesc $ "Write a default configuration file in " <> (f^.pathWithExtensionAsRawFilePath))))
   <|>
   handleOptions progName baseInputConfig cliOverriding
     <$> ((subparser $
@@ -215,7 +215,7 @@ pureCliParser progName baseInputConfig cfgCLIParsing cmds defCmd =
               Just f ->
                 command "save" $
                   info (pure Nothing) $
-                       progDesc $ "Just save the command line overrides in " <> (f^.locFilePathAsRawFilePath))
+                       progDesc $ "Just save the command line overrides in " <> (f^.pathWithExtensionAsRawFilePath))
            <>
            foldMap
              (\(cmdParser, cmdShown, cmdInfo) ->
@@ -230,7 +230,7 @@ pureCliParser progName baseInputConfig cfgCLIParsing cmds defCmd =
            Just f  ->
              switch ( long "save"
                    <> short 's'
-                   <> help ("Save overrides in the " <> (f^.locFilePathAsRawFilePath) <> " before running.") ))
+                   <> help ("Save overrides in the " <> (f^.pathWithExtensionAsRawFilePath) <> " before running.") ))
     <*> overridesParser cliOverriding
   where
     cliOverriding = addScribeParamsParsing cfgCLIParsing
@@ -362,7 +362,7 @@ handleOptions progName (BaseInputConfig mbCfgFile mbCfg defCfg) cliOverriding mb
     Left err -> dispErr err
   where
     configFile' = case mbCfgFile of Nothing -> ""
-                                    Just f -> " " ++ f ^. locFilePathAsRawFilePath
+                                    Just f -> " " ++ f ^. pathWithExtensionAsRawFilePath
     dispErr err = error $
       (if nullOverrides cliOverriding overrides
        then "C"

@@ -171,24 +171,24 @@ checkLocal funcName loc _ = error $ funcName ++ ": location " ++ show loc ++ " i
 
 -- | Accessing local resources
 instance (MonadResource m, MonadMask m) => LocationAccessor m "resource" where
-  newtype GLocOf "resource" a = L (URLLikeLoc a)
+  newtype GLocOf "resource" a = L (URL a)
     deriving (Functor, Foldable, Traversable, ToJSON, TypedLocation)
   locExists (L l) = checkLocal "locExists" l $
-    liftIO . doesPathExist . (^. locFilePathAsRawFilePath)
+    liftIO . doesPathExist . (^. pathWithExtensionAsRawFilePath)
   writeBSS (L l) body = checkLocal "writeBSS" l $ \path -> do
-    let raw = path ^. locFilePathAsRawFilePath
+    let raw = path ^. pathWithExtensionAsRawFilePath
     liftIO $ createDirectoryIfMissing True (Path.takeDirectory raw)
     BSS.writeFile raw body
   readBSS (L l) f = checkLocal "readBSS" l $ \path ->
-    f $ BSS.readFile $ path ^. locFilePathAsRawFilePath
+    f $ BSS.readFile $ path ^. pathWithExtensionAsRawFilePath
   withLocalBuffer f (L l) = checkLocal "withLocalBuffer" l $ \path ->
-    f $ path ^. locFilePathAsRawFilePath
+    f $ path ^. pathWithExtensionAsRawFilePath
   copy (L l1) (L l2) =
     checkLocal "copy" l1 $ \path1 ->
     checkLocal "copy (2nd argument)" l2 $ \path2 ->
       liftIO $ createFileLink
-        (path1 ^. locFilePathAsRawFilePath)
-        (path2 ^. locFilePathAsRawFilePath)
+        (path1 ^. pathWithExtensionAsRawFilePath)
+        (path2 ^. pathWithExtensionAsRawFilePath)
 
 instance (MonadResource m, MonadMask m) => MayProvideLocationAccessors m "resource"
 

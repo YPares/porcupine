@@ -84,7 +84,7 @@ genericAesonBasedConfigurationReader configFile shortcuts =
       ( l,s,"A shortcut for `-o "<>p<>".yaml.path=YAML_VALUE'"
       , map ((p++".")++) )
     overrideArgs = map mkOption $
-      ("override", 'o', "Override a field value in the " <> configFile ^. locFilePathAsRawFilePath <>
+      ("override", 'o', "Override a field value in the " <> configFile ^. pathWithExtensionAsRawFilePath <>
        " configuration.", id)
       : map mkShortcut shortcuts
 

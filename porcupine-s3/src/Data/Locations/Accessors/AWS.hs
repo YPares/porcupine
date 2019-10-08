@@ -43,13 +43,13 @@ import           System.TaskPipeline.Run
 
 
 -- | Just a compatiblity overlay for code explicitly dealing with S3 URLs
-pattern S3Obj :: String -> PathWithExtension a -> URLLikeLoc a
+pattern S3Obj :: String -> PathWithExtension a -> URL a
 pattern S3Obj{bucketName,objectName} = RemoteFile "s3" bucketName Nothing objectName []
 
 -- | Accessing resources on S3
 instance (MonadAWS m, MonadMask m, MonadResource m)
       => LocationAccessor m "aws" where
-  newtype GLocOf "aws" a = S (URLLikeLoc a)
+  newtype GLocOf "aws" a = S (URL a)
     deriving (Functor, Foldable, Traversable, ToJSON, TypedLocation)
   locExists _ = return True -- TODO: Implement it
   writeBSS (S l) = writeBSS_S3 l
@@ -71,7 +71,7 @@ instance (IsLocString a) => FromJSON (GLocOf "aws" a) where
 
 writeBSS_S3 :: MonadAWS m => Loc -> BSS.ByteString m a -> m a
 writeBSS_S3 S3Obj { bucketName, objectName } body = do
-  let raw = objectName ^. locFilePathAsRawFilePath
+  let raw = objectName ^. pathWithExtensionAsRawFilePath
   (res, r) <- S3.uploadObj (fromString bucketName) (fromString raw) body
   case res ^. porsResponseStatus of
     200 -> pure ()
@@ -87,7 +87,7 @@ readBSS_S3
 readBSS_S3 S3Obj{ bucketName, objectName } k = do
   r <- S3.streamObjInto
          (fromString bucketName)
-         (fromString $ objectName ^. locFilePathAsRawFilePath)
+         (fromString $ objectName ^. pathWithExtensionAsRawFilePath)
          k
   case r of
     Left e  -> throw e
@@ -103,8 +103,8 @@ copy_S3 locFrom@(S3Obj bucket1 obj1) locTo@(S3Obj bucket2 obj2)
   | bucket1 == bucket2 = do
       _ <- S3.copyObj
              (fromString bucket1)
-             (fromString $ obj1^.locFilePathAsRawFilePath)
-             (fromString $ obj2^.locFilePathAsRawFilePath)
+             (fromString $ obj1^.pathWithExtensionAsRawFilePath)
+             (fromString $ obj2^.pathWithExtensionAsRawFilePath)
       return ()
   | otherwise = readBSS_S3 locFrom (writeBSS_S3 locTo)
 copy_S3 _ _ = undefined
