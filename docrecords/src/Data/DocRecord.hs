@@ -401,10 +401,10 @@ type ToJSONFields fields =
 
 -- | Displays all the field names, types, and documentation contained in a record
 --
--- >>> T.putStrLn $ showDocumentation defaultPerson
--- age (Int) : This is the field giving the age
--- name ([Char]) : This is the field giving the name
--- size (Double) : This is the field giving the size (in cm)
+-- >>> T.putStrLn $ showDocumentation 20 defaultPerson
+-- age :: Int : This is the field giving the age
+-- name :: [Char] : This is the field giving the name
+-- size :: Double : This is the field giving the size (in cm)
 showDocumentation
   :: forall rs field. (ShowPath `AllFst` rs, Typeable `AllSnd` rs)
   => Int  -- ^ Character limit for types
