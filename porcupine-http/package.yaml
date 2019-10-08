@@ -1,6 +1,6 @@
 name: porcupine-http
-version: 0.0.1.0
-synopsis: A tool to express portable, composable and reusable datascience task pipelines
+version: 0.1.0.0
+synopsis: A location accessor for porcupine to connect to HTTP sources/sinks
 description: See README at <https://github.com/tweag/porcupine#README.md>
 maintainer: Yves Parès <yves.pares@tweag.io>
 github: tweag/porcupine
@@ -11,7 +11,7 @@ ghc-options: -Wall
 
 dependencies:
   - aeson
-  - base
+  - base >= 4.10 && < 5
   - containers
   - transformers
   - safe-exceptions
@@ -25,8 +25,8 @@ dependencies:
   - conduit
   - streaming-conduit
   - text
-  - reader-soup
-  - porcupine-core
+  - reader-soup == 0.1.*
+  - porcupine-core == 0.1.*
 
 library:
   source-dirs: src

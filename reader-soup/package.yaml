@@ -1,5 +1,5 @@
 name: reader-soup
-version: 0.0.1.0
+version: 0.1.0.0
 synopsis: Vinyl-based reader-like monad composition
 description: See README at <https://github.com/tweag/porcupine#README.md>
 maintainer: Yves Parès <yves.pares@tweag.io>

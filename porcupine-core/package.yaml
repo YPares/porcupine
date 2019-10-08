@@ -1,16 +1,16 @@
 name: porcupine-core
-version: 0.0.1.0
-synopsis: A tool to express portable, composable and reusable datascience task pipelines
+version: 0.1.0.0
+synopsis: A tool to express portable, composable and reusable data tasks and pipelines
 description: See README at <https://github.com/tweag/porcupine#README.md>
 maintainer: Yves Parès <yves.pares@tweag.io>
 github: tweag/porcupine
-category: Numerical, JSON
+category: Data, Numerical, JSON
 copyright: 2018 EURL Tweag, NovaDiscovery
 
 ghc-options: -Wall
 
 dependencies:
-  - base
+  - base >= 4.10 && < 5
   - aeson
   - aeson-pretty
   - attoparsec
@@ -25,20 +25,20 @@ dependencies:
   - data-default
   - deepseq
   - directory
-  - docrecords
+  - docrecords == 0.1.*
   - filepath
   - formatting
   - foldl
-  - funflow
+  - funflow >= 1.5.0
   - hashable
-  - katip >= 0.6.3
+  - katip == 0.8.*
   - lens
   - monad-control
   - mtl
   - optparse-applicative
   - path
   - profunctors
-  - reader-soup
+  - reader-soup == 0.1.*
   - resourcet
   - safe-exceptions
   - store
