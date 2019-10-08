@@ -37,8 +37,8 @@ resultFile = dataSink ["result"] serialMethod
 myTask :: (LogThrow m) => PTask m () ()  -- The task that performs all the operations
 myTask =
       getOption ["options"]  -- First we request value for a parameter
-                (docField @"text-length" (10::Int)
-	     -- The param is named "text-length" and will by default have a value of 10
+                (docField @"replications" (10::Int)
+	     -- The param is named "replications" and will by default have a value of 10
                           "The length of the text to output")
   >>> arr generateTxt -- Then we create a text of that length
   >>> writeData resultFile -- And finally we write it in the sink
@@ -55,11 +55,11 @@ This should create a file `./result.txt`.
 
 ### Changing the parameters
 
-The "text-length" parameter has automatically been exposed via the command-line
+The "replications" parameter has automatically been exposed via the command-line
 arguments. So for instance you can run
 
 ```
-$ stack exec example0 -- --text-length 100
+$ stack exec example0 -- --replications 100
 ```
 
 and see that `./result.txt` now contains 100 characters.
@@ -80,7 +80,7 @@ One final thing we can do on this example is print the tree of sinks, sources
 and options that it uses:
 
 ```
-$stack exec example0 -- show-tree -m
+$ stack exec example0 -- show-tree -m
 ```
 
 this should print:
@@ -152,7 +152,7 @@ Every task in Porcupine exposes a _virtual tree_. A virtual tree is a hierarchy
 a logical path and a `SerialsFor A B`, so it is just something with an
 identifier (like `"/Inputs/Config"` or `"/Ouputs/Results"`) in which we can
 write a `A` and/or from which we can read a `B`. We say the path is "logical"
-because it doesn't necessary have to correspond to some physical path on the
+because it doesn't necessarily have to correspond to some physical path on the
 hard drive: in the end, the user of the task pipeline (the one who runs the
 executable) will bind each logical path to a physical location. Besides, a
 `VirtualFile` doesn't even have to correspond in the end to an actual file, as
@@ -161,9 +161,8 @@ paths are a convenient and customary way to organise resources, and we can
 conveniently use them as a default layout for when your logical paths do
 correspond to actual paths on your hard drive.
 
-Most often we use the aliases `DataSource` and `DataSink` instead of directly
-`VirtualFile`, as our programs will most often use just read from or just write
-to files.
+Most often we use the aliases `DataSource` and `DataSink` instead of using
+directly `VirtualFile`.
 
 This is how you create a readonly resource that can be mapped to a JSON or YAML
 file in the end:
@@ -187,7 +186,7 @@ actual locations and will become a `DataAccessTree`.
 A `PTask` is a computation with an input and an output. Here we just call these
 computations "tasks". PTasks run in a base monad `m` that can depend on the
 application but that should always implement `KatipContext` (for logging),
-`MonadCatch`, `MonadResource` and `MonadUnliftIO`.  However you usually don't
+`MonadCatch`, `MonadResource` and `MonadUnliftIO`. However you usually don't
 have to worry about that, as porcupine takes care of these dependencies for you.
 
 This is how we create a task that reads the `myInput` VirtualFile we defined
