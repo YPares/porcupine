@@ -59,10 +59,11 @@ porcupineSources = {
 
 overlayHaskell = _:pkgs:
   let
-    funflowRev = "af227eadf7e1afed08473d47d54ea4ef6c76d303"; # branch 'remote-cache'
-    funflowSource = pkgs.fetchzip {
-      url = "https://github.com/tweag/funflow/archive/${funflowRev}.tar.gz";
-      sha256 = "1zgy40lfw4ar73w0g1292cls3x19yaxwc9f43ib8zpjycmf779mx";
+    funflowSource = pkgs.fetchFromGitHub {
+      owner = "tweag";
+      repo = "funflow";
+      rev = "v1.5.0";
+      sha256 = "05k4icz3lls135aasvf7f7riniw5cmyg8y6phcz4qiikhswlbs0x";
     };
     monadBayesSource = pkgs.fetchFromGitHub {
       owner = "tweag"; # Using our fork until https://github.com/adscib/monad-bayes/pull/54 is merged
