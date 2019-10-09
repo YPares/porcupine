@@ -1,5 +1,5 @@
 name: porcupine-core
-version: 0.1.0.0
+version: 0.1.0.1
 synopsis: Express portable, composable and reusable data tasks and pipelines
 description: |
   porcupine is centered around the PTask datatype, which represents a
@@ -9,22 +9,22 @@ description: |
   pipeline of tasks. The resources and parameters are organized in a tree which
   will be automatically exposed to the outside world. This makes the pipeline
   self-documented, and makes it so any option or file required at some point by
-  any task can be visualized and set/remapped (via a combination of a YAML/JSON
-  config file and command-line arguments) before the pipeline will run. That
-  means that the PTasks are completely agnostic of their data inputs, and that
-  new data sources can be added without having to change any of the tasks' logic
-  or even their types. This is done via the LocationAccessor
+  any task can be visualized and set or remapped (via a combination of a YAML or
+  JSON config file and command-line arguments) before the pipeline will
+  run. That means that the PTasks are completely agnostic of their data inputs,
+  and that new data sources can be added without having to change any of the
+  tasks' logic or even their types. This is done via the LocationAccessor
   typeclass. `porcupine-core` provides only access to local files (via
   resourcet), other location accessors will be in separate packages. See for
-  instance the <https://hackage.haskell.org/package/porcupine-http
-  `porcupine-http`> package to access HTTP urls. PTasks also provide caching
-  thanks to the funflow package. See the README at
-  <https://github.com/tweag/porcupine#README.md> and the examples in
-  `porcupine-core` package.
+  instance the <https://hackage.haskell.org/package/porcupine-http> package to
+  access HTTP urls. PTasks also provide caching thanks to the funflow
+  package. See the README at <https://github.com/tweag/porcupine#README.md> and
+  the examples in `porcupine-core` package.
 maintainer: Yves Parès <yves.pares@tweag.io>
 github: tweag/porcupine
 category: Data, Arrows, Combinators, Control, Pipes, Streaming, Numerical, JSON
 copyright: 2018 EURL Tweag, NovaDiscovery
+changelog: CHANGELOG.md
 
 ghc-options: -Wall
 
@@ -82,6 +82,11 @@ dependencies:
 library:
   source-dirs: src
 
+flags:
+  useMonadBayes:
+    manual: True
+    default: False  # monad-bayes isn't on Hackage
+  
 executables:
   example0:
     source-dirs: examples/example0
@@ -104,6 +109,12 @@ executables:
     dependencies:
       - porcupine-core
   example-radon:
+    when:
+      condition: flag(useMonadBayes)
+      then:
+        buildable: True
+      else:
+        buildable: False
     source-dirs: examples/example-radon
     main: ExampleRadon.hs
     dependencies:

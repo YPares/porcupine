@@ -72,7 +72,12 @@ overlayHaskell = _:pkgs:
       sha256 = "1qikvzpkpm255q3mgpc0x9jipxg6kya3pxgkk043vk25h2j11l0p";
     };
 
-    inherit (pkgs.haskell.lib) doJailbreak dontCheck packageSourceOverrides;
+    extendWithPorcupinePackages = self: _:
+      pkgs.lib.mapAttrs (name: src:
+                           self.callCabal2nixWithOptions name src "--flag=useMonadBayes" {})
+                        porcupineSources;
+
+    inherit (pkgs.haskell.lib) doJailbreak dontCheck;
   in {
   haskellPackages =
     (pkgs.haskellPackages.override {
@@ -89,7 +94,7 @@ overlayHaskell = _:pkgs:
         funflow = dontCheck (self.callCabal2nix "funflow" "${funflowSource}/funflow" {});
                   # Check are failing for funflow, this should be investigated
       };
-      }).extend (packageSourceOverrides porcupineSources);
+      }).extend extendWithPorcupinePackages;
 };
 
 # Nixpkgs clone
