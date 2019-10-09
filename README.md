@@ -360,6 +360,8 @@ $ stack exec example1 -- show-tree
         Accepts json, yml, yaml
 ```
 
+You can use `show-tree -m` to additionally show the mappings.
+
 This hierarchy of virtual paths filled with data and mappings to physical paths
 to resources is what we call the _porcupine tree_ of the pipeline.
 
@@ -409,7 +411,8 @@ You can see here the default mappings for the two virtual files `/Inputs/User`
 and `/Ouputs/Analysis` that are used by `example1`. Wait. TWO virtual files? But
 we mentioned earlier that there were *many* user files to read and just as many
 analysis files to write? Indeed, but these are just *several occurences* of the
-same two VirtualFiles. You'll see in the code of example1 that the task
+same two VirtualFiles. As the output of `show-tree` mentions it these virtual
+files are indeed _repeated_. You'll see in the code of example1 that the task
 conducing the analysis on one user doesn't even know that several users might
 exist, let alone where these users' files are. It just says "I want a user" (one
 VirtualFile, to be read) and "I output an analysis" (one VirtualFile, to be
@@ -435,7 +438,7 @@ syntax of the mappings probably requires a bit of explaining:
   that is being analyzed).
 
 Let's know have a look at the code of
-[`example1`](porcupine-core/examples/Example1.hs) (types have been eluded for
+[`example1`](porcupine-core/examples/example1/Example1.hs) (types have been eluded for
 brevity but they are in the source):
 
 ```haskell
