@@ -11,7 +11,7 @@ description: |
   <https://github.com/tweag/porcupine#README.md>
 maintainer: Yves Parès <yves.pares@tweag.io>
 github: tweag/porcupine
-category: Data, Records
+category: Data, Records, JSON, CLI, Options, Parsing
 copyright: 2018 EURL Tweag, NovaDiscovery
 
 ghc-options: -Wall

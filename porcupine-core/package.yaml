@@ -23,7 +23,7 @@ description: |
   `porcupine-core` package.
 maintainer: Yves Parès <yves.pares@tweag.io>
 github: tweag/porcupine
-category: Data, Numerical, JSON
+category: Data, Arrows, Combinators, Control, Pipes, Streaming, Numerical, JSON
 copyright: 2018 EURL Tweag, NovaDiscovery
 
 ghc-options: -Wall

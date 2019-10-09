@@ -7,7 +7,7 @@ description: |
   in the `porcupine-s3` package.
 maintainer: Yves Parès <yves.pares@tweag.io>
 github: tweag/porcupine
-category: Numerical, JSON
+category: Data, Arrows, Combinators, Control, AWS, Cloud
 copyright: 2018 EURL Tweag, NovaDiscovery
 
 ghc-options: -Wall
