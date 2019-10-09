@@ -5,7 +5,15 @@
 {-# LANGUAGE BangPatterns              #-}
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 
-module System.TaskPipeline.Repetition.Fold
+-- | This module implements a Foldl-based interface for arrow computations
+-- compatible with the <https://hackage.haskell.org/package/foldl foldl
+-- library>. Use 'generalizeA' and 'generalizeM' to convert folds to
+-- 'FoldA'. This is the most general way to repeat a 'PTask' over some an input
+-- (list, array, stream, etc.).
+--
+-- This API is still experimental and might be subject to changes in the future
+
+module System.TaskPipeline.Repetition.Foldl
   ( module Control.Arrow.FoldA
   , RepInfo(..)
   , TRIndex(..)
