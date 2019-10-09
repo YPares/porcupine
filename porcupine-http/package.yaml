@@ -1,7 +1,12 @@
 name: porcupine-http
 version: 0.1.0.0
 synopsis: A location accessor for porcupine to connect to HTTP sources/sinks
-description: See README at <https://github.com/tweag/porcupine#README.md>
+description: |
+  Gives a porcupine task pipeline access to HTTP urls (GET, POST or
+  PUT). Implements a specific location type (represented as JSON object) to pack
+  together the url and some common HTTP header fields (method, content-type,
+  etc.). See the README at <https://github.com/tweag/porcupine#README.md> and
+  the examples in the `porcupine-http` package.
 maintainer: Yves Parès <yves.pares@tweag.io>
 github: tweag/porcupine
 category: Numerical, JSON

@@ -1,7 +1,10 @@
 name: porcupine-s3
 version: 0.1.0.0
 synopsis: A location accessor for porcupine to connect to AWS S3 sources/sinks
-description: See README at <https://github.com/tweag/porcupine#README.md>
+description: |
+  Gives a porcupine task pipeline access to AWS S3 objects (read and write). See
+  the README at <https://github.com/tweag/porcupine#README.md> and the examples
+  in the `porcupine-s3` package.
 maintainer: Yves Parès <yves.pares@tweag.io>
 github: tweag/porcupine
 category: Numerical, JSON

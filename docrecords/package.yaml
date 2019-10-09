@@ -1,7 +1,14 @@
 name: docrecords
 version: 0.1.0.0
 synopsis: Vinyl-based records with hierarchical field names, default values and documentation
-description: See README at <https://github.com/tweag/porcupine#README.md>
+description: |
+  Implements the DocRec type, which is a record (in the vinyl sense) where each
+  field has an optional value and a docstring. The names of the fields are
+  type-level lists of Symbols, acting as paths. This makes docrecords
+  hierarchical. Addionally, we provide the code to read docrecords from JSON
+  files and derive CLI parsers to override the records read from
+  files. docrecords is part of the porcupine ecosystem. See the README at
+  <https://github.com/tweag/porcupine#README.md>
 maintainer: Yves Parès <yves.pares@tweag.io>
 github: tweag/porcupine
 category: Data, Records
@@ -10,14 +17,14 @@ copyright: 2018 EURL Tweag, NovaDiscovery
 ghc-options: -Wall
 
 dependencies:
-  - base
+  - base >=4.10 && <5
   - aeson
   - data-default
   - lens
   - optparse-applicative
   - text
   - unordered-containers
-  - vinyl
+  - vinyl >=0.11
   - yaml
 
 library:
