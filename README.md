@@ -21,8 +21,8 @@ to those of data/software engineers.
 
 You are likely to benefit straightaway from porcupine if you are in one of the following cases:
 
-- you want to re-execute the same pipeline several times over varying configuration and/or inputs
-- you want to split your pipeline into several subtasks that will be shared with other pipelines
+- you want to re-execute the same pipeline several times over varying configuration and/or inputs,
+- you want to split your pipeline into several isolated and composable subtasks that can be shared with other pipelines.
 
 In both these cases, porcupine will save you a lot of development time and a lot of code typing.
 But porcupine's overhead being very low (aside from adding some dependencies to your application), you would benefit
