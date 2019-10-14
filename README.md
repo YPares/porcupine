@@ -1,8 +1,9 @@
-# Porcupine
+![logo](porcupine.svg)
 
 [![CircleCI](https://circleci.com/gh/tweag/porcupine/tree/master.svg?style=svg)](https://circleci.com/gh/tweag/porcupine/tree/master)
 [![Join the chat at
 https://gitter.im/tweag/porcupine](https://badges.gitter.im/tweag/porcupine.svg)](https://gitter.im/tweag/porcupine?utm_source=badge&utm_medium=badge&utm_campaign=pr-badge&utm_content=badge)
+
 
 "porcupine" stands for _Portable & Customizable Pipeline_. It is a tool aimed at
 people who want to express in Haskell general data manipulation and analysis tasks,
