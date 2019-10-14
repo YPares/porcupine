@@ -338,11 +338,12 @@ withParsedLocsWithVars aesonVals f = do
 
 -- | Finds in the accessors list a way to parse a list of JSON values that
 -- should correspond to some `LocOf l` type
-withParsedLocs :: (LogThrow m)
-               => [Value]
-               -> (forall l. (LocationAccessor m l)
-                   => [LocOf l] -> LocResolutionM m r)
-               -> LocResolutionM m r
+withParsedLocs
+  :: (LogThrow m)
+  => [Value]
+  -> (forall l. (LocationAccessor m l)
+      => [LocOf l] -> LocResolutionM m r)
+  -> LocResolutionM m r
 withParsedLocs aesonVals f = do
   AvailableAccessors allAccessors <- ask
   case allAccessors of

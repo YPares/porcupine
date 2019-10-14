@@ -415,8 +415,9 @@ virtualTreeConfigurationReader VirtualTreeAndMappings{vtamTree=defTree} =
           LocationMappings_ $ foldl addOne yamlMappings cliMappings
           where
             addOne mappings (path, locOp, loc) = HM.alter (go locOp loc) path mappings
-            go AddLayer loc (Just locs) = Just $ locs ++ [loc]
-            go _        loc _           = Just [loc]
+            go _ (FullySpecifiedLoc Null) _ = Just []  -- If one mapping is to null, we remove existing mappings
+            go AddLayer loc (Just locs)     = Just $ locs ++ [loc]
+            go _        loc _               = Just [loc]
         vtam = VirtualTreeAndMappings
           <$> traverseOf traversedTreeWithPath
                 (replaceWithDataFromConfig dataSectionContent) embeddedDataTree
