@@ -705,3 +705,7 @@ can be controlled with `-q`/`-v` (increase/decrease the minimal severity level
 that will be displayed, default being Notice). The `-c` (or `--context-verb`)
 parameter controls the amount of context that will be displayed per item logged,
 it takes a parameter from 0 to 3.
+
+# Other resources
+
+- [Introduction to porcupine @Haskell Exchange, in London, October 11th, 2019](https://skillsmatter.com/skillscasts/14236-porcupine-flows-your-rows-with-arrows)
