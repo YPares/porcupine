@@ -25,9 +25,9 @@ You are likely to benefit straightaway from porcupine if you are in one of the f
 - you want to split your pipeline into several subtasks that will be shared with other pipelines
 
 In both these cases, porcupine will save you a lot of development time and a lot of code typing.
-But porcupine's overhead being very low (aside from adding some dependencies to your application), you could even benefit
-from it even if you just want to use it to configure some arbitrary program with a mix of CLI and config file, and nothing else.
-That can be very useful if you want to be able to get started quickly on actual features.
+But porcupine's overhead being very low (aside from adding some dependencies to your application), you would benefit
+from it even if you just wanted to use it to configure some arbitrary program with a mix of CLI and config file.
+That can be very useful if you want to be able to avoid boilerplate and get started quickly on actual features.
 
 ## First example
 
