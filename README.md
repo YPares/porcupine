@@ -17,6 +17,16 @@ of a bigger pipeline).
 `porcupine` specifically targets teams containing skills ranging from those of data scientists
 to those of data/software engineers.
 
+## Main use cases
+
+You are likely to benefit straightaway from porcupine if you are in one of the following cases:
+
+- you want to re-execute the same pipeline several times over varying configuration and/or inputs
+- you want to split your pipeline into several subtasks that will be shared with other pipelines
+
+But porcupine's overhead being very low (aside from adding some dependencies to your application), you can benefit
+from it even if you just want to use it to configure some arbitrary program with a mix of CLI and config file, and nothing else.
+
 ## First example
 
 The following example does something very stupid. We want to generate a text
