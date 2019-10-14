@@ -216,15 +216,15 @@ bindVirtualTreeAndRun (NoConfig _ root) accessorsRec tree f =
   where
     defaultConfig = VirtualTreeAndMappings tree (Left root) mempty
     (accessors, argsRec) = splitAccessorsFromArgRec accessorsRec
-bindVirtualTreeAndRun (ConfigFileOnly progName configFileURL defRoot) accessorsRec tree f = do
+bindVirtualTreeAndRun (ConfigFileOnly progName configFileURL defRoot args) accessorsRec tree f = do
   -- We deactivate every argument that might have been passed so the only choice
   -- is to run the pipeline. Given the parsing of the config file and the
   -- command-line are quite related, it is difficult to just remove the CLI
   -- parsing until that part of the code is refactored to better separate CLI
   -- parsing and deserialization of the VirtualTreeAndMappings from the config
   -- file
-  res <- withArgs ["-qq", "--context-verb", "2", "--log-format", "compact"] $
-         -- No CLI arg is passable, so until we improve CLI parsin as stated
+  res <- withArgs args $
+         -- No CLI arg is passable, so until we improve CLI parsing as stated
          -- just above, in that case we limit ourselves to warnings and errors
     bindVirtualTreeAndRun (FullConfig progName configFileURL defRoot Nothing) accessorsRec tree $
       \_ _ t o -> Just <$> f RunPipeline Nothing t o
