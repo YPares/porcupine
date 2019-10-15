@@ -5,7 +5,7 @@
 https://gitter.im/tweag/porcupine](https://badges.gitter.im/tweag/porcupine.svg)](https://gitter.im/tweag/porcupine?utm_source=badge&utm_medium=badge&utm_campaign=pr-badge&utm_content=badge)
 
 
-porcupine is a tool aimed at people who want to express in Haskell general data manipulation and analysis tasks,
+`porcupine` is a tool aimed at people who want to express in Haskell general data manipulation and analysis tasks,
 
 1. in a way that is agnostic from the source of the input data and from the
 destination of the end results,
@@ -19,13 +19,13 @@ to those of data/software engineers.
 
 ## Main use cases
 
-You are likely to benefit straightaway from porcupine if you are in one of the following cases:
+You are likely to benefit straightaway from `porcupine` if you are in one of the following cases:
 
 - you want to re-execute the same pipeline several times over varying configuration and/or inputs,
 - you want to split your pipeline into several isolated and composable subtasks that can be shared with other pipelines.
 
-In both these cases, porcupine will save you a lot of development time and a lot of code typing.
-But porcupine's overhead being very low (aside from adding some dependencies to your application), you would benefit
+In both these cases, `porcupine` will save you a lot of development time and a lot of code typing.
+But `porcupine`'s overhead being very low (aside from adding some dependencies to your application), you would benefit
 from it even if you just wanted to use it to configure some arbitrary program with a mix of CLI and config file.
 That can be very useful if you want to be able to avoid boilerplate and get started quickly on actual features.
 
@@ -122,7 +122,7 @@ _virtual files_, _tasks_ and _trees_.
 ## Serials
 
 A `SerialsFor a b` encompasses functions to write data of type `a` and read data
-of type `b`. Porcupine provides a few serials if your datatype already
+of type `b`. `porcupine` provides a few serials if your datatype already
 implements standard serialization interfaces, such as `aeson`'s `To/FromJSON` or
 `binary`, and makes it easy to reuse custom serialization functions you might
 already have. A `SerialsFor A B` is a collection of `A -> i` and `i -> B`
@@ -134,7 +134,7 @@ have to care about how the input data will be serialized. As long as the data it
 tries to feed into the pipeline matches some known serialization function. Also,
 the introspectable nature of virtual trees (more on that later) allows you to
 _add_ serials to an existing pipeline before reusing it as part of your own
-pipeline. This sort of makes Porcupine an
+pipeline. This sort of makes `porcupine` an
 "anti-[ETL](https://en.wikipedia.org/wiki/Extract,_transform,_load)": rather
 than marshall and curate input data so that it matches the pipeline
 expectations, you augment the pipeline so that it can deal with more data
@@ -157,9 +157,9 @@ them for clarity reasons, and also to avoid orphan instances.
 
 [profunctor]: https://www.stackage.org/haddock/lts-12.21/lens-4.16.1/Control-Lens-Combinators.html#t:Profunctor
 
-## Porcupine's trees of virtual files
+## `porcupine`'s trees of virtual files
 
-Every task in Porcupine exposes a _virtual tree_. A virtual tree is a hierarchy
+Every task in `porcupine` exposes a _virtual tree_. A virtual tree is a hierarchy
 (like a filesystem) of `VirtualFiles`. A `VirtualFile A B` just groups together
 a logical path and a `SerialsFor A B`, so it is just something with an
 identifier (like `"/Inputs/Config"` or `"/Ouputs/Results"`) in which we can
@@ -199,7 +199,7 @@ A `PTask` is a computation with an input and an output. Here we just call these
 computations "tasks". PTasks run in a base monad `m` that can depend on the
 application but that should always implement `KatipContext` (for logging),
 `MonadCatch`, `MonadResource` and `MonadUnliftIO`. However you usually don't
-have to worry about that, as porcupine takes care of these dependencies for you.
+have to worry about that, as `porcupine` takes care of these dependencies for you.
 
 This is how we create a task that reads the `myInput` VirtualFile we defined
 previously:
@@ -240,7 +240,7 @@ main = runLocalPipelineTask cfg mainTask
     cfg = FullConfig "MyApp" "pipeline-config.yaml" "./default-root-dir" ()
 ```
 
-## Running a Porcupine application
+## Running a `porcupine` application
 
 We saw in our [first example](#first-example) that the parameters of our tasks
 are exposed via the command-line. But it isn't the only source of configuration
@@ -272,10 +272,10 @@ it's the default subcommand. As we saw any option you defined inside your
 pipeline is also exposed on the CLI, and shown by `my-exe --help`. Specifying it
 on the CLI overrides the value set in the YAML config file.
 
-A note about the `FullConfig` option you saw earlier. Porcupine is quite a
+A note about the `FullConfig` option you saw earlier. `porcupine` is quite a
 high-level tool and handles configuration file and CLI parsing for you, and this
 is what `FullConfig` triggers. But this is not mandatory, you also have
-`ConfigFileOnly` for when you don't want porcupine to parse the CLI arguments
+`ConfigFileOnly` for when you don't want `porcupine` to parse the CLI arguments
 (this is for the cases when your pipeline isn't the entirety of your program, or
 when you want for some reason to parse CLI yourself) and `NoConfig` for when you
 don't want any source of configuration to be read. When CLI parsing is
@@ -284,7 +284,7 @@ activated, you need to provide a default value for the pipeline: indeed using
 
 # Philosophy of use
 
-Porcupine's intent is to make it easy to separate clearly the work between 3
+`porcupine`'s intent is to make it easy to separate clearly the work between 3
 persons:
 
 - The _software developer_ will be in charge of determining how the data gets
@@ -307,7 +307,7 @@ persons:
   outside). But more on that later.
 
 Of course, these can be the same person. Also, you don't need to plan on running
-anything in the cloud to start benefiting from porcupine. But we want to support
+anything in the cloud to start benefiting from `porcupine`. But we want to support
 workflows where these three persons are distinct people, each one with her
 different set of skills.
 
@@ -500,7 +500,7 @@ flat list of every ID to consider with `enumIndices`, and finally we map (in
 parallel) over that list with `parMapTask_`, repeating our `analyseOneUser` once
 per user ID in input. Note the first argument `"userId"`: this is the
 *repetition index* (you need OverloadedStrings). Every function that repeats
-tasks in porcupine will take one, and this is where the `{userId}` variable that
+tasks in `porcupine` will take one, and this is where the `{userId}` variable that
 we saw in the YAML config comes from. It works first by changing the default
 mappings of the VirtualFiles accessed by `analyseOneUser` so that each of them
 now contains the `{userId}` variable, and second by looking up that variable in
@@ -547,7 +547,7 @@ VirtualFiles specify their paths explicitly.
 
 # Specific features
 
-Aside from the general usage exposed previously, porcupine proposes several
+Aside from the general usage exposed previously, `porcupine` proposes several
 features to facilitate iterative development of pipelines and reusability of
 tasks.
 
@@ -629,8 +629,8 @@ Let's say you have a pipeline that needs an input file to do some simulation,
 and a record of options controlling the way the simulation happens (which solver
 to use, which parameters to give it, etc). What exactly is the _input_ and what
 exactly is the _configuration_ here?  One could argue that both could be
-considered input, or that both could be considered configuration.  Our rule of
-the thumb in porcupine is that everything than can be given a default value and
+considered input, or that both could be considered configuration. Our rule of
+the thumb in `porcupine` is that everything than can be given a default value and
 a help string should be displayed in the yaml configuration file (like the
 `users` field in example1), and should generate a CLI flag to be able to alter
 it on the fly. Everything else should just be looked in external files. _But
@@ -654,7 +654,7 @@ file that doesn't exist.
 Every VirtualFile (be it read from embedded data of from external files) can be
 read from _several_ sources instead of one. That requires one thing though: that
 the type `B` you read from a `VirtualFile A B` is an instance of Semigroup (call
-`usesLayeredMapping` so your VirtualFile registers that). This way, porcupine
+`usesLayeredMapping` so your VirtualFile registers that). This way, `porcupine`
 has a way to merge all these inputs into just one resource. It can come very
 handy, and can be used depending on your pipeline to organize your input
 resources into several layers, "stacked" so that the first layers' content are
