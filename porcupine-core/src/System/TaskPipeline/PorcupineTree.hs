@@ -541,7 +541,8 @@ instance Exception TaskConstructionError
 
 -- TODO: Is this dead-code?
 data DataAccessContext = DAC
-  { locationAccessed     :: Value
+  { virtualPath          :: String
+  , locationAccessed     :: Value
   , requiredLocVariables :: [LocVariable]
   , providedLocVariables :: LocVariableMap
   , splicedLocation      :: Value }
@@ -552,7 +553,8 @@ instance ToObject DataAccessContext
 instance LogItem DataAccessContext where
   payloadKeys v _
     | v == V3   = AllKeys
-    | v >= V1   = SomeKeys ["locationAccessed"]
+    | v == V2   = SomeKeys ["virtualPath", "locationAccessed", "providedLocVariables"]
+    | v == V1   = SomeKeys ["virtualPath", "locationAccessed"]
     | otherwise = SomeKeys []
 
 makeDataAccessor
@@ -589,7 +591,7 @@ makeDataAccessor vpath (VFileImportance sevRead sevWrite sevError clockAccess)
             Just bs -> do
               loc' <- fillLoc repetKeyMap loc
               katipAddNamespace "dataAccessor" $ katipAddNamespace "writer" $
-                katipAddContext (DAC (toJSON loc) {-rkeys-}mempty repetKeyMap (toJSON loc')) $ do
+                katipAddContext (DAC vpath (toJSON loc) {-rkeys-}mempty repetKeyMap (toJSON loc')) $ do
                   let runWrite = writeBSS loc' (BSS.fromLazy bs)
                   timeAccess "Wrote" sevWrite (show loc') $
                     withException runWrite $ \ioError ->
@@ -601,7 +603,7 @@ makeDataAccessor vpath (VFileImportance sevRead sevWrite sevError clockAccess)
             Just Refl -> do
               loc' <- fillLoc repetKeyMap loc
               katipAddNamespace "dataAccessor" $ katipAddNamespace "reader" $
-                katipAddContext (DAC (toJSON loc) {-rkeys-}mempty repetKeyMap (toJSON loc')) $ do
+                katipAddContext (DAC vpath (toJSON loc) {-rkeys-}mempty repetKeyMap (toJSON loc')) $ do
                   let runRead = readBSS loc' (f . BSS.toChunks)
                   r <- timeAccess "Read" sevRead (show loc') $ withException runRead $ \ioError ->
                     logFM sevError $ logStr $ displayException (ioError :: IOException)
