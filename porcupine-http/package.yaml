@@ -9,6 +9,7 @@ description: |
   the examples in the `porcupine-http` package.
 maintainer: Yves Parès <yves.pares@tweag.io>
 github: tweag/porcupine
+homepage: https://tweag.github.io/porcupine/
 category: Data, Arrows, Combinators, Control, Web
 copyright: 2018 EURL Tweag, NovaDiscovery
 

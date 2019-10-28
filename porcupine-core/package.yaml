@@ -22,9 +22,9 @@ description: |
   the examples in `porcupine-core` package.
 maintainer: Yves Parès <yves.pares@tweag.io>
 github: tweag/porcupine
+homepage: https://tweag.github.io/porcupine/
 category: Data, Arrows, Combinators, Control, Pipes, Streaming, Numerical, JSON
 copyright: 2018 EURL Tweag, NovaDiscovery
-changelog: CHANGELOG.md
 
 ghc-options: -Wall
 
