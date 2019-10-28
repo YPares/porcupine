@@ -39,7 +39,7 @@ myTask =
   >>> writeData resultFile -- And finally we write it in the sink
 ```
 
-This example is located [here](porcupine-core/examples/example0/Example0.hs). Run it with
+This example is located [here](https://github.com/tweag/porcupine/tree/master/porcupine-core/examples/example0/Example0.hs). Run it with
 
 ```
 $ stack build porcupine-core:example0
@@ -297,10 +297,10 @@ different set of skills.
 # Walking through an example
 
 Let's now have a look at
-[example1](porcupine-core/examples/example1/Example1.hs). It carries out a
+[example1](https://github.com/tweag/porcupine/tree/master/porcupine-core/examples/example1/Example1.hs). It carries out a
 simple analysis: it counts the number of times each letter of the alphabet
 appears in some users' first name and last name. Each user data is read from [a
-json file specific to that user](porcupine-core/examples/example1/data/Inputs)
+json file specific to that user](https://github.com/tweag/porcupine/tree/master/porcupine-core/examples/example1/data/Inputs)
 named `User-{userId}.json`, and the result for that user is written to another
 json file named `Analysis-{userId}.json`. This very basic process is repeated
 once per user ID to consider.
@@ -433,7 +433,7 @@ syntax of the mappings probably requires a bit of explaining:
   that is being analyzed).
 
 Let's know have a look at the code of
-[`example1`](porcupine-core/examples/example1/Example1.hs) (types have been eluded for
+[`example1`](https://github.com/tweag/porcupine/tree/master/porcupine-core/examples/example1/Example1.hs) (types have been eluded for
 brevity but they are in the source):
 
 ```haskell
@@ -663,7 +663,7 @@ data is HTTP, and the `LocationAccessor` for it is provided in
 `porcupine-http`. Support for Amazon S3 is also provided in `porcupine-s3`.
 
 The example
-[example-pokeapi](porcupine-http/examples/example-Poke/ExamplePokeAPI.hs) shows
+[example-pokeapi](https://github.com/tweag/porcupine/tree/master/porcupine-http/examples/example-Poke/ExamplePokeAPI.hs) shows
 how to deal with some data from the [PokeAPI](https://pokeapi.co). You can see
 that the code of the pipeline is very much like that of `example1`, the major
 difference being the call to `runPipelineTask`:
@@ -683,7 +683,7 @@ access to local files and logging). Note that you need to activate the
 
 Note that _nothing_ in the code tells us where the data will actually be read
 from. The connection between our dataSource and the REST API will be made in the
-[configuration file](porcupine-http/examples/example-Poke/example-pokeapi.yaml).
+[configuration file](https://github.com/tweag/porcupine/tree/master/porcupine-http/examples/example-Poke/example-pokeapi.yaml).
 
 ## Logging
 
