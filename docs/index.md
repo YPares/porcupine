@@ -1,14 +1,14 @@
-![logo](../porcupine.svg)
+# Overview of Porcupine
 
 ## Main use cases
 
-You are likely to benefit straightaway from `porcupine` if you are in one of the following cases:
+You are likely to benefit straightaway from Porcupine if you are in one of the following cases:
 
 - you want to re-execute the same pipeline several times over varying configuration and/or inputs,
 - you want to split your pipeline into several isolated and composable subtasks that can be shared with other pipelines.
 
-In both these cases, `porcupine` will save you a lot of development time and a lot of code typing.
-But `porcupine`'s overhead being very low (aside from adding some dependencies to your application), you would benefit
+In both these cases, Porcupine will save you a lot of development time and a lot of code typing.
+But Porcupine's overhead being very low (aside from adding some dependencies to your application), you would benefit
 from it even if you just wanted to use it to configure some arbitrary program with a mix of CLI and config file.
 That can be very useful if you want to be able to avoid boilerplate and get started quickly on actual features.
 
@@ -67,7 +67,7 @@ $ stack exec example0 -- -l /result=other-result.txt
 
 and see that the program now writes to `./other-result.txt` instead of
 `./result.txt`. `-l` (or `--loc`) is one of the default CLI options of
-`porcupine`, present in all the executables compiled with CLI support.
+Porcupine, present in all the executables compiled with CLI support.
 
 ### Showing the dependencies and parameters of our program
 
@@ -99,13 +99,13 @@ Where you can see the resources that our program needs, their default mappings
 to physical files, and the option field we declared with its type and docstring.
 
 This example is extremely contrived, but it already shows the main tools that
-`porcupine` provides to build a data pipeline and interact with it: _serials_,
+Porcupine provides to build a data pipeline and interact with it: _serials_,
 _virtual files_, _tasks_ and _trees_.
 
 ## Serials
 
 A `SerialsFor a b` encompasses functions to write data of type `a` and read data
-of type `b`. `porcupine` provides a few serials if your datatype already
+of type `b`. Porcupine provides a few serials if your datatype already
 implements standard serialization interfaces, such as `aeson`'s `To/FromJSON` or
 `binary`, and makes it easy to reuse custom serialization functions you might
 already have. A `SerialsFor A B` is a collection of `A -> i` and `i -> B`
@@ -117,7 +117,7 @@ have to care about how the input data will be serialized. As long as the data it
 tries to feed into the pipeline matches some known serialization function. Also,
 the introspectable nature of virtual trees (more on that later) allows you to
 _add_ serials to an existing pipeline before reusing it as part of your own
-pipeline. This sort of makes `porcupine` an
+pipeline. This sort of makes Porcupine an
 "anti-[ETL](https://en.wikipedia.org/wiki/Extract,_transform,_load)": rather
 than marshall and curate input data so that it matches the pipeline
 expectations, you augment the pipeline so that it can deal with more data
@@ -140,9 +140,9 @@ them for clarity reasons, and also to avoid orphan instances.
 
 [profunctor]: https://www.stackage.org/haddock/lts-12.21/lens-4.16.1/Control-Lens-Combinators.html#t:Profunctor
 
-## `porcupine`'s trees of virtual files
+## Porcupine's trees of virtual files
 
-Every task in `porcupine` exposes a _virtual tree_. A virtual tree is a hierarchy
+Every task in Porcupine exposes a _virtual tree_. A virtual tree is a hierarchy
 (like a filesystem) of `VirtualFiles`. A `VirtualFile A B` just groups together
 a logical path and a `SerialsFor A B`, so it is just something with an
 identifier (like `"/Inputs/Config"` or `"/Ouputs/Results"`) in which we can
@@ -182,7 +182,7 @@ A `PTask` is a computation with an input and an output. Here we just call these
 computations "tasks". PTasks run in a base monad `m` that can depend on the
 application but that should always implement `KatipContext` (for logging),
 `MonadCatch`, `MonadResource` and `MonadUnliftIO`. However you usually don't
-have to worry about that, as `porcupine` takes care of these dependencies for you.
+have to worry about that, as Porcupine takes care of these dependencies for you.
 
 This is how we create a task that reads the `myInput` VirtualFile we defined
 previously:
@@ -223,7 +223,7 @@ main = runLocalPipelineTask cfg mainTask
     cfg = FullConfig "MyApp" "pipeline-config.yaml" "./default-root-dir" ()
 ```
 
-## Running a `porcupine` application
+## Running a Porcupine application
 
 We saw in our [first example](#first-example) that the parameters of our tasks
 are exposed via the command-line. But it isn't the only source of configuration
@@ -255,10 +255,10 @@ it's the default subcommand. As we saw any option you defined inside your
 pipeline is also exposed on the CLI, and shown by `my-exe --help`. Specifying it
 on the CLI overrides the value set in the YAML config file.
 
-A note about the `FullConfig` option you saw earlier. `porcupine` is quite a
+A note about the `FullConfig` option you saw earlier. Porcupine is quite a
 high-level tool and handles configuration file and CLI parsing for you, and this
 is what `FullConfig` triggers. But this is not mandatory, you also have
-`ConfigFileOnly` for when you don't want `porcupine` to parse the CLI arguments
+`ConfigFileOnly` for when you don't want Porcupine to parse the CLI arguments
 (this is for the cases when your pipeline isn't the entirety of your program, or
 when you want for some reason to parse CLI yourself) and `NoConfig` for when you
 don't want any source of configuration to be read. When CLI parsing is
@@ -267,7 +267,7 @@ activated, you need to provide a default value for the pipeline: indeed using
 
 # Philosophy of use
 
-`porcupine`'s intent is to make it easy to separate clearly the work between 3
+Porcupine's intent is to make it easy to separate clearly the work between 3
 persons:
 
 - The _software developer_ will be in charge of determining how the data gets
@@ -290,7 +290,7 @@ persons:
   outside). But more on that later.
 
 Of course, these can be the same person. Also, you don't need to plan on running
-anything in the cloud to start benefiting from `porcupine`. But we want to support
+anything in the cloud to start benefiting from Porcupine. But we want to support
 workflows where these three persons are distinct people, each one with her
 different set of skills.
 
@@ -306,7 +306,7 @@ json file named `Analysis-{userId}.json`. This very basic process is repeated
 once per user ID to consider.
 
 Let's build and run that example. In a fresh clone and from the root directory
-of `porcupine`:
+of Porcupine:
 
 ```sh
 $ stack build porcupine-core:example1
@@ -483,7 +483,7 @@ flat list of every ID to consider with `enumIndices`, and finally we map (in
 parallel) over that list with `parMapTask_`, repeating our `analyseOneUser` once
 per user ID in input. Note the first argument `"userId"`: this is the
 *repetition index* (you need OverloadedStrings). Every function that repeats
-tasks in `porcupine` will take one, and this is where the `{userId}` variable that
+tasks in Porcupine will take one, and this is where the `{userId}` variable that
 we saw in the YAML config comes from. It works first by changing the default
 mappings of the VirtualFiles accessed by `analyseOneUser` so that each of them
 now contains the `{userId}` variable, and second by looking up that variable in
@@ -530,7 +530,7 @@ VirtualFiles specify their paths explicitly.
 
 # Specific features
 
-Aside from the general usage exposed previously, `porcupine` proposes several
+Aside from the general usage exposed previously, Porcupine proposes several
 features to facilitate iterative development of pipelines and reusability of
 tasks.
 
@@ -574,10 +574,10 @@ like [jsonnet](https://jsonnet.org/).
 
 ## Ahead-of-time sanity checks and overview of resources
 
-`porcupine` allows you to have a preliminary view of _every_ resource needed at
+Porcupine allows you to have a preliminary view of _every_ resource needed at
 some point by your pipeline, every parameter customizable in you tasks, before
 anything needs to run. This is extremely powerful as this permits a much, much
-larger amount of checks to be carried out ahead of time. Notably `porcupine`
+larger amount of checks to be carried out ahead of time. Notably Porcupine
 doesn't allow a virtual file to be mapped to a physical file that doesn't have
 an expected extension.
 
@@ -613,7 +613,7 @@ and a record of options controlling the way the simulation happens (which solver
 to use, which parameters to give it, etc). What exactly is the _input_ and what
 exactly is the _configuration_ here?  One could argue that both could be
 considered input, or that both could be considered configuration. Our rule of
-the thumb in `porcupine` is that everything than can be given a default value and
+the thumb in Porcupine is that everything than can be given a default value and
 a help string should be displayed in the yaml configuration file (like the
 `users` field in example1), and should generate a CLI flag to be able to alter
 it on the fly. Everything else should just be looked in external files. _But
@@ -637,7 +637,7 @@ file that doesn't exist.
 Every VirtualFile (be it read from embedded data of from external files) can be
 read from _several_ sources instead of one. That requires one thing though: that
 the type `B` you read from a `VirtualFile A B` is an instance of Semigroup (call
-`usesLayeredMapping` so your VirtualFile registers that). This way, `porcupine`
+`usesLayeredMapping` so your VirtualFile registers that). This way, Porcupine
 has a way to merge all these inputs into just one resource. It can come very
 handy, and can be used depending on your pipeline to organize your input
 resources into several layers, "stacked" so that the first layers' content are
@@ -687,7 +687,7 @@ from. The connection between our dataSource and the REST API will be made in the
 
 ## Logging
 
-`porcupine` uses `katip` to do logging. It's quite a versatile tool, and we
+Porcupine uses `katip` to do logging. It's quite a versatile tool, and we
 benefit from it. By default, logging uses a custom readable format. You can
 switch to more standard formats using:
 
@@ -695,7 +695,7 @@ switch to more standard formats using:
 $ my-exe --log-format json
 ```
 
-In any case, any executable using `porcupine` will output a log whose verbosity
+In any case, any executable using Porcupine will output a log whose verbosity
 can be controlled with `-q`/`-v` (increase/decrease the minimal severity level
 that will be displayed, default being Notice). The `-c` (or `--context-verb`)
 parameter controls the amount of context that will be displayed per item logged,
