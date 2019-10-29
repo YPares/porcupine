@@ -86,7 +86,16 @@ flags:
   useMonadBayes:
     manual: True
     default: False  # monad-bayes isn't on Hackage
-  
+
+tests:
+  tasty-tests:
+    source-dirs: test
+    main: Tests.hs
+    dependencies:
+      - porcupine-core
+      - tasty
+      - tasty-hunit
+    
 executables:
   example0:
     source-dirs: examples/example0
