@@ -95,6 +95,8 @@ tests:
       - porcupine-core
       - tasty
       - tasty-hunit
+      - tasty-hedgehog
+      - hedgehog
     
 executables:
   example0:

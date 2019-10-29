@@ -1,9 +1,11 @@
 import Test.Tasty
-import Test.Tasty.HUnit
-import System.TaskPipeline.PTask
+import qualified Test.Porcupine.PTask as PTask
+
 
 main :: IO ()
 main = defaultMain tests
 
 tests :: TestTree
-tests = testGroup "tests" []
+tests = testGroup "tests"
+  [ PTask.tests
+  ]

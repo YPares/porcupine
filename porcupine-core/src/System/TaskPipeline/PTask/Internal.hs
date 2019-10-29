@@ -292,15 +292,16 @@ identityVar = "FUNFLOW_IDENTITY"
 
 -- | Runs a 'RunnableTask' from a 'DataAccessTree'
 execRunnableTask
-  :: (KatipContext m, MonadMask m, MonadBaseControl IO m)
-  => FunflowOpts m -> DataAccessTree m -> RunnableTask m a r -> a -> m r
-execRunnableTask ffopts dataTree runnableTask input =
-  withTaskState ffopts dataTree $ \initState -> do
-    $(logTM) NoticeS $ logStr $ case flowIdentity ffopts of
+  :: (LogMask m, MonadBaseControl IO m)
+  => FunflowOpts m -> DataAccessTree m -> RunnableTask m a b -> a -> m b
+execRunnableTask ffopts dataTree runnableTask input = do
+  -- Katip context is required anyway due to withTaskState:
+  $(logTM) NoticeS $ logStr $ case flowIdentity ffopts of
       Just i -> "Using funflow store at '" ++ storePath ffopts ++ "' with identity "
                 ++ show i ++ "." ++
                 (case remoteCacheLoc ffopts of
                    Just l -> "Using remote cache at " ++ show l
                    _      -> "")
       Nothing -> identityVar ++ " not specified. The cache will not be used."
+  withTaskState ffopts dataTree $ \initState ->
     execRunnableTaskFromTaskState runnableTask initState input
