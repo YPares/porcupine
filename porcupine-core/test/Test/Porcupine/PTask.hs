@@ -16,8 +16,12 @@ import Hedgehog.Internal.Property (unGroupName, unPropertyName)
 import Control.Monad.Trans
 import Control.Arrow
 import Control.Category
+import Control.Lens
+import Data.String
 import Prelude hiding (id, (.))
+import Katip
 
+import System.TaskPipeline.PTask
 import System.TaskPipeline.PTask.Internal
 import System.TaskPipeline.Run (simpleRunPTask)
 import System.TaskPipeline.Logger
@@ -38,14 +42,21 @@ prop_runnable_id = property $ do
   x <- forAll $ Gen.int Range.linearBounded
   runnableResultIs id mempty x (=== x)
 
-prop_runnable_runtime_state :: Property
-prop_runnable_runtime_state = property $ do
-  runnableResultIs t mempty (3::Int) (=== 3)
-  where
-    t = withRunnableState (\state x -> return x)
-
 hunitTests :: [TestTree]
-hunitTests = []
+hunitTests =
+  [ testGroup "RunnableTasks basic functions"
+    [ --runnableResultIs (withRunnableState $ const )
+    ]
+  , testGroup "Tasks/katip integration"
+    [ testCase "Namespace is transmitted correctly" $
+      runnableResultIs
+        (view taskRunnablePart $ addNamespaceToTask "test-ns" $
+           runnableWithoutReqs $
+           withRunnableState $ \st _ ->
+             return $ st ^. ptrsKatipNamespace)
+        mempty () (@=? (Namespace ["main", "test-ns"]))
+    ]
+  ]
 
 tests :: TestTree
 tests = testGroup (unGroupName (groupName hhGroup))
