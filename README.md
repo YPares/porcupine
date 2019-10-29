@@ -19,5 +19,5 @@ to those of data/software engineers.
 
 # Resources
 
-- [Porcupine's github pages](https://tweag.github.io/porcupine/)
+- [Porcupine's github pages](https://tweag.github.io/porcupine/), with an overview and tutorials
 - [Introduction to porcupine @Haskell Exchange, in London, October 11th, 2019](https://skillsmatter.com/skillscasts/14236-porcupine-flows-your-rows-with-arrows)
