@@ -3,7 +3,6 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# OPTIONS_GHC "-fno-warn-missing-signatures" #-}
 
 module Test.Porcupine.PTask where
 
@@ -26,19 +25,24 @@ import Data.Locations.LocationTree
 import System.TaskPipeline.PTask
 import System.TaskPipeline.PTask.Internal
 import System.TaskPipeline.PorcupineTree
-import System.TaskPipeline.Run (simpleRunPTask)
+import System.TaskPipeline.Run (simpleRunPTask, SimplePTaskM)
 import System.TaskPipeline.Logger
 
 
+taskResultIs :: MonadIO m
+             => PTask SimplePTaskM a b
+             -> a
+             -> (b -> m b')
+             -> m b'
 taskResultIs task inp f =
   liftIO (simpleRunPTask task inp) >>= f
 
 runnableResultIs :: (MonadIO m)
-                 => RunnableTask (KatipContextT IO) a a1
+                 => RunnableTask (KatipContextT IO) a b
                  -> DataAccessTree (KatipContextT IO)
                  -> a
-                 -> (a1 -> m b)
-                 -> m b
+                 -> (b -> m b')
+                 -> m b'
 runnableResultIs task dataTree inp f =
   liftIO (
     runLogger "execRunnableTask" warningsAndErrorsLoggerScribeParams $
