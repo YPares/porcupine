@@ -271,7 +271,7 @@ Porcupine's intent is to make it easy to separate clearly the work between 3
 persons:
 
 - The _software developer_ will be in charge of determining how the data gets
-  read and written in the end. He will target the _serials_ framework, and
+  read and written in the end. They will target the _serials_ framework, and
   propose new datatypes (data frames, matrices, vectors, trees, etc.) and ways
   to write and read them to the various storage technologies.
 - The _scientist_ will determine how to carry out the data analyses, extract
