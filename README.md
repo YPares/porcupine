@@ -7,11 +7,11 @@ https://gitter.im/tweag/porcupine](https://badges.gitter.im/tweag/porcupine.svg)
 
 Porcupine is a tool aimed at people who want to express in Haskell general data manipulation and analysis tasks,
 
-1. in a way that is agnostic from the source of the input data and from the
+1. In a way that is agnostic from the source of the input data and from the
 destination of the end results,
-2. such that a pipeline can be re-executed in a different environment and on
+2. So that a pipeline can be re-executed in a different environment and on
 different data without recompiling, by just a shift in its configuration,
-3. while facilitating code reusability (any task can always be reused as part
+3. While facilitating code reusability (any task can always be reused as part
 of a bigger pipeline).
 
 Porcupine specifically targets teams containing skills ranging from those of
@@ -25,14 +25,6 @@ data scientists to those of data/software engineers.
 
 ## F.A.Q.
 
-#### Is Porcupine related to [Hedgehog](http://hackage.haskell.org/package/hedgehog)?
-
-Can see where that comes from ^^, but nope, not all
-[R.O.U.S.s](http://imoviequotes.com/wp-content/uploads/2014/11/10-02-The-Princess-Bride-quotes.jpg)
-are related.
-
-Although we do have a few tests using Hedgehog (and will possibly add more).
-
 #### How are Porcupine and [Funflow](https://github.com/tweag/funflow) related?
 
 Porcupine uses Funflow internally. Funflow's API is centered around the
@@ -42,11 +34,11 @@ too, so usual funflow operations are usable on PTasks too.
 Aside from that, funflow and porcupine don't operate at the same level of
 abstraction: funflow is for software devs building applications the way they
 want, while porcupine is higher-level and more opinionated and featureful, and
-targets software devs at the same time as data analysts. (although porcupine
+targets software devs at the same time as data analysts. However, porcupine
 doesn't make any choice in terms of computation/visualization library or
-anything, that part is still up to the user)
+anything. That part is still up to the user.
 
-But as the caching/arrow API is the same, as a software dev you can start by
+But since the caching/arrow API is the same, as a software dev you can start by
 using porcupine, and if you realize you don't actually need the high level
 features (config, rebinding of inputs, logging, etc) then drop the dependency
 and transition to funflow's level. The main goal of porcupine is to be a tool to
@@ -65,3 +57,10 @@ however you please, the goal being to turn it into a `DataAccessTree`) and a
 `DataAccessTree` to feed it. Although note that this part of the API might
 change a bit in future versions.
 
+#### Is Porcupine related to [Hedgehog](http://hackage.haskell.org/package/hedgehog)?
+
+Can see where that comes from ^^, but nope, not all
+[R.O.U.S.s](http://imoviequotes.com/wp-content/uploads/2014/11/10-02-The-Princess-Bride-quotes.jpg)
+are related. (And also, hedgehogs aren't rodents)
+
+Although we do have a few tests using Hedgehog (and will possibly add more).
