@@ -27,7 +27,9 @@ data scientists to those of data/software engineers.
 
 ### Is Porcupine related to [Hedgehog](http://hackage.haskell.org/package/hedgehog)?
 
-Can see where that comes from ^^, but nope, not at all :)
+Can see where that comes from ^^, but nope, not all
+[R.O.U.S](http://imoviequotes.com/wp-content/uploads/2014/11/10-02-The-Princess-Bride-quotes.jpg)
+are related.
 
 Although we do have a few tests using Hedgehog (and will possibly add more).
 
