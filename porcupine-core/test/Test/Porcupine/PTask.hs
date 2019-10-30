@@ -1,6 +1,8 @@
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE TypeApplications #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 {-# OPTIONS_GHC "-fno-warn-missing-signatures" #-}
 
 module Test.Porcupine.PTask where
@@ -13,16 +15,17 @@ import qualified Hedgehog.Gen as Gen
 import qualified Hedgehog.Range as Range
 import Hedgehog.Internal.Property (unGroupName, unPropertyName)
 
-import Control.Monad.Trans
-import Control.Arrow
+import Control.Monad.IO.Class
 import Control.Category
 import Control.Lens
-import Data.String
+import Data.Typeable
 import Prelude hiding (id, (.))
 import Katip
 
+import Data.Locations.LocationTree
 import System.TaskPipeline.PTask
 import System.TaskPipeline.PTask.Internal
+import System.TaskPipeline.PorcupineTree
 import System.TaskPipeline.Run (simpleRunPTask)
 import System.TaskPipeline.Logger
 
@@ -30,6 +33,12 @@ import System.TaskPipeline.Logger
 taskResultIs task inp f =
   liftIO (simpleRunPTask task inp) >>= f
 
+runnableResultIs :: (MonadIO m)
+                 => RunnableTask (KatipContextT IO) a a1
+                 -> DataAccessTree (KatipContextT IO)
+                 -> a
+                 -> (a1 -> m b)
+                 -> m b
 runnableResultIs task dataTree inp f =
   liftIO (
     runLogger "execRunnableTask" warningsAndErrorsLoggerScribeParams $
@@ -42,11 +51,15 @@ prop_runnable_id = property $ do
   x <- forAll $ Gen.int Range.linearBounded
   runnableResultIs id mempty x (=== x)
 
+pureReadDataAccessNode :: forall a. (Typeable a) => a -> DataAccessNode (KatipContextT IO)
+pureReadDataAccessNode x =
+  DataAccessNode [] (const $ DataAccessor @(KatipContextT IO) @a @a
+                             (const $ return ()) (return x) (Right []))
+
 hunitTests :: [TestTree]
 hunitTests =
   [ testGroup "RunnableTasks basic functions"
-    [ --runnableResultIs (withRunnableState $ const )
-    ]
+    []
   , testGroup "Tasks/katip integration"
     [ testCase "Namespace is transmitted correctly" $
       runnableResultIs
@@ -55,6 +68,23 @@ hunitTests =
            withRunnableState $ \st _ ->
              return $ st ^. ptrsKatipNamespace)
         mempty () (@=? (Namespace ["main", "test-ns"]))
+    ]
+  , testGroup "Modifying task context" $
+    [ testGroup "taskInSubtree" $
+      let subpath = ["a","b","c"]
+          (reqs,runnable) = view splitTask $ taskInSubtree subpath $
+            makeTask mempty $ \root () -> case _locTreeNodeTag root of
+              DataAccessNode _ accessFn -> daPerformRead (accessFn mempty) >>= return . cast
+              _ -> fail "Root node is empty"
+          mkTree n =
+            folderNode ["a" :/ folderNode ["b" :/ folderNode ["c" :/ locNode n []]]]
+          da = pureReadDataAccessNode (10::Int)
+      in
+        [ testCase "Result" $
+          runnableResultIs runnable (mkTree da) () (@=? (Just (10::Int)))
+        , testCase "Requirements" $
+          (const () <$> reqs) @=? mkTree ()
+        ]
     ]
   ]
 

@@ -182,8 +182,8 @@ data DataAccessNode m = MbDataAccessNode [SomeLocWithVars m] (First (SomeDataAcc
   -- Data access function isn't a semigroup, hence the use of First here instead
   -- of Maybe.
 -- | A non-empty 'DataAccessNode'
-pattern DataAccessNode l x = MbDataAccessNode l (First (Just (SomeDataAccess x)))
-
+pattern DataAccessNode {danodeLayers, danodeAccessFn} =
+  MbDataAccessNode danodeLayers (First (Just (SomeDataAccess danodeAccessFn)))
 
 instance Semigroup VirtualFileNode where
   MbVirtualFileNode ats vf <> MbVirtualFileNode ats' vf' =
