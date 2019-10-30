@@ -563,11 +563,16 @@ instance LogItem DataAccessContext where
     | v >= V1   = SomeKeys ["locationAccessed", "locationAccessType"]
     | otherwise = SomeKeys []
 
+-- | Where the PhysicalFileNodes are turned into DataAccessNodes. This is where
+-- we create the actions that will pull and/or write data from the
+-- locations. This is also where we handle the merging of the layers if several
+-- physical locations (layers) are mapped to a VirtualFile to be read from.
 makeDataAccessor
   :: forall m a b a' b'. (LogMask m)
   => String  -- ^ VirtualFile path (for doc)
   -> VirtualFile a' b'  -- ^ The virtual file
-  -> [SomeLocWithVars m]  -- ^ Every mapped layer (for doc)
+  -> [SomeLocWithVars m]  -- ^ Every mapped layer (only used by makeDataAccessor
+                          -- for documentation purposes)
   -> Maybe b -- ^ Default value (used as base layer)
   -> LayeredReadScheme b  -- ^ How to handle the different layers
   -> [(ToAtomicFn a, SomeLocWithVars m)]  -- ^ Layers to write to
