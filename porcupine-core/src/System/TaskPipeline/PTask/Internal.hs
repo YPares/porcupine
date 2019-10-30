@@ -32,8 +32,10 @@ module System.TaskPipeline.PTask.Internal
   , withRunnableState
   , withRunnableState'
   , execRunnableTask
+  , execRunnableTaskFromTaskState
   , runnableWithoutReqs
   , withTaskState
+  , identityVar
   ) where
 
 import           Prelude                                     hiding (id, (.))
@@ -59,8 +61,8 @@ import           Data.Locations.Accessors
 import           Data.Locations.FunflowRemoteCache
 import           Data.Locations.LocationTree
 import           Data.Locations.LogAndErrors
+import           Katip
 import           Katip.Core                                  (Namespace)
-import           Katip.Monadic
 import           Path
 import           System.TaskPipeline.PorcupineTree
 
@@ -100,20 +102,6 @@ type RunnableTask m =
 -- | The constraints that must be satisfied by the base monad m so that a @PTask
 -- m@ can be run
 type CanRunPTask m = (MonadBaseControl IO m, LogMask m)
-
--- | Runs a 'RunnableTask' given its state
-execRunnableTask
-  :: (CanRunPTask m)
-  => RunnableTask m a b -> PTaskState m -> a -> m b
-execRunnableTask
-  (AppArrow act)
-  st@PTaskState{_ptrsFunflowRunConfig=FunflowRunConfig{..}}
-  input =
-  flip evalStateT [] $
-    runFlowEx _ffrcCoordinator _ffrcCoordinatorConfig
-              _ffrcContentStore (LiftCacher _ffrcRemoteCache) id _ffrcFlowIdentity
-              (runReader act st)
-              input
 
 -- | A task is an Arrow than turns @a@ into @b@. It runs in some monad @m@.
 -- Each 'PTask' will expose its requirements in terms of resource it wants to
@@ -284,3 +272,36 @@ withTaskState ffPaths tree f =
     ctx <- getKatipContext
     ns  <- getKatipNamespace
     f $ PTaskState ctx ns ffconfig tree
+
+-- | Runs a 'RunnableTask' given its state
+execRunnableTaskFromTaskState
+  :: (CanRunPTask m)
+  => RunnableTask m a b -> PTaskState m -> a -> m b
+execRunnableTaskFromTaskState
+  (AppArrow act)
+  st@PTaskState{_ptrsFunflowRunConfig=FunflowRunConfig{..}}
+  input =
+  flip evalStateT [] $
+    runFlowEx _ffrcCoordinator _ffrcCoordinatorConfig
+              _ffrcContentStore (LiftCacher _ffrcRemoteCache) id _ffrcFlowIdentity
+              (runReader act st)
+              input
+
+identityVar :: String
+identityVar = "FUNFLOW_IDENTITY"
+
+-- | Runs a 'RunnableTask' from a 'DataAccessTree'
+execRunnableTask
+  :: (LogMask m, MonadBaseControl IO m)
+  => FunflowOpts m -> DataAccessTree m -> RunnableTask m a b -> a -> m b
+execRunnableTask ffopts dataTree runnableTask input = do
+  -- Katip context is required anyway due to withTaskState:
+  $(logTM) NoticeS $ logStr $ case flowIdentity ffopts of
+      Just i -> "Using funflow store at '" ++ storePath ffopts ++ "' with identity "
+                ++ show i ++ "." ++
+                (case remoteCacheLoc ffopts of
+                   Just l -> "Using remote cache at " ++ show l
+                   _      -> "")
+      Nothing -> identityVar ++ " not specified. The cache will not be used."
+  withTaskState ffopts dataTree $ \initState ->
+    execRunnableTaskFromTaskState runnableTask initState input

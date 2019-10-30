@@ -112,12 +112,14 @@ runLocalPipelineTask configMethod =
 
 -- | Runs a PTask without reading any configuration nor parsing the CLI, with
 -- only local files being accessible, and using PWD as the root location for all
--- files read and written.
+-- files read and written. Will log only warnings and errors.
 simpleRunPTask
   :: PTask SimplePTaskM i o
   -> i
   -> IO o
-simpleRunPTask = runLocalPipelineTask (NoConfig "simpleRunPTask" ".")
+simpleRunPTask =
+  runPipelineTask (NoConfig "simpleRunPTask" ".")
+                  (baseContextsWithScribeParams "simpleRunPTask" warningsAndErrorsLoggerScribeParams)
 
 -- | Runs the required 'PipelineCommand' on an 'PTask'
 runPipelineCommandOnPTask
@@ -133,15 +135,7 @@ runPipelineCommandOnPTask ptask input cmd defRetVal physTree ffopts = do
   case cmd of
     RunPipeline -> do
       dataTree <- traverse resolveDataAccess physTree
-      withTaskState ffopts dataTree $ \initState -> do
-        $(logTM) NoticeS $ logStr $ case flowIdentity ffopts of
-          Just i -> "Using funflow store at '" ++ storePath ffopts ++ "' with identity "
-            ++ show i ++ "." ++
-            (case remoteCacheLoc ffopts of
-               Just l -> "Using remote cache at " ++ show l
-               _      -> "")
-          Nothing -> identityVar ++ " not specified. The cache will not be used."
-        execRunnableTask (ptask ^. taskRunnablePart) initState input
+      execRunnableTask ffopts dataTree (ptask ^. taskRunnablePart) input
     ShowTree root showOpts -> do
       liftIO $ putStrLn $ prettyLocTree root $
         case physTree ^. inLocTree root of
@@ -152,11 +146,10 @@ runPipelineCommandOnPTask ptask input cmd defRetVal physTree ffopts = do
         Nothing -> error "NOT EXPECTED: runPipelineCommandOnPTask(ShowTree) was not given a default\
                          \value to return. Please submit this as a bug."
 
-storeVar,remoteCacheVar,identityVar,coordVar :: String
+storeVar,remoteCacheVar,coordVar :: String
 storeVar       = "FUNFLOW_STORE"
 remoteCacheVar = "FUNFLOW_REMOTE_CACHE"
 coordVar       = "FUNFLOW_COORDINATOR"
-identityVar    = "FUNFLOW_IDENTITY"
 
 -- | Reads the relevant environment variables to construct the set of parameters
 -- necessary to initialize funflow

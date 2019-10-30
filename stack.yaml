@@ -54,7 +54,7 @@ extra-deps:
 - json-stream-0.4.2.4
 - hvega-0.4.1.0
 - git: https://github.com/tweag/funflow
-  commit: f676ac6e082197647686297d5a32db831fbee843
+  commit: 3166c357cd455607e4b5081a1019557e7bbf99f6
   subdirs:
     - funflow
 - git: https://github.com/tweag/monad-bayes

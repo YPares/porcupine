@@ -94,7 +94,7 @@ mappingRunnableOverStream runnable =
         return $
           firstResult `S.cons` S.mapM (go state) inputStream'
   where
-    go = execRunnableTask runnable
+    go = execRunnableTaskFromTaskState runnable
          -- NOTE: We "cheat" here: we run the funflow layer of the inner
          -- task. We should find a way not to have to do that, but when using
          -- Streaming (which delays effects in a monad) it's really problematic.
