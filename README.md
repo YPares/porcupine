@@ -53,3 +53,13 @@ pipeline/analytics application while keeping the boilerplate (config, I/O) to a
 minimum, while providing a common framework if you have code (tasks, serializing
 functions) to share between several applications of that type.
 
+### I like the idea of tasks that automatically merge their requirements, but I want to deal with configuration, CLI and everything myself. Can I do that?
+
+Of course! That means you would replace the call to `runPipelineTask` by custom
+code. You want to have a look at the `splitTask` lens. It will separate a task
+in its two components: it's `VirtualTree` of requirements (which you can treat
+however you please, the goal being to turn it into a `DataAccessTree`) and a
+`RunnableTask` which you can feed to `execRunnableTask` once you have composed a
+`DataAccessTree` to feed it. Although note that this part of the API might
+change a bit in future versions.
+

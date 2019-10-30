@@ -29,6 +29,8 @@ module System.TaskPipeline.Run
   , simpleRunPTask
   , runPipelineTaskWithExceptionHandlers
   , runPipelineCommandOnPTask
+  , splitTask
+  , execRunnableTask
   ) where
 
 import           Control.Lens
