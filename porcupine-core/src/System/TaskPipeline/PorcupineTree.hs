@@ -546,7 +546,7 @@ newtype TaskConstructionError =
   deriving (Show)
 instance Exception TaskConstructionError
 
--- TODO: Is this dead-code?
+-- | Used to add context to log messages
 data DataAccessContext = DAC
   { locationAccessed     :: Value
   , locationAccessType   :: VFNodeAccessType
