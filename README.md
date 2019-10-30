@@ -17,23 +17,23 @@ of a bigger pipeline).
 Porcupine specifically targets teams containing skills ranging from those of
 data scientists to those of data/software engineers.
 
-# Resources
+## Resources
 
 - [Porcupine GitHub pages](https://tweag.github.io/porcupine/), with an overview and tutorials
 - [Introduction to porcupine @Haskell Exchange, in London, October 11th, 2019](https://skillsmatter.com/skillscasts/14236-porcupine-flows-your-rows-with-arrows)
 - [Porcupine announcement blog post](https://www.tweag.io/posts/2019-10-30-porcupine.html)
 
-# F.A.Q.
+## F.A.Q.
 
-### Is Porcupine related to [Hedgehog](http://hackage.haskell.org/package/hedgehog)?
+#### Is Porcupine related to [Hedgehog](http://hackage.haskell.org/package/hedgehog)?
 
 Can see where that comes from ^^, but nope, not all
-[R.O.U.S](http://imoviequotes.com/wp-content/uploads/2014/11/10-02-The-Princess-Bride-quotes.jpg)
+[R.O.U.S.s](http://imoviequotes.com/wp-content/uploads/2014/11/10-02-The-Princess-Bride-quotes.jpg)
 are related.
 
 Although we do have a few tests using Hedgehog (and will possibly add more).
 
-### How are Porcupine and [Funflow](https://github.com/tweag/funflow) related?
+#### How are Porcupine and [Funflow](https://github.com/tweag/funflow) related?
 
 Porcupine uses Funflow internally. Funflow's API is centered around the
 ArrowFlow class. PTask (porcupine's main computation unit) implements ArrowFlow
@@ -55,11 +55,11 @@ pipeline/analytics application while keeping the boilerplate (config, I/O) to a
 minimum, while providing a common framework if you have code (tasks, serializing
 functions) to share between several applications of that type.
 
-### I like the idea of tasks that automatically merge their requirements, but I want to deal with configuration, CLI and everything myself. Can I do that?
+#### I like the idea of tasks that automatically maintain and merge their requirements when they compose, but I want to deal with configuration, CLI and everything myself. Can I do that?
 
 Of course! That means you would replace the call to `runPipelineTask` by custom
 code. You want to have a look at the `splitTask` lens. It will separate a task
-in its two components: it's `VirtualTree` of requirements (which you can treat
+in its two components: its `VirtualTree` of requirements (which you can treat
 however you please, the goal being to turn it into a `DataAccessTree`) and a
 `RunnableTask` which you can feed to `execRunnableTask` once you have composed a
 `DataAccessTree` to feed it. Although note that this part of the API might
