@@ -1,5 +1,5 @@
-{-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE RecordWildCards            #-}
 {-# OPTIONS_GHC -fno-warn-name-shadowing #-}
 
 module System.TaskPipeline.Repetition.Internal
@@ -15,7 +15,7 @@ import           Control.Monad
 import           Data.Aeson
 import qualified Data.HashMap.Strict                as HM
 import           Data.Locations
-import           Data.String                        (IsString(..))
+import           Data.String                        (IsString (..))
 import           Katip
 import           Prelude                            hiding (id, (.))
 import           System.TaskPipeline.PorcupineTree

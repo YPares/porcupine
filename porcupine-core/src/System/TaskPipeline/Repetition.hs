@@ -17,13 +17,13 @@ module System.TaskPipeline.Repetition
   ) where
 
 import           Control.Applicative
-import           Control.Arrow.Free                       (mapA)
-import           Control.Lens                             hiding ((.=))
+import           Control.Arrow.Free                      (mapA)
+import           Control.Lens                            hiding ((.=))
 import           Control.Monad
 import           Data.Aeson
-import           Data.Aeson.Types                         (Parser)
-import qualified Data.Text                                as T
-import           Prelude                                  hiding ((.))
+import           Data.Aeson.Types                        (Parser)
+import qualified Data.Text                               as T
+import           Prelude                                 hiding ((.))
 import           System.TaskPipeline.PTask
 import           System.TaskPipeline.Repetition.Internal
 
@@ -114,6 +114,6 @@ enumIndices (IndexRange (OneOrSeveral rs)) = concatMap toL rs
     toL (OneIndex i)   = [i]
     toL (OneRange a b) = [a..b]
 
--- | Gives a list of TaskRepetitionIndex 
+-- | Gives a list of TaskRepetitionIndex
 enumTRIndices :: (Enum i, Show i) => IndexRange i -> [TRIndex]
 enumTRIndices = map (TRIndex . show) . enumIndices

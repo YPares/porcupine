@@ -1,3 +1,4 @@
+{-# LANGUAGE Arrows                #-}
 {-# LANGUAGE DataKinds             #-}
 {-# LANGUAGE DeriveAnyClass        #-}
 {-# LANGUAGE DeriveGeneric         #-}
@@ -6,39 +7,38 @@
 {-# LANGUAGE OverloadedLabels      #-}
 {-# LANGUAGE OverloadedStrings     #-}
 {-# LANGUAGE ScopedTypeVariables   #-}
-{-# LANGUAGE TypeApplications      #-}
 {-# LANGUAGE TupleSections         #-}
-{-# LANGUAGE Arrows #-}
+{-# LANGUAGE TypeApplications      #-}
 {-# OPTIONS_GHC -Wwarn -Wno-missing-signatures -Wno-name-shadowing #-}
 
 -- This example is loosely based on the series of blog posts by Thomas Wiecki
 -- https://twiecki.io/blog/2014/03/17/bayesian-glms-3/ .
 
+import qualified Control.Foldl                as L
 import           Control.Monad
+import           Control.Monad.Bayes.Class
+import           Control.Monad.Bayes.Sampler
+import           Control.Monad.Bayes.Traced
+import           Control.Monad.Bayes.Weighted
 import           Data.Aeson
-import qualified Data.Csv as Csv
+import qualified Data.Csv                     as Csv
 import           Data.DocRecord
-import qualified Data.Text                     as T
-import qualified Data.Vector                   as V
-import Data.Functor
+import           Data.Functor
+import qualified Data.Text                    as T
+import qualified Data.Vector                  as V
 import           GHC.Generics
+import           Graphics.Vega.VegaLite       as VL
+import           Numeric.Log
 import           Porcupine
-import           Prelude                       hiding (id, (.))
-import qualified Control.Foldl as L
-import           Graphics.Vega.VegaLite        as VL
-import Control.Monad.Bayes.Class
-import Control.Monad.Bayes.Sampler
-import Control.Monad.Bayes.Weighted
-import Control.Monad.Bayes.Traced
-import Numeric.Log
+import           Prelude                      hiding (id, (.))
 
-import Plotting  -- In the same folder
+import           Plotting
 
 
 data RadonObservation = RadonObservation
-  { state :: !T.Text
-  , county :: !T.Text
-  , basement :: !T.Text
+  { state     :: !T.Text
+  , county    :: !T.Text
+  , basement  :: !T.Text
   , log_radon :: !Double }
   deriving (Generic, FromJSON, ToJSON
            ,Csv.FromNamedRecord, Csv.ToNamedRecord, Csv.DefaultOrdered)
@@ -68,8 +68,8 @@ vegaliteSerials =
 
 writeViz name = writeData (dataSink ["viz", name] vegaliteSerials)
 
-data Summary = Summary { numRows :: Int
-                       , uniqueStates :: [T.Text]
+data Summary = Summary { numRows           :: Int
+                       , uniqueStates      :: [T.Text]
                        , numUniqueCounties :: Int }
   deriving (Show)
 
@@ -79,10 +79,10 @@ foldSummary = Summary <$> L.length
                       <*> (L.premap county L.nub <&> length)
 
 data ModelParams = ModelParams
-  { rateWithB :: Double -- ^ ratio of houses with and without basement
-  , radonWithB :: Double -- ^ radon level in houses with basement
+  { rateWithB     :: Double -- ^ ratio of houses with and without basement
+  , radonWithB    :: Double -- ^ radon level in houses with basement
   , radonWithoutB :: Double -- ^ radon level in houses without basement
-  , noiseWithB :: Double -- ^ variation around radonWithB
+  , noiseWithB    :: Double -- ^ variation around radonWithB
   , noiseWithoutB :: Double -- ^ variation around radonWithoutB
   } deriving (Eq, Show, Generic, ToJSON, FromJSON)
 
@@ -95,7 +95,7 @@ priorModel =
                 <*> uniform 0 10
 
 likelihood :: ModelParams -> (Bool, Double) -> Log Double
-likelihood params (hasBasement, radonObserved) = 
+likelihood params (hasBasement, radonObserved) =
     case hasBasement of
         True -> let radonModel = radonWithB params
                     noiseModel = noiseWithB params
@@ -117,7 +117,7 @@ posteriorForward model = do
     params <- model
     hasBasement <- bernoulli (rateWithB params)
     value <- case hasBasement of
-        True -> normal (radonWithB params) (noiseWithB params)
+        True  -> normal (radonWithB params) (noiseWithB params)
         False -> normal (radonWithoutB params) (noiseWithoutB params)
     return (hasBasement, value)
 
@@ -132,7 +132,7 @@ sampleFlatLinRegModel = proc () -> do
       xLbl = "has basement"
       yLbl = "log radon"
   logInfo -< show summary
-  
+
   vizSize <- getOption ["viz", "options"]
              (docField @"vizSize" (400,400) "Width & height of visualisations") -< ()
   writeViz "1" -< plot vizSize
@@ -155,7 +155,7 @@ sampleFlatLinRegModel = proc () -> do
     (S $ scatter2 xLbl yLbl (-3,5))
     (Cols [(xLbl, VL.Booleans xModel)
           ,(yLbl, VL.Numbers yModel)])
-  
+
 
 runIn topdir = runPipelineTask
   (FullConfig "example-radon"  -- Name of the executable (for --help)

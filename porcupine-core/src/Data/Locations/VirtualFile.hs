@@ -1,11 +1,11 @@
-{-# LANGUAGE FlexibleContexts    #-}
-{-# LANGUAGE GADTs               #-}
-{-# LANGUAGE Rank2Types          #-}
-{-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE TemplateHaskell     #-}
-{-# LANGUAGE TypeOperators       #-}
-{-# LANGUAGE DataKinds           #-}
+{-# LANGUAGE DataKinds             #-}
+{-# LANGUAGE FlexibleContexts      #-}
+{-# LANGUAGE GADTs                 #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE Rank2Types            #-}
+{-# LANGUAGE ScopedTypeVariables   #-}
+{-# LANGUAGE TemplateHaskell       #-}
+{-# LANGUAGE TypeOperators         #-}
 
 module Data.Locations.VirtualFile
   ( LocationTreePathItem
@@ -203,9 +203,9 @@ describeVFileAsSourceSink vf =
     sourceSink = case vfileDescIntent vfd of
       Nothing -> ""
       Just i -> case i of
-        VFForWriting -> "DATA SINK"
-        VFForReading -> "DATA SOURCE"
-        VFForRW -> "BIDIR VFILE"
+        VFForWriting    -> "DATA SINK"
+        VFForReading    -> "DATA SOURCE"
+        VFForRW         -> "BIDIR VFILE"
         VFForCLIOptions -> "OPTION SOURCE"
     vfd = getVFileDescription vf
 

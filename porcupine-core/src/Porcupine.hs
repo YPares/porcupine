@@ -9,7 +9,7 @@ module Porcupine
   , module Porcupine.Run )
 where
 
-import Porcupine.Serials
-import Porcupine.VFiles
-import Porcupine.Tasks
-import Porcupine.Run
+import           Porcupine.Run
+import           Porcupine.Serials
+import           Porcupine.Tasks
+import           Porcupine.VFiles

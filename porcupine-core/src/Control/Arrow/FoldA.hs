@@ -28,7 +28,7 @@ module Control.Arrow.FoldA
   , (****)
   ) where
 
-import           Prelude          hiding ((.), id)
+import           Prelude          hiding (id, (.))
 
 import           Control.Arrow
 import           Control.Category

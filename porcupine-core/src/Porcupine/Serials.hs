@@ -3,5 +3,5 @@ module Porcupine.Serials
   , Profunctor(..) )
 where
 
-import Data.Locations.SerializationMethod
-import Data.Profunctor
+import           Data.Locations.SerializationMethod
+import           Data.Profunctor

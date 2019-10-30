@@ -1,13 +1,13 @@
-{-# LANGUAGE DataKinds           #-}
-{-# LANGUAGE TypeApplications    #-}
-{-# LANGUAGE OverloadedStrings   #-}
-{-# LANGUAGE GADTs               #-}
-{-# LANGUAGE Arrows              #-}
+{-# LANGUAGE Arrows            #-}
+{-# LANGUAGE DataKinds         #-}
+{-# LANGUAGE GADTs             #-}
+{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE TypeApplications  #-}
 
 import           Data.DocRecord
 import qualified Data.Text.Lazy as T
 import           Porcupine
-import           Prelude hiding (id, (.))
+import           Prelude        hiding (id, (.))
 
 
 yzCompress :: T.Text -> T.Text

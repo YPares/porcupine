@@ -1,8 +1,8 @@
 {-# LANGUAGE Arrows                    #-}
+{-# LANGUAGE BangPatterns              #-}
 {-# LANGUAGE ExistentialQuantification #-}
 {-# LANGUAGE FlexibleContexts          #-}
 {-# LANGUAGE RankNTypes                #-}
-{-# LANGUAGE BangPatterns              #-}
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 
 -- | This module implements a Foldl-based interface for arrow computations
@@ -29,7 +29,7 @@ module System.TaskPipeline.Repetition.Foldl
 import           Control.Arrow.FoldA
 import           Control.Lens                            hiding (Fold)
 import           Data.Locations
-import           Prelude                                 hiding ((.), id)
+import           Prelude                                 hiding (id, (.))
 import           Streaming                               (Of (..), Stream)
 import qualified Streaming.Prelude                       as S
 import           System.TaskPipeline.PTask

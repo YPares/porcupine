@@ -43,29 +43,29 @@ module System.TaskPipeline.VirtualFileAccess
   , withFolderDataAccessNodes
   ) where
 
-import           Prelude                              hiding (id, (.))
+import           Prelude                                 hiding (id, (.))
 
-import           Control.Funflow                      (Properties(..))
+import           Control.Funflow                         (Properties (..))
 import           Control.Lens
-import           Control.Monad                        (forM)
+import           Control.Monad                           (forM)
 import           Control.Monad.Trans
 import           Data.Default
-import qualified Data.Foldable                        as F
-import qualified Data.HashMap.Strict                  as HM
+import qualified Data.Foldable                           as F
+import qualified Data.HashMap.Strict                     as HM
 import           Data.Locations
 import           Data.Locations.Accessors
 import           Data.Locations.LogAndErrors
 import           Data.Monoid
 import           Data.Representable
-import qualified Data.Text                            as T
+import qualified Data.Text                               as T
 import           Data.Typeable
-import           Streaming                            (Of (..), Stream)
-import qualified Streaming.Prelude                    as S
+import           Streaming                               (Of (..), Stream)
+import qualified Streaming.Prelude                       as S
 import           System.TaskPipeline.PorcupineTree
 import           System.TaskPipeline.PTask
 import           System.TaskPipeline.PTask.Internal
+import qualified System.TaskPipeline.Repetition.Foldl    as F
 import           System.TaskPipeline.Repetition.Internal
-import qualified System.TaskPipeline.Repetition.Foldl as F
 
 
 -- | Uses only the read part of a 'VirtualFile'. It is therefore considered as a

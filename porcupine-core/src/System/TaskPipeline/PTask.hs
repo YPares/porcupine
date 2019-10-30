@@ -1,12 +1,12 @@
-{-# LANGUAGE Arrows               #-}
-{-# LANGUAGE ConstraintKinds      #-}
-{-# LANGUAGE DataKinds            #-}
-{-# LANGUAGE FlexibleContexts     #-}
-{-# LANGUAGE GADTs                #-}
-{-# LANGUAGE InstanceSigs         #-}
-{-# LANGUAGE TupleSections        #-}
-{-# LANGUAGE TypeFamilies         #-}
-{-# LANGUAGE TypeOperators        #-}
+{-# LANGUAGE Arrows           #-}
+{-# LANGUAGE ConstraintKinds  #-}
+{-# LANGUAGE DataKinds        #-}
+{-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE GADTs            #-}
+{-# LANGUAGE InstanceSigs     #-}
+{-# LANGUAGE TupleSections    #-}
+{-# LANGUAGE TypeFamilies     #-}
+{-# LANGUAGE TypeOperators    #-}
 {-# OPTIONS_GHC -Wall #-}
 
 
@@ -43,7 +43,8 @@ import qualified Control.Arrow.Free                 as AF
 import           Control.Category
 import           Control.DeepSeq                    (NFData (..), force)
 import           Control.Exception                  (evaluate)
-import           Control.Funflow                    (Properties, stepIO, stepIO')
+import           Control.Funflow                    (Properties, stepIO,
+                                                     stepIO')
 import           Control.Lens
 import           Data.Locations
 import           Data.Locations.LogAndErrors

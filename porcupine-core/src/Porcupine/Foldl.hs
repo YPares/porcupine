@@ -10,4 +10,4 @@ module Porcupine.Foldl
   ( module System.TaskPipeline.Repetition.Foldl )
 where
 
-import System.TaskPipeline.Repetition.Foldl
+import           System.TaskPipeline.Repetition.Foldl

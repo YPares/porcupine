@@ -272,7 +272,7 @@ locTreeToDataTree (LTP root) t = toCanonicalTree root' t
   where
     root' = case root of
       [] -> "/"
-      _ -> last root
+      _  -> last root
     toCanonicalTree p (LocationTree n sub) =
       DT.Node (p,n) $ map (uncurry toCanonicalTree) $ HM.toList sub
 

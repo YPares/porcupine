@@ -44,7 +44,7 @@ data StringOrVariable
   deriving (Eq, Generic, ToJSON, FromJSON, Store)
 
 instance Show StringOrVariable where
-  show (SoV_String s)                = s
+  show (SoV_String s)                 = s
   show (SoV_Variable (LocVariable v)) = "{" ++ v ++ "}"
 
 locBitContent :: Lens' StringOrVariable String
@@ -67,7 +67,7 @@ instance Show StringWithVars where
 -- them.
 locStringVariables :: Traversal' StringWithVars StringOrVariable
 locStringVariables f (StringWithVars bits) = StringWithVars . concatSoV_Strings <$> traverse f' bits
-  where f' c@SoV_String{}  = pure c
+  where f' c@SoV_String{}   = pure c
         f' c@SoV_Variable{} = f c
 
 -- | Ensures 2 consecutive chunks are concatenated together
@@ -131,11 +131,11 @@ asQParam = iso to_ from_
 -- folder that may be local or hosted remotely
 data URL a
   = LocalFile { filePath :: PathWithExtension a }
-  | RemoteFile { rfProtocol    :: String
-               , rfServerName  :: String
-               , rfPortNumber  :: Maybe Integer
+  | RemoteFile { rfProtocol          :: String
+               , rfServerName        :: String
+               , rfPortNumber        :: Maybe Integer
                , rfPathWithExtension :: PathWithExtension a
-               , rfLocParams   :: [QParam a] }
+               , rfLocParams         :: [QParam a] }
   deriving ( Eq, Ord, Generic
            , Functor, Foldable, Traversable, Binary, Store )
 

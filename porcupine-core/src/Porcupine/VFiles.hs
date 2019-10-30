@@ -2,7 +2,7 @@ module Porcupine.VFiles
   ( VirtualFile(..), VFileImportance(..)
   , BidirVirtualFile, DataSource, DataSink
   , LocationTreePathItem
-  , Store 
+  , Store
   , documentedFile
   , usesLayeredMapping, canBeUnmapped, unmappedByDefault
   , usesCacherWithIdent
@@ -11,5 +11,5 @@ module Porcupine.VFiles
   , makeSource, makeSink )
 where
 
-import Data.Locations.VirtualFile
-import Data.Store
+import           Data.Locations.VirtualFile
+import           Data.Store
