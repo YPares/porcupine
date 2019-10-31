@@ -33,19 +33,20 @@ too, so usual funflow operations are usable on PTasks too.
 
 Aside from that, funflow and porcupine don't operate at the same level of
 abstraction: funflow is for software devs building applications the way they
-want, while porcupine is higher-level and more opinionated and featureful, and
-targets software devs at the same time as data analysts. However, porcupine
-doesn't make any choice in terms of computation/visualization library or
+want, while porcupine is higher-level and more featureful, and
+targets software devs at the same time as modelers or data analysts. However, porcupine
+doesn't make any choice in terms of computation, visualization, etc. libraries or
 anything. That part is still up to the user.
 
-But since the caching/arrow API is the same, as a software dev you can start by
-using porcupine, and if you realize you don't actually need the high level
-features (config, rebinding of inputs, logging, etc) then drop the dependency
-and transition to funflow's level. The main goal of porcupine is to be a tool to
+The main goal of Porcupine is to be a tool to
 structure your app, a backbone that helps you kickstart e.g. a data
 pipeline/analytics application while keeping the boilerplate (config, I/O) to a
 minimum, while providing a common framework if you have code (tasks, serializing
-functions) to share between several applications of that type.
+functions) to share between several applications of that type. 
+But since the arrow and caching API is the same in both Funflow and Porcupine, as a software dev you can start by
+using porcupine, and if you realize you don't actually need the high level
+features (config, rebinding of inputs, logging, etc) then drop the dependency
+and transition to Funflow's level.
 
 #### I like the idea of tasks that automatically maintain and merge their requirements when they compose, but I want to deal with configuration, CLI and everything myself. Can I do that?
 
