@@ -204,7 +204,7 @@ requires these files to be present and bound to physical locations so it can
 run) in the form of a virtual tree. `PTasks` are
 [arrows](https://wiki.haskell.org/Arrow_tutorial), and as such they compose much
 like functions do. The main difference with functions is that tasks merge their
-requirements as they compose. So in the end if you whole application runs in a
+requirements as they compose. So in the end if your whole application runs in a
 `PTask`, then it will expose and make bindable the totality of the resources
 accessed by your application. A `PTask` _exposes_ a `VirtualTree` as its
 requirements, and when it actually runs it _receives_ a `DataAccessTree` that
