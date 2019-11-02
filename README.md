@@ -48,6 +48,14 @@ using porcupine, and if you realize you don't actually need the high level
 features (config, rebinding of inputs, logging, etc) then drop the dependency
 and transition to Funflow's level.
 
+#### Can the tasks run in a distributed fashion?
+
+Funflow provides a worker demon that the main pipeline can distribute docker-containerized tasks to. For pure Haskell functions, there is [funflow-jobs](https://github.com/tweag/funflow/tree/master/funflow-jobs) but it's experimental.
+
+So it could be used with funflow-jobs, but for now porcupine has only ever been used for parallel execution of tasks. We plan to look at integration with Streamly and/or Hailstorm to see how it would go.
+
+Another solution (which is the one used by our client) is to use an external job queue (like barista, celery, etc.) which starts porcupine pipeline instances. This is made easy by the fact that all the configuration of a pipeline instance is exposed by porcupine, and therefore can be set by the program that puts the jobs in the queue (as one JSON file).
+
 #### I like the idea of tasks that automatically maintain and merge their requirements when they compose, but I want to deal with configuration, CLI and everything myself. Can I do that?
 
 Of course! That means you would replace the call to `runPipelineTask` by custom
