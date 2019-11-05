@@ -1,5 +1,7 @@
-{-# LANGUAGE Arrows        #-}
-{-# LANGUAGE TupleSections #-}
+{-# LANGUAGE Arrows                #-}
+{-# LANGUAGE FlexibleInstances     #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE TupleSections         #-}
 
 -- | Functions in that module are necessary only if you want a fine control over
 -- the caching of some actions. When you want to perform several reads and
@@ -17,6 +19,7 @@ module System.TaskPipeline.Caching
   ( unsafeLiftToPTaskAndWrite
   , unsafeLiftToPTaskAndWrite_
 
+  , Unhashed(..)
   -- * Re-exports
 
   , module Data.Locations.LogAndErrors
@@ -27,6 +30,7 @@ module System.TaskPipeline.Caching
 
 import qualified Control.Exception.Safe                as SE
 import           Control.Funflow
+import           Control.Funflow.ContentHashable
 import           Data.Default                          (Default (..))
 import           Data.Locations.LogAndErrors
 import           Data.Locations.VirtualFile
@@ -36,6 +40,12 @@ import           System.TaskPipeline.VirtualFileAccess
 
 import           Prelude                               hiding (id, (.))
 
+
+-- | A newtype that always produces the same hash
+newtype Unhashed a = Unhashed { getUnhashed :: a }
+
+instance (Monad m) => ContentHashable m (Unhashed a) where
+  contentHashUpdate ctx _ = contentHashUpdate ctx ()
 
 -- | For when the result of the lifted function just needs to be written, not
 -- returned.
