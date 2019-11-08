@@ -1,11 +1,11 @@
 package(default_visibility=["//visibility:public"])
 
-load("@buildlib//:nova_haskell.bzl", "haskell_benchmark", "jinko_haskell_library")
+load("@buildlib//:nova_haskell.bzl", "nova_haskell_benchmark", "nova_haskell_library")
 load("@rules_haskell//haskell:defs.bzl", "haskell_library")
 
 alias(name="pipeline-tools", actual=":porcupine-core")
 
-jinko_haskell_library(
+nova_haskell_library(
     name="docrecords",
     srcs=glob(["docrecords/src/**/*.hs"]),
     src_strip_prefix="docrecords/src",
@@ -22,7 +22,7 @@ jinko_haskell_library(
     ],
 )
 
-jinko_haskell_library(
+nova_haskell_library(
     name="reader-soup",
     srcs=glob(["reader-soup/src/**/*.hs"]),
     src_strip_prefix="reader-soup/src",
@@ -42,7 +42,7 @@ jinko_haskell_library(
     ],
 )
 
-jinko_haskell_library(
+nova_haskell_library(
     name="porcupine-core",
     srcs=glob(["porcupine-core/src/**/*.hs"]),
     src_strip_prefix="porcupine-core/src",
@@ -99,7 +99,7 @@ jinko_haskell_library(
     ],
 )
 
-jinko_haskell_library(
+nova_haskell_library(
     name="porcupine-s3",
     srcs=glob(["porcupine-s3/src/**/*.hs"]),
     src_strip_prefix="porcupine-s3/src",
@@ -128,7 +128,7 @@ jinko_haskell_library(
     ],
 )
 
-jinko_haskell_library(
+nova_haskell_library(
     name="porcupine-http",
     srcs=glob(["porcupine-http/src/**/*.hs"]),
     src_strip_prefix="porcupine-http/src",
