@@ -423,8 +423,9 @@ virtualTreeConfigurationReader VirtualTreeAndMappings{vtamTree=defTree} =
           LocationMappings_ $ foldl addOne yamlMappings cliMappings
           where
             addOne mappings (path, locOp, loc) = HM.alter (go locOp loc) path mappings
-            go AddLayer loc (Just locs) = Just $ locs ++ [loc]
-            go _        loc _           = Just [loc]
+            go _ (FullySpecifiedLoc Null) _ = Just []  -- If one mapping is to null, we remove existing mappings
+            go AddLayer loc (Just locs)     = Just $ locs ++ [loc]
+            go _        loc _               = Just [loc]
         vtam = VirtualTreeAndMappings
           <$> traverseOf traversedTreeWithPath
                 (replaceWithDataFromConfig dataSectionContent) embeddedDataTree
@@ -548,7 +549,8 @@ instance Exception TaskConstructionError
 
 -- | Used to add context to log messages
 data DataAccessContext = DAC
-  { locationAccessed     :: Value
+  { virtualPath          :: String
+  , locationAccessed     :: Value
   , locationAccessType   :: VFNodeAccessType
   , requiredLocVariables :: [LocVariable]
   , providedLocVariables :: LocVariableMap
@@ -560,7 +562,8 @@ instance ToObject DataAccessContext
 instance LogItem DataAccessContext where
   payloadKeys v _
     | v == V3   = AllKeys
-    | v >= V1   = SomeKeys ["locationAccessed", "locationAccessType"]
+    | v == V2   = SomeKeys ["virtualPath", "locationAccessed", "providedLocVariables"]
+    | v == V1   = SomeKeys ["virtualPath", "locationAccessed", "locationAccessType"]
     | otherwise = SomeKeys []
 
 -- | Where the PhysicalFileNodes are turned into DataAccessNodes. This is where
@@ -603,7 +606,7 @@ makeDataAccessor vpath vf layers mbDefVal readScheme writeLocs readLocs repetKey
             Just bs -> do
               loc' <- fillLoc repetKeyMap loc
               katipAddNamespace "dataAccessor" $ katipAddNamespace "writer" $
-                katipAddContext (DAC (toJSON loc) ATWrite rkeys repetKeyMap (toJSON loc')) $ do
+                katipAddContext (DAC vpath (toJSON loc) ATWrite rkeys repetKeyMap (toJSON loc')) $ do
                   let runWrite = writeBSS loc' (BSS.fromLazy bs)
                   timeAccess "Wrote" sevWrite (show loc') $
                     withException runWrite $ \ioError ->
@@ -615,7 +618,7 @@ makeDataAccessor vpath vf layers mbDefVal readScheme writeLocs readLocs repetKey
             Just Refl -> do
               loc' <- fillLoc repetKeyMap loc
               katipAddNamespace "dataAccessor" $ katipAddNamespace "reader" $
-                katipAddContext (DAC (toJSON loc) ATRead rkeys repetKeyMap (toJSON loc')) $ do
+                katipAddContext (DAC vpath (toJSON loc) ATRead rkeys repetKeyMap (toJSON loc')) $ do
                   let runRead = readBSS loc' (f . BSS.toChunks)
                   r <- timeAccess "Read" sevRead (show loc') $ withException runRead $ \ioError ->
                     logFM sevError $ logStr $ displayException (ioError :: IOException)

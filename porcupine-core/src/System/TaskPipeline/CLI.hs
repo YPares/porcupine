@@ -25,6 +25,7 @@ module System.TaskPipeline.CLI
   , pipelineConfigMethodDefRoot
   , pipelineConfigMethodConfigFile
   , pipelineConfigMethodDefReturnVal
+  , pipelineConfigMethodCLIArgs
   , withConfigFileSourceFromCLI
   ) where
 
@@ -69,8 +70,9 @@ data PipelineConfigMethod r
     -- name (for logs) and the root directory.
   | ConfigFileOnly { _pipelineConfigMethodProgName   :: String
                    , _pipelineConfigMethodConfigFile :: LocalFilePath
-                   , _pipelineConfigMethodDefRoot    :: Loc }
-    -- ^ Config file is read and loaded if it exists. No CLI is used.
+                   , _pipelineConfigMethodDefRoot    :: Loc
+                   , _pipelineConfigMethodCLIArgs    :: [String]}
+    -- ^ Config file is read and loaded if it exists. CLI args are fixed
   | FullConfig { _pipelineConfigMethodProgName     :: String
                , _pipelineConfigMethodConfigFile   :: LocalFilePath
                , _pipelineConfigMethodDefRoot      :: Loc
