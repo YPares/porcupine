@@ -1,3 +1,5 @@
+{-# LANGUAGE Arrows                     #-}
+{-# LANGUAGE BangPatterns               #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE OverloadedStrings          #-}
 {-# LANGUAGE TupleSections              #-}
@@ -8,8 +10,13 @@ module System.TaskPipeline.Repetition
   , TRIndex(..)
   , HasTRIndex(..)
   , OneOrSeveral(..)
+  , seqMapTask
+  , seqMapTask_
   , parMapTask
   , parMapTask_
+  , basicFoldlTask
+  , filterTask
+  , foldlA
   , IndexRange(..)
   , oneIndex
   , oneRange
@@ -18,7 +25,7 @@ module System.TaskPipeline.Repetition
   ) where
 
 import           Control.Applicative
-import           Control.Arrow.Free                       (mapA)
+import           Control.Arrow.Free
 import           Control.Lens                             hiding ((.=))
 import           Control.Monad
 import           Data.Aeson
@@ -30,6 +37,28 @@ import           System.TaskPipeline.Repetition.Internal
 import           System.TaskPipeline.Repetition.Streaming
 
 
+-- | Makes a 'PTask' repeatable and maps it sequentially over a list.
+seqMapTask
+  :: (HasTRIndex a, KatipContext m)
+  => RepInfo  -- ^ With OverloadedStrings, you can just give the index name as a
+              -- string litteral
+  -> PTask m a b
+  -> PTask m [a] [b]
+seqMapTask ri =
+  over ptaskRunnablePart mapSeqA . makeRepeatable ri
+
+-- | Simply repeats sequentially a task which takes no input over a list of
+-- indices, and ignores the end result. See 'RepInfo' for how these indices are
+-- used. See 'parMapTask' for a more complete version.
+seqMapTask_
+  :: (HasTRIndex idx, KatipContext m)
+  => RepInfo  -- ^ With OverloadedStrings, you can just give the index name as a
+              -- string litteral
+  -> PTask m () b
+  -> PTask m [idx] ()
+seqMapTask_ ri task =
+   arr (map (, ())) >>> seqMapTask ri (arr snd >>> task) >>> arr (const ())
+
 -- | Makes a 'PTask' repeatable and maps it in parallel over a list.
 parMapTask
   :: (HasTRIndex a, KatipContext m)
@@ -39,17 +68,50 @@ parMapTask
 parMapTask ri =
   over ptaskRunnablePart mapA . makeRepeatable ri
 
--- | Simply repeats a task which takes no input over a list of indices, and
--- ignores the end result. See 'RepInfo' for how these indices are
--- used. See 'parMapTask' for a more complete version.
+-- | Simply repeats in parallel a task which takes no input over a list of
+-- indices, and ignores the end result. See 'RepInfo' for how these indices are
+-- used. See 'seqMapTask' for a more complete version.
 parMapTask_
   :: (HasTRIndex idx, KatipContext m)
-  => RepInfo
+  => RepInfo  -- ^ With OverloadedStrings, you can just give the index name as a
+              -- string litteral
   -> PTask m () b
   -> PTask m [idx] ()
 parMapTask_ ri task =
    arr (map (, ())) >>> parMapTask ri (arr snd >>> task) >>> arr (const ())
 
+-- | Makes a 'PTask' repeatable and uses it to filter a list.
+filterTask
+  :: (HasTRIndex a, KatipContext m)
+  => RepInfo  -- ^ With OverloadedStrings, you can just give the index name as a
+              -- string litteral
+  -> PTask m a Bool
+  -> PTask m [a] [a]
+filterTask ri =
+  over ptaskRunnablePart filterA . makeRepeatable ri
+
+-- | Repeats an arrow step in order to fold a list
+foldlA :: ArrowChoice a => a (b,acc) acc -> a ([b],acc) acc
+foldlA f = proc (input,acc) ->
+  case input of
+    [] -> returnA -< acc
+    (x:xs) -> do
+      !acc' <- f -< (x,acc)
+      foldlA f -< (xs,acc')
+
+-- | Makes a 'PTask' repeatable and uses it to fold a list. For simple folds
+-- only. For more complex foldings, use FoldA's.
+basicFoldlTask
+  :: (HasTRIndex b, KatipContext m)
+  => RepInfo  -- ^ With OverloadedStrings, you can just give the index name as a
+              -- string litteral
+  -> PTask m (b,acc) acc  -- ^ The task used to return a new version of the
+                          -- accumulator from current version and next input
+                          -- from list
+  -> PTask m ([b],acc) acc  -- ^ Task task that takes the list and the initial
+                            -- version of the accumulator
+basicFoldlTask ri =
+  over ptaskRunnablePart foldlA . makeRepeatable ri
 
 -- * A simple type to handle index ranges
 
