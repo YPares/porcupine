@@ -5,8 +5,7 @@
 {-# LANGUAGE TupleSections              #-}
 
 module System.TaskPipeline.Repetition
-  ( module System.TaskPipeline.Repetition.Streaming
-  , RepInfo(..)
+  ( RepInfo(..)
   , TRIndex(..)
   , HasTRIndex(..)
   , OneOrSeveral(..)
@@ -29,12 +28,11 @@ import           Control.Arrow.Free
 import           Control.Lens                             hiding ((.=))
 import           Control.Monad
 import           Data.Aeson
-import           Data.Aeson.Types                         (Parser)
-import qualified Data.Text                                as T
-import           Prelude                                  hiding ((.))
+import           Data.Aeson.Types                        (Parser)
+import qualified Data.Text                               as T
+import           Prelude                                 hiding ((.))
 import           System.TaskPipeline.PTask
 import           System.TaskPipeline.Repetition.Internal
-import           System.TaskPipeline.Repetition.Streaming
 
 
 -- | Makes a 'PTask' repeatable and maps it sequentially over a list.
@@ -45,7 +43,7 @@ seqMapTask
   -> PTask m a b
   -> PTask m [a] [b]
 seqMapTask ri =
-  over ptaskRunnablePart mapSeqA . makeRepeatable ri
+  over taskRunnablePart mapSeqA . makeTaskRepeatable ri
 
 -- | Simply repeats sequentially a task which takes no input over a list of
 -- indices, and ignores the end result. See 'RepInfo' for how these indices are
@@ -66,7 +64,7 @@ parMapTask
   -> PTask m a b
   -> PTask m [a] [b]
 parMapTask ri =
-  over ptaskRunnablePart mapA . makeRepeatable ri
+  over taskRunnablePart mapA . makeTaskRepeatable ri
 
 -- | Simply repeats in parallel a task which takes no input over a list of
 -- indices, and ignores the end result. See 'RepInfo' for how these indices are
@@ -88,7 +86,7 @@ filterTask
   -> PTask m a Bool
   -> PTask m [a] [a]
 filterTask ri =
-  over ptaskRunnablePart filterA . makeRepeatable ri
+  over taskRunnablePart filterA . makeTaskRepeatable ri
 
 -- | Repeats an arrow step in order to fold a list
 foldlA :: ArrowChoice a => a (b,acc) acc -> a ([b],acc) acc
@@ -111,7 +109,7 @@ basicFoldlTask
   -> PTask m ([b],acc) acc  -- ^ Task task that takes the list and the initial
                             -- version of the accumulator
 basicFoldlTask ri =
-  over ptaskRunnablePart foldlA . makeRepeatable ri
+  over taskRunnablePart foldlA . makeTaskRepeatable ri
 
 -- * A simple type to handle index ranges
 

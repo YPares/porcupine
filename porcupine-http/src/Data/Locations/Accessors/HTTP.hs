@@ -58,7 +58,7 @@ makeReq loc = error $ show loc ++ " isn't an http(s) URL"
 instance (MonadResource m, MonadMask m)
   => LocationAccessor m "http" where
   data GLocOf "http" a = HTTPLoc
-    { url               :: URLLikeLoc a
+    { url               :: URL a
     , writeMethod       :: T.Text
     , readMethod        :: T.Text
     , serial            :: Maybe T.Text
@@ -118,7 +118,7 @@ maybeUpdate f = flip (foldr f)
 instance (IsLocString a) => Show (GLocOf "http" a) where
   show = show . url
 
-getURLType :: URLLikeLoc a -> Maybe T.Text
+getURLType :: URL a -> Maybe T.Text
 getURLType url = case getLocType url of
   ""  -> Nothing
   ext -> Just $ T.pack ext  -- TODO: check that the extension is a valid one

@@ -1,16 +1,23 @@
 name: reader-soup
-version: 0.0.1.0
+version: 0.1.0.1
 synopsis: Vinyl-based reader-like monad composition
-description: See README at <https://github.com/tweag/porcupine#README.md>
+description: |
+  Packs together a stack of reader-like monads as one single ReaderT of a
+  composite state (represented as an array). This permits to represent the
+  entire monad stack of an application as one record (in the vinyl sense) of the
+  parameters used to run this monad stack, and to add capabilities to that stack
+  by just adding a new field to that record. reader-soup is part of the
+  porcupine ecosystem. See the README at
+  <https://github.com/tweag/porcupine#README.md>
 maintainer: Yves Parès <yves.pares@tweag.io>
 github: tweag/porcupine
-category: Numerical, JSON
+category: Control, Combinators
 copyright: 2018 EURL Tweag, NovaDiscovery
 
 ghc-options: -Wall
 
 dependencies:
-  - base
+  - base >=4.10 && <5
   - lens
   - safe-exceptions
   - transformers
@@ -19,7 +26,7 @@ dependencies:
   - mmorph
   - monad-control
   - unliftio-core
-  - vinyl
+  - vinyl >=0.11
   - resourcet
   - katip
 

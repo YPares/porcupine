@@ -1,16 +1,20 @@
 name: porcupine-s3
-version: 0.0.1.0
-synopsis: A tool to express portable, composable and reusable datascience task pipelines
-description: See README at <https://github.com/tweag/porcupine#README.md>
+version: 0.1.0.0
+synopsis: A location accessor for porcupine to connect to AWS S3 sources/sinks
+description: |
+  Gives a porcupine task pipeline access to AWS S3 objects (read and write). See
+  the README at <https://github.com/tweag/porcupine#README.md> and the examples
+  in the `porcupine-s3` package.
 maintainer: Yves Parès <yves.pares@tweag.io>
 github: tweag/porcupine
-category: Numerical, JSON
+homepage: https://tweag.github.io/porcupine/
+category: Data, Arrows, Combinators, Control, AWS, Cloud
 copyright: 2018 EURL Tweag, NovaDiscovery
 
 ghc-options: -Wall
 
 dependencies:
-  - base
+  - base >= 4.10 && < 5
   - mtl
   - safe-exceptions
   - amazonka
@@ -24,8 +28,8 @@ dependencies:
   - streaming
   - streaming-bytestring
   - directory
-  - reader-soup
-  - porcupine-core
+  - reader-soup == 0.1.*
+  - porcupine-core == 0.1.*
   - retry
   - text
   - filepath

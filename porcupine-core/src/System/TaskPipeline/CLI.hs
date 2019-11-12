@@ -29,7 +29,7 @@ module System.TaskPipeline.CLI
   , withConfigFileSourceFromCLI
   ) where
 
-import           Control.Lens
+import           Control.Lens                            hiding (argument)
 import           Control.Monad.IO.Class
 import           Data.Aeson                              as A
 import qualified Data.Aeson.Encode.Pretty                as A
@@ -39,6 +39,7 @@ import           Data.Char                               (toLower)
 import qualified Data.HashMap.Lazy                       as HashMap
 import           Data.Locations
 import           Data.Maybe
+import           Data.Representable
 import qualified Data.Text                               as T
 import qualified Data.Text.Encoding                      as T
 import qualified Data.Yaml                               as Y
@@ -55,7 +56,7 @@ import           System.TaskPipeline.PorcupineTree       (PhysicalFileNodeShowOp
 -- | The command to parse from the CLI
 data PipelineCommand
   = RunPipeline
-  | ShowLocTree PhysicalFileNodeShowOpts
+  | ShowTree LocationTreePath PhysicalFileNodeShowOpts
 
 -- | Tells whether and how command-line options should be used. @r@ is the type
 -- of the result of the PTask that this PipelineConfigMethod will be use for
@@ -103,13 +104,13 @@ withCliParser progName progDesc_ cliParser defRetVal f = do
  where
    processAction (PostParsingLog s l) = logFM s l
    processAction (PostParsingWrite configFile cfg) = do
-     let rawFile = configFile ^. locFilePathAsRawFilePath
+     let rawFile = configFile ^. pathWithExtensionAsRawFilePath
      case configFile of
-       LocFilePath "-" _ ->
+       PathWithExtension "-" _ ->
          error "Config was read from stdin, cannot overwrite it"
-       LocFilePath _ e | e `elem` ["yaml","yml"] ->
+       PathWithExtension _ e | e `elem` ["yaml","yml"] ->
          liftIO $ Y.encodeFile rawFile cfg
-       LocFilePath _ "json" ->
+       PathWithExtension _ "json" ->
          liftIO $ LBS.writeFile rawFile $ A.encodePretty cfg
        _ -> error $ "Config file has unknown format"
      logFM NoticeS $ logStr $ "Wrote file '" ++ rawFile ++ "'"
@@ -126,9 +127,9 @@ withConfigFileSourceFromCLI f = do
   case cliArgs of
     [] -> f Nothing
     filename : rest -> do
-      case parseURLLikeLoc filename of
+      case parseURL filename of
         Left _ -> f Nothing
-        Right (LocalFile (LocFilePath "-" ext)) ->
+        Right (LocalFile (PathWithExtension "-" ext)) ->
           if ext == "" || allowedExt ext
           then withArgs rest $ f $ Just YAMLStdin
           else error $ filename ++ ": Only JSON or YAML config can be read from stdin"
@@ -146,7 +147,7 @@ tryReadConfigFileSource configFileSource ifRemote =
     YAMLStdin ->
       Just <$> (BS.hGetContents stdin >>= Y.decodeThrow)
     ConfigFileURL (LocalFile lfp) -> do
-      let p = lfp ^. locFilePathAsRawFilePath
+      let p = lfp ^. pathWithExtensionAsRawFilePath
       yamlFound <- doesFileExist p
       if yamlFound
         then Just <$> Y.decodeFileThrow p
@@ -207,7 +208,7 @@ pureCliParser progName baseInputConfig cfgCLIParsing cmds defCmd =
         (info
          (pure (Nothing, maxVerbosityLoggerScribeParams
                ,[PostParsingWrite f (bicDefaultConfig baseInputConfig)]))
-         (progDesc $ "Write a default configuration file in " <> (f^.locFilePathAsRawFilePath))))
+         (progDesc $ "Write a default configuration file in " <> (f^.pathWithExtensionAsRawFilePath))))
   <|>
   handleOptions progName baseInputConfig cliOverriding
     <$> ((subparser $
@@ -216,7 +217,7 @@ pureCliParser progName baseInputConfig cfgCLIParsing cmds defCmd =
               Just f ->
                 command "save" $
                   info (pure Nothing) $
-                       progDesc $ "Just save the command line overrides in " <> (f^.locFilePathAsRawFilePath))
+                       progDesc $ "Just save the command line overrides in " <> (f^.pathWithExtensionAsRawFilePath))
            <>
            foldMap
              (\(cmdParser, cmdShown, cmdInfo) ->
@@ -231,7 +232,7 @@ pureCliParser progName baseInputConfig cfgCLIParsing cmds defCmd =
            Just f  ->
              switch ( long "save"
                    <> short 's'
-                   <> help ("Save overrides in the " <> (f^.locFilePathAsRawFilePath) <> " before running.") ))
+                   <> help ("Save overrides in the " <> (f^.pathWithExtensionAsRawFilePath) <> " before running.") ))
     <*> overridesParser cliOverriding
   where
     cliOverriding = addScribeParamsParsing cfgCLIParsing
@@ -272,6 +273,7 @@ parseScribeParams = LoggerScribeParams
   <*> (numToVerbosity <$>
        option auto
          (  long "context-verb"
+         <> short 'c'
          <> help "A number from 0 to 3 (default: 0). Controls the amount of context to show per log line"
          <> value (0 :: Int)))
   <*> (option (eitherReader loggerFormatParser)
@@ -349,20 +351,20 @@ handleOptions progName (BaseInputConfig mbCfgFile mbCfg defCfg) cliOverriding mb
       case mbCmd of
         Nothing -> (Nothing, lsp, allWarnings ++
                                   [PostParsingWrite (fromJust mbCfgFile) cfgOverriden])
-        Just (cmd, cmdShown) ->
+        Just (cmd, _cmdShown) ->
             let actions =
                   allWarnings ++
                   (if saveOverridesAlong
                      then [PostParsingWrite (fromJust mbCfgFile) cfgOverriden]
                      else []) ++
                   [PostParsingLog DebugS $ logStr $ "Running `" <> T.pack progName
-                      <> " " <> T.pack cmdShown <> "' with the following config:\n"
+                      <> "' with the following config:\n"
                       <> T.decodeUtf8 (Y.encode cfgOverriden)]
             in (Just (cfgOverriden, cmd), lsp, actions)
     Left err -> dispErr err
   where
     configFile' = case mbCfgFile of Nothing -> ""
-                                    Just f -> " " ++ f ^. locFilePathAsRawFilePath
+                                    Just f -> " " ++ f ^. pathWithExtensionAsRawFilePath
     dispErr err = error $
       (if nullOverrides cliOverriding overrides
        then "C"
@@ -388,33 +390,41 @@ mergeWithDefault path (Object o1) (Object o2) =
   in (warnings ++ subWarnings, Object merged)
 mergeWithDefault _ _ v = pure v
 
-parseShowLocTree :: Parser PipelineCommand
-parseShowLocTree = fmap ShowLocTree $ PhysicalFileNodeShowOpts
-  <$> flag False True
-       (long "mappings"
-        <> short 'm'
-        <> help "Show mappings of virtual files")
-  <*> flag True False
-       (long "no-serials"
-        <> short 'S'
-        <> help "Don't show if the virtual file can be used as a source or a sink")
-  <*> flag False True
-       (long "types"
-        <> short 't'
-        <> help "Show types written to virtual files")
-  <*> flag False True
-       (long "accesses"
-        <> short 'a'
-        <> help "Show how virtual files will be accessed")
-  <*> flag True False
-       (long "no-extensions"
-        <> short 'E'
-        <> help "Don't show the possible extensions for physical files")
-  <*> option auto
-       (long "num-chars"
-        <> short 'c'
-        <> help "The number of characters to show for the type (default: 60)"
-        <> value (60 :: Int))
+parseShowTree :: Parser PipelineCommand
+parseShowTree = ShowTree <$> parseRoot <*> parseShowOpts
+  where
+    parseRoot = argument (eitherReader (fromTextRepr . T.pack))
+                (help "Path from which to display the porcupine tree" <> value (LTP []))
+    parseShowOpts = PhysicalFileNodeShowOpts
+      <$> flag False True
+          (long "mappings"
+           <> short 'm'
+           <> help "Show mappings of virtual files")
+      <*> flag True False
+          (long "no-serials"
+           <> short 'S'
+           <> help "Don't show if the virtual file can be used as a source or a sink")
+      <*> flag True False
+          (long "no-fields"
+           <> short 'F'
+           <> help "Don't show the option fields and their docstrings")
+      <*> flag False True
+          (long "types"
+           <> short 't'
+           <> help "Show types written to virtual files")
+      <*> flag False True
+          (long "accesses"
+           <> short 'a'
+           <> help "Show how virtual files will be accessed")
+      <*> flag True False
+          (long "no-extensions"
+           <> short 'E'
+           <> help "Don't show the possible extensions for physical files")
+      <*> option auto
+          (long "num-chars"
+           <> short 'c'
+           <> help "The number of characters to show for the type (default: 60)"
+           <> value (60 :: Int))
 
 pipelineCliParser
   :: (ToJSON cfg)
@@ -425,5 +435,5 @@ pipelineCliParser
 pipelineCliParser getCliOverriding progName baseInputConfig =
   cliYamlParser progName baseInputConfig (getCliOverriding $ bicDefaultConfig baseInputConfig)
   [(pure RunPipeline, "run", "Run the pipeline")
-  ,(parseShowLocTree, "show-tree", "Show the porcupine tree of the pipeline")]
+  ,(parseShowTree, "show-tree", "Show the porcupine tree of the pipeline")]
   RunPipeline

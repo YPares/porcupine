@@ -19,10 +19,11 @@
 
 module Data.Locations.SerializationMethod where
 
+import           Codec.Compression.Zlib          as Zlib
 import           Control.Funflow.ContentHashable
 import           Control.Lens                    hiding ((:>))
 import           Data.Aeson                      as A
--- import qualified Data.Attoparsec.Lazy        as AttoL
+import qualified Data.Attoparsec.Lazy            as AttoL
 import qualified Data.Binary.Builder             as BinBuilder
 import qualified Data.ByteString                 as BS
 import qualified Data.ByteString.Lazy            as LBS
@@ -30,8 +31,7 @@ import qualified Data.ByteString.Streaming       as BSS
 import           Data.Char                       (ord)
 import qualified Data.Csv                        as Csv
 import qualified Data.Csv.Builder                as CsvBuilder
--- import qualified Data.Csv.Parser             as CsvParser
-import           Codec.Compression.Zlib          as Zlib
+import qualified Data.Csv.Parser                 as CsvParser
 import           Data.DocRecord
 import           Data.DocRecord.OptParse         (RecordUsableWithCLI)
 import qualified Data.HashMap.Strict             as HM
@@ -477,11 +477,17 @@ instance (Foldable f, Csv.ToNamedRecord a, Csv.DefaultOrdered a)
       encField = CsvBuilder.encodeDefaultOrderedNamedRecordWith encodeOpts
 
 instance (Csv.FromRecord a) => FromByteStream CSVSerial (Tabular (V.Vector a)) where
-  fromLazyByteString (CSVSerial _ hasHeader delim) bs =
-    Tabular Nothing <$>  -- TODO: parse header
-    Csv.decodeWith decOpts (if hasHeader then Csv.HasHeader else Csv.NoHeader) bs
+  fromLazyByteString (CSVSerial _ hasHeader delim) bs = do
+    (mbHeader, rest) <- if hasHeader
+      then case AttoL.parse (CsvParser.header delim') bs of
+             AttoL.Fail _ _ err -> Left err
+             AttoL.Done rest r  -> return (Just r, rest)
+      else return (Nothing, bs)
+    let mbHeader' = map TE.decodeUtf8 . V.toList <$> mbHeader
+    Tabular mbHeader' <$> Csv.decodeWith decOpts Csv.NoHeader rest
     where
-      decOpts = Csv.defaultDecodeOptions {Csv.decDelimiter=fromIntegral $ ord delim}
+      delim' = fromIntegral $ ord delim
+      decOpts = Csv.defaultDecodeOptions {Csv.decDelimiter=delim'}
 
 instance (Csv.FromNamedRecord a) => FromByteStream CSVSerial (Records (V.Vector a)) where
   fromLazyByteString (CSVSerial _ hasHeader delim) bs =
@@ -504,18 +510,6 @@ instance (Csv.FromRecord a) => DeserializesWith CSVSerial (Tabular (V.Vector a))
 
 instance (Csv.FromNamedRecord a) => DeserializesWith CSVSerial (Records (V.Vector a)) where
   getSerialReaders = getSerialReaders_FromByteStream
-
--- instance (Csv.ToNamedRecord a, Foldable f) =>
-
--- TODO: recover header when deserializing CSV (which cassava doesn't return)
--- decodeTabular :: Bool -> Char -> LBS.ByteString -> Either String (Tabular (V.Vector a))
--- decodeTabular hasHeader delim bs =
---   mbHeader <- if hasHeader
---     then AttoL.parse (CsvParser.header delim') bs
---     else return Nothing
---   where
---     delim' = fromIntegral $ ord delim
---     decOpts = Csv.defaultDecodeOptions {Csv.decDelimiter=delim'}
 
 -- * "Serialization" to/from bytestrings
 

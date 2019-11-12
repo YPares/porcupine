@@ -1,5 +1,7 @@
 {-# LANGUAGE DataKinds           #-}
 {-# LANGUAGE FlexibleContexts    #-}
+{-# LANGUAGE GADTs               #-}
+{-# LANGUAGE PatternSynonyms     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeOperators       #-}
 {-# OPTIONS_GHC -Wall #-}
@@ -15,6 +17,7 @@ module System.TaskPipeline.Options
   , DocRec, Rec(..), (^^.), (^^?), (^^?!), (=:)
   , PathWithType(..)
   , docField
+  , pattern FV
   ) where
 
 import           Data.Aeson
@@ -29,6 +32,11 @@ import           System.TaskPipeline.VirtualFileAccess
 
 import           Prelude                               hiding (id, (.))
 
+
+-- | Field Value. Allows you to directly pattern match on the output of
+-- 'getOptions'/'loadData'
+pattern FV :: a -> DocField (s:|:a)
+pattern FV v <- DocField _ (Right (Field v))
 
 -- | Creates a 'VirtualFile' from a default set of options (as a DocRec). To be
 -- used with 'loadData'.

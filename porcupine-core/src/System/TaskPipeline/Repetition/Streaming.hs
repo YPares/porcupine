@@ -1,5 +1,8 @@
 {-# LANGUAGE FlexibleContexts #-}
 
+-- | This module contains functions that map a task over a stream. Delaying
+-- effects of tasks like this plays badly with caching. This interface will be
+-- removed in a future version of porcupine.
 
 module System.TaskPipeline.Repetition.Streaming
   ( STask, ISTask, OSTask
@@ -68,17 +71,17 @@ mappingOverStream
                        -- appended to every Loc mapped to every leaf in the
                        -- LocationTree given to X.
 mappingOverStream repetitionKey mbVerb =
-    over ptaskRunnablePart mappingRunnableOverStream
-  . makeRepeatable (RepInfo repetitionKey mbVerb)
+    over taskRunnablePart mappingRunnableOverStream
+  . makeTaskRepeatable (RepInfo repetitionKey mbVerb)
 
 {-# DEPRECATED mappingOverStream "Prefer the FoldA API to repeat tasks and consume streams" #-}
 
--- | IMPORTANT: That requires the RunnablePTask to be repeatable. See
--- 'makeRepeatable'.
+-- | IMPORTANT: That requires the RunnableTask to be repeatable. See
+-- 'makeTaskRepeatable'.
 mappingRunnableOverStream
   :: (CanRunPTask m)
-  => RunnablePTask m a b
-  -> RunnablePTask m
+  => RunnableTask m a b
+  -> RunnableTask m
        (Stream (Of a) m r)
        (Stream (Of b) m r)
 mappingRunnableOverStream runnable =
@@ -91,7 +94,7 @@ mappingRunnableOverStream runnable =
         return $
           firstResult `S.cons` S.mapM (go state) inputStream'
   where
-    go = execRunnablePTask runnable
+    go = execRunnableTaskFromTaskState runnable
          -- NOTE: We "cheat" here: we run the funflow layer of the inner
          -- task. We should find a way not to have to do that, but when using
          -- Streaming (which delays effects in a monad) it's really problematic.
@@ -103,7 +106,7 @@ runStreamTask :: (KatipContext m)
               => PTask m
                        (Stream (Of t) m r)
                        r
-runStreamTask = toPTask S.effects
+runStreamTask = toTask S.effects
 
 -- | An 'PTask' converting a list to a stream
 listToStreamTask :: (Monad m)
@@ -121,4 +124,4 @@ streamToListTask :: (KatipContext m)
                  => PTask m
                           (Stream (Of t) m r)
                           [t]
-streamToListTask = toPTask (S.toList_ . void)
+streamToListTask = toTask (S.toList_ . void)

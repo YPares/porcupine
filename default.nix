@@ -59,10 +59,11 @@ porcupineSources = {
 
 overlayHaskell = _:pkgs:
   let
-    funflowRev = "af227eadf7e1afed08473d47d54ea4ef6c76d303"; # branch 'remote-cache'
-    funflowSource = pkgs.fetchzip {
-      url = "https://github.com/tweag/funflow/archive/${funflowRev}.tar.gz";
-      sha256 = "1zgy40lfw4ar73w0g1292cls3x19yaxwc9f43ib8zpjycmf779mx";
+    funflowSource = pkgs.fetchFromGitHub {
+      owner = "tweag";
+      repo = "funflow";
+      rev = "3166c357cd455607e4b5081a1019557e7bbf99f6";  # hoistFlowEff branch
+      sha256 = "1ygds96ph6mdrjm8cmq7yrghp9f6y5kswii9p5jp2byg8n4p6z0a";
     };
     monadBayesSource = pkgs.fetchFromGitHub {
       owner = "tweag"; # Using our fork until https://github.com/adscib/monad-bayes/pull/54 is merged
@@ -71,7 +72,12 @@ overlayHaskell = _:pkgs:
       sha256 = "1qikvzpkpm255q3mgpc0x9jipxg6kya3pxgkk043vk25h2j11l0p";
     };
 
-    inherit (pkgs.haskell.lib) doJailbreak dontCheck packageSourceOverrides;
+    extendWithPorcupinePackages = self: _:
+      pkgs.lib.mapAttrs (name: src:
+                           self.callCabal2nixWithOptions name src "--flag=useMonadBayes" {})
+                        porcupineSources;
+
+    inherit (pkgs.haskell.lib) doJailbreak dontCheck;
   in {
   haskellPackages =
     (pkgs.haskellPackages.override {
@@ -88,7 +94,7 @@ overlayHaskell = _:pkgs:
         funflow = dontCheck (self.callCabal2nix "funflow" "${funflowSource}/funflow" {});
                   # Check are failing for funflow, this should be investigated
       };
-      }).extend (packageSourceOverrides porcupineSources);
+      }).extend extendWithPorcupinePackages;
 };
 
 # Nixpkgs clone

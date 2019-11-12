@@ -8,16 +8,16 @@
 -- writes from and to VirtualFiles as part of a /single/ cached task, the recommended way is
 -- to use:
 --
--- - 'getVFileReader'/'getVFileWriter' to obtain the accessors
--- - 'toPTask'' to create the cached task, to which you give the accessors
+-- - 'getDataReader'/'getDataWriter' to obtain the accessors
+-- - 'toTask'' to create the cached task, to which you give the accessors
 --
 -- Given the accessors are hashable, the files that are bound to them are
 -- incorporated to the hash, so binding them to new files will re-trigger the
 -- task.
 
 module System.TaskPipeline.Caching
-  ( unsafeLiftToPTaskAndWrite
-  , unsafeLiftToPTaskAndWrite_
+  ( toTaskAndWrite
+  , toTaskAndWrite_
 
   , Unhashed(..)
   -- * Re-exports
@@ -49,7 +49,7 @@ instance (Monad m) => ContentHashable m (Unhashed a) where
 
 -- | For when the result of the lifted function just needs to be written, not
 -- returned.
-unsafeLiftToPTaskAndWrite_
+toTaskAndWrite_
   :: (LogCatch m, Typeable b, Typeable ignored)
   => Properties (a, DataWriter m b) ()  -- ^ Location types aren't ContentHashable, but
                                  -- all are convertible to JSON. We need that to
@@ -59,16 +59,16 @@ unsafeLiftToPTaskAndWrite_
   -> (a -> m b)                  -- ^ The function to lift. Won't be executed if
                                  -- the file isn't mapped
   -> PTask m a ()
-unsafeLiftToPTaskAndWrite_ props vf f =
-  unsafeLiftToPTaskAndWrite props id vf (fmap (,()) . f) (const $ return ())
-{-# INLINE unsafeLiftToPTaskAndWrite_ #-}
+toTaskAndWrite_ props vf f =
+  toTaskAndWrite props id vf (fmap (,()) . f) (const $ return ())
+{-# INLINE toTaskAndWrite_ #-}
 
 
--- | Similar to 'toPTask'', but caches a write action of the result too. In this
+-- | Similar to 'toTask'', but caches a write action of the result too. In this
 -- case we use the filepath bound to the VirtualFile to compute the hash. That
 -- means that if the VirtualFile is bound to something else, the step will be
 -- re-executed.
-unsafeLiftToPTaskAndWrite
+toTaskAndWrite
   :: (LogCatch m, Typeable b, Typeable ignored)
   => Properties (a', DataWriter m b) c  -- ^ Location types aren't ContentHashable, but
                                  -- all are convertible to JSON. We need that to
@@ -90,9 +90,9 @@ unsafeLiftToPTaskAndWrite
   -> (a -> m c)                  -- ^ Called when the VirtualFile isn't mapped,
                                  -- and therefore no @b@ needs to be computed
   -> PTask m a c
-unsafeLiftToPTaskAndWrite props inputHashablePart vf action actionWhenNotMapped = proc input -> do
-  writer <- getVFileWriter vf -< ()
-  throwPTask <<< toPTask' props' cached -< (input,writer)
+toTaskAndWrite props inputHashablePart vf action actionWhenNotMapped = proc input -> do
+  writer <- getDataWriter vf -< ()
+  throwTask <<< toTask' props' cached -< (input,writer)
   where
     cached (input,writer) | null (dwLocsAccessed writer)
       = Right <$> actionWhenNotMapped input
@@ -113,7 +113,7 @@ unsafeLiftToPTaskAndWrite props inputHashablePart vf action actionWhenNotMapped 
       Cache key sv rv ->
         let key' salt = key salt . getH
             sv' (Left e) = error $
-              "unsafeLiftToPTaskAndWrite: An exception occured during the cached function: "
+              "toTaskAndWrite: An exception occured during the cached function: "
               ++ displayException e
             sv' (Right x) = sv x
             rv' = Right . rv

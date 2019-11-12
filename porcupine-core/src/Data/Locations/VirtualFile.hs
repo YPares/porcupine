@@ -1,3 +1,4 @@
+{-# LANGUAGE DataKinds             #-}
 {-# LANGUAGE FlexibleContexts      #-}
 {-# LANGUAGE GADTs                 #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
@@ -12,7 +13,7 @@ module Data.Locations.VirtualFile
   , Profunctor(..)
   , VirtualFile(..), LayeredReadScheme(..)
   , BidirVirtualFile, DataSource, DataSink
-  , VirtualFileIntent(..), VirtualFileDescription(..)
+  , VFileIntent(..), VFileDescription(..)
   , RecOfOptions(..)
   , VFileImportance(..)
   , Cacher(..)
@@ -31,8 +32,9 @@ module Data.Locations.VirtualFile
   , withEmbeddedValue
   , usesLayeredMapping, canBeUnmapped, unmappedByDefault
   , usesCacherWithIdent
-  , getVirtualFileDescription
+  , getVFileDescription
   , describeVFileAsSourceSink, describeVFileExtensions, describeVFileTypes
+  , describeVFileAsRecOfOptions
   , clockVFileAccesses
   , defaultCacherWithIdent
   ) where
@@ -42,6 +44,7 @@ import           Control.Funflow.ContentHashable
 import           Control.Lens
 import           Data.Aeson                         (Value)
 import           Data.Default
+import           Data.DocRecord
 import qualified Data.HashMap.Strict                as HM
 import qualified Data.HashSet                       as HS
 import           Data.List                          (intersperse)
@@ -49,6 +52,7 @@ import           Data.List.NonEmpty                 (NonEmpty (..))
 import           Data.Locations.Accessors
 import           Data.Locations.Loc
 import           Data.Locations.LocationTree
+import           Data.Locations.LocVariable
 import           Data.Locations.Mappings            (HasDefaultMappingRule (..),
                                                      LocShortcut (..))
 import           Data.Locations.SerializationMethod
@@ -86,7 +90,7 @@ data VFileImportance = VFileImportance
 makeLenses ''VFileImportance
 
 instance Default VFileImportance where
-  def = VFileImportance DebugS NoticeS ErrorS False
+  def = VFileImportance InfoS NoticeS ErrorS False
 
 -- | A virtual file in the location tree to which we can write @a@ and from
 -- which we can read @b@.
@@ -112,10 +116,10 @@ instance HasDefaultMappingRule (VirtualFile a b) where
         -- LIMITATION: For now we suppose that every reading/writing function in
         -- the serials has the same repetition keys
         Just rkeys -> DeriveLocPrefixFromTree $
-          let toVar rkey = SWVB_VarRef rkey
-              locStr = StringWithVars $ (SWVB_Chunk "-")
-                       : intersperse (SWVB_Chunk "-") (map toVar rkeys)
-          in LocFilePath locStr $ T.unpack defExt
+          let toVar rkey = SoV_Variable rkey
+              locStr = StringWithVars $ (SoV_String "-")
+                       : intersperse (SoV_String "-") (map toVar rkeys)
+          in PathWithExtension locStr $ T.unpack defExt
     else Nothing
     where
       defExt =
@@ -141,14 +145,14 @@ instance Profunctor VirtualFile where
 -- * Obtaining a description of how the 'VirtualFile' should be used
 
 -- | Describes how a virtual file is meant to be used
-data VirtualFileIntent =
+data VFileIntent =
   VFForWriting | VFForReading | VFForRW | VFForCLIOptions
   deriving (Show, Eq)
 
 -- | Gives the purpose of the 'VirtualFile'. Used to document the pipeline and check
 -- mappings to physical files.
-data VirtualFileDescription = VirtualFileDescription
-  { vfileDescIntent             :: Maybe VirtualFileIntent
+data VFileDescription = VFileDescription
+  { vfileDescIntent             :: Maybe VFileIntent
                         -- ^ How is the 'VirtualFile' meant to be used
   , vfileDescEmbeddableInConfig :: Bool
                         -- ^ True if the data can be read directly from the
@@ -163,9 +167,9 @@ data VirtualFileDescription = VirtualFileDescription
 
 -- | Gives a 'VirtualFileDescription'. To be used on files stored in the
 -- VirtualTree.
-getVirtualFileDescription :: VirtualFile a b -> VirtualFileDescription
-getVirtualFileDescription vf =
-  VirtualFileDescription intent readableFromConfig writableInOutput exts
+getVFileDescription :: VirtualFile a b -> VFileDescription
+getVFileDescription vf =
+  VFileDescription intent readableFromConfig writableInOutput exts
   where
     (SerialsFor
       (SerialWriters toA)
@@ -189,20 +193,33 @@ getVirtualFileDescription vf =
 
 describeVFileAsSourceSink :: VirtualFile a b -> String
 describeVFileAsSourceSink vf =
-  (case vfileDescIntent vfd of
-    Nothing -> ""
-    Just i -> case i of
-      VFForWriting    -> "DATA SINK"
-      VFForReading    -> "DATA SOURCE"
-      VFForRW         -> "BIDIR VFILE"
-      VFForCLIOptions -> "OPTION SOURCE")
+  sourceSink
   ++ (if vfileDescEmbeddableInConfig vfd then " (embeddable)" else "")
-  where vfd = getVirtualFileDescription vf
+  ++ (case vf ^. vfileSerials.serialRepetitionKeys of
+        [] -> ""
+        lvs -> " repeated over " ++ concat
+          (intersperse ", " (map (("\""++) . (++"\"") . unLocVariable) lvs)))
+  where
+    sourceSink = case vfileDescIntent vfd of
+      Nothing -> ""
+      Just i -> case i of
+        VFForWriting    -> "DATA SINK"
+        VFForReading    -> "DATA SOURCE"
+        VFForRW         -> "BIDIR VFILE"
+        VFForCLIOptions -> "OPTION SOURCE"
+    vfd = getVFileDescription vf
+
+describeVFileAsRecOfOptions :: (Typeable a, Typeable b) => VirtualFile a b -> Int -> String
+describeVFileAsRecOfOptions vf charLimit =
+  case (vf ^? vfileAsBidir) >>= getConvertedEmbeddedValue of
+    Just (RecOfOptions record :: DocRecOfOptions) ->
+      "\n--- Fields ---\n" ++ T.unpack (showDocumentation charLimit record)
+    _ -> ""
 
 describeVFileExtensions :: VirtualFile a b -> String
 describeVFileExtensions vf =
-  "Accepts " ++ T.unpack (T.intercalate (T.pack ",") (vfileDescPossibleExtensions vfd))
-  where vfd = getVirtualFileDescription vf
+  "Accepts " ++ T.unpack (T.intercalate (T.pack ", ") (vfileDescPossibleExtensions vfd))
+  where vfd = getVFileDescription vf
 
 describeVFileTypes :: forall a b. (Typeable a, Typeable b) => VirtualFile a b -> Int -> String
 describeVFileTypes _ charLimit

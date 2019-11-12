@@ -10,9 +10,7 @@ import           Data.DocRecord
 import qualified Data.HashMap.Strict as HM
 import qualified Data.Text           as T
 import           GHC.Generics
-import           Porcupine.Run
-import           Porcupine.Serials
-import           Porcupine.Tasks
+import           Porcupine
 
 
 data User = User { userName    :: T.Text

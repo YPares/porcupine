@@ -19,9 +19,7 @@ import           Data.DocRecord
 import qualified Data.Text                     as T
 import           GHC.Generics
 import           Graphics.Vega.VegaLite        as VL
-import           Porcupine.Run
-import           Porcupine.Serials
-import           Porcupine.Tasks
+import           Porcupine
 import           Prelude                       hiding (id, (.))
 
 import           Data.Locations.Accessors.HTTP

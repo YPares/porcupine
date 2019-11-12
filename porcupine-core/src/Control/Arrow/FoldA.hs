@@ -4,14 +4,18 @@
 
 -- | This module defines the type 'FoldA', which is a generalization of 'Fold'
 -- from the `foldl` package.
-
+--
+-- This module intentionally doesn't provide a function to run the FoldA over a
+-- Foldable in any arrow, because that function may depend on the arrow.
 module Control.Arrow.FoldA
   ( module Control.Foldl
   , FoldA(..)
   , FoldA'
   , Pair(..)
+  , arrowFold
+  , arrowFold_
   , generalizeA
-  , generalizeFnA
+  , generalizeA_
   , specializeA
   , premapA
   , premapInitA
@@ -24,7 +28,7 @@ module Control.Arrow.FoldA
   , (****)
   ) where
 
-import           Prelude          hiding ((.))
+import           Prelude          hiding (id, (.))
 
 import           Control.Arrow
 import           Control.Category
@@ -67,27 +71,40 @@ secondP :: (Arrow a) => a c c' -> a (Pair b c) (Pair b c')
 secondP ar =
   arr toTup >>> second ar >>> arr fromTup
 
--- | If @i@ is () and @arr@ is (->), then 'FoldA' is just 'Fold'
+
+-- | This is a generalization of 'Control.Foldl.Fold' that
+-- allows computing on arrows.
+--
+-- 'FoldA (->) ()' is isomorphic to 'Fold' as testified
+-- by 'generalizeA' and 'specializeA'.
+--
+-- 'FoldA (Kleisly m) ()' is isomorphic to 'FoldM m'.
+--
+-- We must keep an extra type parameter @i@ that will allow to initialize the
+-- accumulator, else we would need 'ArrowApply' everytime we want to create a
+-- 'FoldA' from an accumulator that will be computed by a previous arrow
+-- computation.
 data FoldA arr i a b =
   forall x. FoldA (arr (Pair x a) x) (arr i x) (arr x b)
 
 -- | A fold that will directly receive its initial accumulator
 type FoldA' arr a b = FoldA arr b a b
 
--- | Turns a 'Fold' into a 'FoldA' that just ignores its initializer
-generalizeA :: (Arrow arr) => Fold a b -> FoldA arr i a b
-generalizeA (Fold step start done) =
-  FoldA (arr $ uncurryP step) (ret start) (arr done)
-
 -- | Turns a function that returns a 'Fold' into a 'FoldA' that will feed the
 -- initializer
-generalizeFnA :: (Arrow arr) => (i -> Fold a b) -> FoldA arr i a b
-generalizeFnA f =
+generalizeA :: (Arrow arr) => (i -> Fold a b) -> FoldA arr i a b
+generalizeA f =
   FoldA (arr $ \(Pair (Fold step !acc done) x) ->
             Fold step (step acc x) done)
         (arr f)
         (arr $ \(Fold _ acc done) -> done acc)
 
+-- | Turns a 'Fold' into a 'FoldA' that just ignores its initializer
+generalizeA_ :: (Arrow arr) => Fold a b -> FoldA arr i a b
+generalizeA_ (Fold step start done) =
+  FoldA (arr $ uncurryP step) (ret start) (arr done)
+
+-- | Turns a 'FoldA' over pure function into a pure 'Fold'
 specializeA :: FoldA (->) () a b -> Fold a b
 specializeA (FoldA step start done) =
   Fold (\x a -> step $ Pair x a) (start ()) done
@@ -150,3 +167,23 @@ prefilterA fltr (FoldA step start done) =
         start
         done
 {-# INLINABLE prefilterA #-}
+
+-- | Creates a 'FoldA' from an arrow computation.
+arrowFold :: (Arrow a)
+          => a (acc,input) acc -- ^ The folding task
+          -> FoldA' a input acc
+arrowFold step =
+  FoldA (arr onInput >>> step) id id
+  where
+    onInput (Pair acc x) = (acc,x)
+
+-- | Creates a 'FoldA' that will never alter its accumulator's initial value,
+-- just pass it around
+arrowFold_ :: (Arrow a)
+           => a (acc,input) ()
+           -> FoldA a acc input ()
+arrowFold_ task =
+  rmap (const ()) $
+  arrowFold $ proc (acc,input) -> do
+    task -< (acc,input)
+    returnA -< acc

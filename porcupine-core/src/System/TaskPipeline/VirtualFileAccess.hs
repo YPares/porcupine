@@ -24,7 +24,7 @@ module System.TaskPipeline.VirtualFileAccess
   , writeEffData
   , writeDataFold
   , DataWriter(..), DataReader(..)
-  , getVFileWriter, getVFileReader
+  , getDataWriter, getDataReader
 
     -- * Lower-level API
   , EffectSeq(..), EffectSeqFromList(..)
@@ -34,7 +34,7 @@ module System.TaskPipeline.VirtualFileAccess
   , VFNodeAccessType(..)
   , SomeGLoc(..), SomeLoc
   , accessVirtualFile'
-  , getVFileAccessFunction
+  , getDataAccessorFn
   , getLocsMappedTo
 
     -- * Internal API
@@ -64,7 +64,7 @@ import qualified Streaming.Prelude                       as S
 import           System.TaskPipeline.PorcupineTree
 import           System.TaskPipeline.PTask
 import           System.TaskPipeline.PTask.Internal
-import qualified System.TaskPipeline.Repetition.Fold     as F
+import qualified System.TaskPipeline.Repetition.Foldl    as F
 import           System.TaskPipeline.Repetition.Internal
 
 
@@ -75,7 +75,7 @@ loadData
   => VirtualFile a b -- ^ Use as a 'DataSource'
   -> PTask m ignored b  -- ^ The resulting task. Ignores its input.
 loadData vf =
-  getVFileReader vf >>> toPTask' props drPerformRead
+  getDataReader vf >>> toTask' props drPerformRead
   where
     cacher = case _vfileReadCacher vf of
       NoCache -> NoCache
@@ -108,7 +108,7 @@ loadDataList
 loadDataList lv vf =
       arr (ListES . map (return . (,error "loadDataList: THIS IS VOID")))
   >>> accessVirtualFile' (DoRead id) lv vf
-  >>> toPTask (sequence . getListFromES)
+  >>> toTask (sequence . getListFromES)
 
 -- | Like 'loadDataStream', but won't stop on a failure on a single file
 tryLoadDataStream
@@ -128,7 +128,7 @@ writeData
   => VirtualFile a b  -- ^ Used as a 'DataSink'
   -> PTask m a ()
 writeData vf =
-  id &&& getVFileWriter vf >>> toPTask' props (uncurry $ flip dwPerformWrite)
+  id &&& getDataWriter vf >>> toTask' props (uncurry $ flip dwPerformWrite)
   where
     cacher = case _vfileWriteCacher vf of
       NoCache -> NoCache
@@ -145,7 +145,7 @@ writeEffData
 writeEffData vf =
       arr (SingletonES . (fmap ([] :: [TRIndex],)))
   >>> accessVirtualFile (DoWrite id) [] vf
-  >>> toPTask runES
+  >>> toTask runES
 
 -- | Like 'writeDataList', but takes a stream as an input instead of a list. If
 -- the VirtualFile is not mapped to any physical file (this can be authorized if
@@ -161,7 +161,7 @@ writeDataStream
 writeDataStream lv vf =
       arr StreamES
   >>> accessVirtualFile' (DoWrite id) lv vf
-  >>> unsafeLiftToPTask runES
+  >>> toTask runES
 
 -- | The simplest way to consume a stream of data inside a pipeline. Just write
 -- it to repeated occurences of a 'VirtualFile'.
@@ -173,41 +173,41 @@ writeDataList
 writeDataList lv vf =
       arr (ListES . map return)
   >>> accessVirtualFile' (DoWrite id) lv vf
-  >>> toPTask runES
+  >>> toTask runES
 
 -- | A very simple fold that will just repeatedly write the data to different
 -- occurences of a 'VirtualFile'.
 writeDataFold :: (LogThrow m, Typeable a, Typeable b)
               => VirtualFile a b -> F.FoldA (PTask m) i a ()
-writeDataFold vf = F.premapInitA (arr $ const ()) $ F.ptaskFold (arr snd >>> writeData vf)
+writeDataFold vf = F.premapInitA (arr $ const ()) $ F.arrowFold (arr snd >>> writeData vf)
 
 -- | Gets a 'DataAccessor' to the 'VirtualFile', ie. doesn't read or write it
 -- immediately but gets a function that will make it possible.
-getVFileAccessFunction
+getDataAccessorFn
   :: (LogThrow m, Typeable a, Typeable b)
   => [VFNodeAccessType] -- ^ The accesses that will be performed on the DataAccessor
   -> VirtualFile a b
   -> PTask m () (LocVariableMap -> DataAccessor m a b)
-getVFileAccessFunction accesses vfile = withVFileInternalAccessFunction def accesses vfile
+getDataAccessorFn accesses vfile = withVFileInternalAccessFunction def accesses vfile
   (\mkAccessor _ _ -> return mkAccessor)
 
 -- | Gets a 'DataWriter' to the 'VirtualFile', ie. a function to write to it
 -- that can be passed to cached tasks.
-getVFileWriter
+getDataWriter
   :: (LogThrow m, Typeable a, Typeable b)
   => VirtualFile a b
   -> PTask m ignored (DataWriter m a)
-getVFileWriter vfile = withVFileInternalAccessFunction def [ATWrite] vfile
+getDataWriter vfile = withVFileInternalAccessFunction def [ATWrite] vfile
   (\mkAccessor _ _ -> case mkAccessor mempty of
       DataAccessor w _ l -> return $ DataWriter w l)
 
 -- | Gets a 'DataReader' from the 'VirtualFile', ie. a function to read from it
 -- than can be passed to cached tasks.
-getVFileReader
+getDataReader
   :: (LogThrow m, Typeable a, Typeable b)
   => VirtualFile a b
   -> PTask m ignored (DataReader m b)
-getVFileReader vfile = withVFileInternalAccessFunction def [ATRead] vfile
+getDataReader vfile = withVFileInternalAccessFunction def [ATRead] vfile
   (\mkAccessor _ _ -> case mkAccessor mempty of
       DataAccessor _ r l -> return $ DataReader r l)
 
@@ -365,7 +365,7 @@ withFolderDataAccessNodes
   -> (t (DataAccessNode m) -> i -> m o)  -- ^ What to run with these items
   -> PTask m i o                         -- ^ The resulting PTask
 withFolderDataAccessNodes props path filesToAccess accessFn =
-  makePTask' props tree runAccess
+  makeTask' props tree runAccess
   where
     tree = foldr (\pathItem subtree -> folderNode [ pathItem :/ subtree ])
                  (folderNode $ F.toList filesToAccess) path

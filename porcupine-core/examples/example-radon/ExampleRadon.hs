@@ -9,13 +9,12 @@
 {-# LANGUAGE ScopedTypeVariables   #-}
 {-# LANGUAGE TupleSections         #-}
 {-# LANGUAGE TypeApplications      #-}
-{-# OPTIONS_GHC -Wwarn #-}
+{-# OPTIONS_GHC -Wwarn -Wno-missing-signatures -Wno-name-shadowing #-}
 
 -- This example is loosely based on the series of blog posts by Thomas Wiecki
 -- https://twiecki.io/blog/2014/03/17/bayesian-glms-3/ .
 
 import qualified Control.Foldl                as L
-import           Control.Lens
 import           Control.Monad
 import           Control.Monad.Bayes.Class
 import           Control.Monad.Bayes.Sampler
@@ -30,9 +29,7 @@ import qualified Data.Vector                  as V
 import           GHC.Generics
 import           Graphics.Vega.VegaLite       as VL
 import           Numeric.Log
-import           Porcupine.Run
-import           Porcupine.Serials
-import           Porcupine.Tasks
+import           Porcupine
 import           Prelude                      hiding (id, (.))
 
 import           Plotting
@@ -137,21 +134,21 @@ sampleFlatLinRegModel = proc () -> do
   logInfo -< show summary
 
   vizSize <- getOption ["viz", "options"]
-             (docField @"vizSize" (400,400) "(w,h) of visualisations") -< ()
+             (docField @"vizSize" (400,400) "Width & height of visualisations") -< ()
   writeViz "1" -< plot vizSize
                        (S $ scatter2 xLbl yLbl (-3,5))
                        (Cols [(xLbl, VL.Booleans xs)
                              ,(yLbl, VL.Numbers ys)])
   nsamples <- getOption ["sampling", "options"]
               (docField @"nsamples" 5000 "Number of samples to draw") -< ()
-  samples <- ioPTask -<
+  samples <- ioTask -<
     sampleIOfixed $ prior $ mh nsamples $ model (zip xs ys)
   writeViz "2" -< plot vizSize
                        (H [[density2DPlot "radonWithB" "radonWithoutB" (0,2) (0,2)]
                           ,[density2DPlot "noiseWithB" "noiseWithoutB" (0,2) (0,2)]])
                        (J samples)
 
-  samples <- ioPTask -<
+  samples <- ioTask -<
     sampleIOfixed $ prior $ mh nsamples $ posteriorForward $ model (zip xs ys)
   let (xModel, yModel) = unzip samples
   writeViz "3" -< plot vizSize

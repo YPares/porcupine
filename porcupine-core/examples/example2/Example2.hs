@@ -6,14 +6,11 @@
 {-# LANGUAGE TypeApplications    #-}
 
 import           Data.Aeson
-import qualified Data.Text         as T
+import qualified Data.Text    as T
 import           GHC.Generics
-import           Porcupine.Run
-import           Porcupine.Serials
-import           Porcupine.Tasks
--- import qualified Streaming.Prelude as S
+import           Porcupine
 
-import           Prelude           hiding (id, (.))
+import           Prelude      hiding (id, (.))
 
 
 -- This example uses the porcupine to read a data that represents the evloution of a given stock in given data and

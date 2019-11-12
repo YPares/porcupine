@@ -1,17 +1,13 @@
+{-# LANGUAGE Arrows            #-}
 {-# LANGUAGE DataKinds         #-}
+{-# LANGUAGE GADTs             #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE TypeApplications  #-}
 
 import           Data.DocRecord
-import qualified Data.Text         as T
-import           Porcupine.Run
-import           Porcupine.Serials
-import           Porcupine.Tasks
-import           Prelude           hiding (id, (.))
-
-
-generateTxt :: Int -> T.Text
-generateTxt n = T.replicate n "a" <> T.replicate 5 "b"
+import qualified Data.Text.Lazy as T
+import           Porcupine
+import           Prelude        hiding (id, (.))
 
 
 yzCompress :: T.Text -> T.Text
@@ -26,12 +22,15 @@ resultFile = dataSink ["result"] $
           (somePureSerial (PlainTextSerial (Just "yz")))
 
 myTask :: (LogThrow m) => PTask m () ()
-myTask =
-      getOption ["options"]
-                (docField @"text-length" (10::Int)
-                          "The length of the text to output")
-  >>> arr generateTxt
-  >>> writeData resultFile
+myTask = proc () -> do
+  (FV chars :& FV nums :& _) <-
+    getOptions ["options"]
+      (  docField @"chars"        "a"       "The chars to repeat"
+      :& docField @"replications" [10::Int] "The numbers of replications"
+      :& RNil) -< ()
+  let txt = T.concat $
+        zipWith (\s n -> T.replicate (fromIntegral n) (T.singleton s)) chars nums
+  writeData resultFile -< txt
 
 main :: IO ()
-main = runLocalPipelineTask (FullConfig "example0.1" "config.yaml" "." ()) myTask ()
+main = runLocalPipelineTask (FullConfig "example0.1" "example0_1.yaml" "." ()) myTask ()

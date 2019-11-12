@@ -38,25 +38,25 @@ import qualified System.FilePath                 as Path
 
 -- | Each location bit can be a simple chunk of string, or a variable name
 -- waiting to be spliced in.
-data StringWithVarsBit
-  = SWVB_Chunk FilePath  -- ^ A raw filepath part, to be used as is
-  | SWVB_VarRef LocVariable -- ^ A variable name
+data StringOrVariable
+  = SoV_String FilePath  -- ^ A raw filepath part, to be used as is
+  | SoV_Variable LocVariable -- ^ A variable name
   deriving (Eq, Generic, ToJSON, FromJSON, Store)
 
-instance Show StringWithVarsBit where
-  show (SWVB_Chunk s)                = s
-  show (SWVB_VarRef (LocVariable v)) = "{" ++ v ++ "}"
+instance Show StringOrVariable where
+  show (SoV_String s)                 = s
+  show (SoV_Variable (LocVariable v)) = "{" ++ v ++ "}"
 
-locBitContent :: Lens' StringWithVarsBit String
-locBitContent f (SWVB_Chunk p) = SWVB_Chunk <$> f p
-locBitContent f (SWVB_VarRef (LocVariable v)) = SWVB_VarRef . LocVariable <$> f v
+locBitContent :: Lens' StringOrVariable String
+locBitContent f (SoV_String p) = SoV_String <$> f p
+locBitContent f (SoV_Variable (LocVariable v)) = SoV_Variable . LocVariable <$> f v
 
 -- | A newtype so that we can redefine the Show instance
-newtype StringWithVars = StringWithVars [StringWithVarsBit]
+newtype StringWithVars = StringWithVars [StringOrVariable]
   deriving (Generic, Store)
 
 instance Semigroup StringWithVars where
-  StringWithVars l1 <> StringWithVars l2 = StringWithVars $ concatSWVB_Chunks $ l1++l2
+  StringWithVars l1 <> StringWithVars l2 = StringWithVars $ concatSoV_Strings $ l1++l2
 instance Monoid StringWithVars where
   mempty = StringWithVars []
 
@@ -65,53 +65,53 @@ instance Show StringWithVars where
 
 -- | Get all the variable names still in the loc string and possibly replace
 -- them.
-locStringVariables :: Traversal' StringWithVars StringWithVarsBit
-locStringVariables f (StringWithVars bits) = StringWithVars . concatSWVB_Chunks <$> traverse f' bits
-  where f' c@SWVB_Chunk{}  = pure c
-        f' c@SWVB_VarRef{} = f c
+locStringVariables :: Traversal' StringWithVars StringOrVariable
+locStringVariables f (StringWithVars bits) = StringWithVars . concatSoV_Strings <$> traverse f' bits
+  where f' c@SoV_String{}   = pure c
+        f' c@SoV_Variable{} = f c
 
 -- | Ensures 2 consecutive chunks are concatenated together
-concatSWVB_Chunks :: [StringWithVarsBit] -> [StringWithVarsBit]
-concatSWVB_Chunks (SWVB_Chunk p1 : SWVB_Chunk p2 : rest) =
-  concatSWVB_Chunks (SWVB_Chunk (p1++p2) : rest)
-concatSWVB_Chunks (x : rest) = x : concatSWVB_Chunks rest
-concatSWVB_Chunks [] = []
+concatSoV_Strings :: [StringOrVariable] -> [StringOrVariable]
+concatSoV_Strings (SoV_String p1 : SoV_String p2 : rest) =
+  concatSoV_Strings (SoV_String (p1++p2) : rest)
+concatSoV_Strings (x : rest) = x : concatSoV_Strings rest
+concatSoV_Strings [] = []
 
-data LocFilePath a = LocFilePath { _pathWithoutExt :: a, _pathExtension :: String }
+data PathWithExtension a = PathWithExtension { _pathWithoutExt :: a, _pathExtension :: String }
   deriving (Eq, Ord, Generic, ToJSON, FromJSON, Functor, Foldable, Traversable, Binary, Store)
 
-instance (Monad m, ContentHashable m a) => ContentHashable m (LocFilePath a)
+instance (Monad m, ContentHashable m a) => ContentHashable m (PathWithExtension a)
 
-makeLenses ''LocFilePath
+makeLenses ''PathWithExtension
 
 firstNonEmptyExt :: String -> String -> String
 firstNonEmptyExt "" b = b
 firstNonEmptyExt a _  = a
 
-instance (Semigroup a) => Semigroup (LocFilePath a) where
+instance (Semigroup a) => Semigroup (PathWithExtension a) where
   -- Concats the filepaths /without considering extension/ and then chooses one
   -- non-empty extension, right-biased.
-  LocFilePath p e <> LocFilePath p' e' =
-    LocFilePath (p<>p') $ firstNonEmptyExt e' e
-instance (Monoid a) => Monoid (LocFilePath a) where
-  mempty = LocFilePath mempty ""
+  PathWithExtension p e <> PathWithExtension p' e' =
+    PathWithExtension (p<>p') $ firstNonEmptyExt e' e
+instance (Monoid a) => Monoid (PathWithExtension a) where
+  mempty = PathWithExtension mempty ""
 
--- | Turns the 'LocFilePath' to/from a simple string to be used as is.
-locFilePathAsRawFilePath :: (IsLocString a) => Iso' (LocFilePath a) FilePath
-locFilePathAsRawFilePath = iso to_ from_
+-- | Turns the 'PathWithExtension' to/from a simple string to be used as is.
+pathWithExtensionAsRawFilePath :: (IsLocString a) => Iso' (PathWithExtension a) FilePath
+pathWithExtensionAsRawFilePath = iso to_ from_
   where
-    to_ (LocFilePath p e) = case e of
+    to_ (PathWithExtension p e) = case e of
       "" -> p'
       _  -> p'++"."++e
       where p' = p ^. locStringAsRawString
     from_ fp = let (p,e) = splitExtension' fp
-               in LocFilePath (p ^. from locStringAsRawString) e
+               in PathWithExtension (p ^. from locStringAsRawString) e
 
-instance (IsLocString a) => IsString (LocFilePath a) where
-  fromString p = p ^. from locFilePathAsRawFilePath
+instance (IsLocString a) => IsString (PathWithExtension a) where
+  fromString p = p ^. from pathWithExtensionAsRawFilePath
 
-instance (IsLocString a) => Show (LocFilePath a) where
-  show p = fmap (view locStringAsRawString) p ^. locFilePathAsRawFilePath
+instance (IsLocString a) => Show (PathWithExtension a) where
+  show p = fmap (view locStringAsRawString) p ^. pathWithExtensionAsRawFilePath
 
 data QParam a = QParam a a
   deriving (Eq, Ord, Generic, Functor, Foldable, Traversable, Binary, Store)
@@ -127,24 +127,24 @@ asQParam = iso to_ from_
     to_ (x,y) = QParam (x ^. from locStringAsRawString) (y ^. from locStringAsRawString)
     from_ (QParam x y) = (x ^. locStringAsRawString, y ^. locStringAsRawString)
 
--- | Location's main type. A value of type 'URLLikeLoc' denotes a file or a
+-- | Location's main type. A value of type 'URL' denotes a file or a
 -- folder that may be local or hosted remotely
-data URLLikeLoc a
-  = LocalFile { filePath :: LocFilePath a }
-  | RemoteFile { rfProtocol    :: String
-               , rfServerName  :: String
-               , rfPortNumber  :: Maybe Integer
-               , rfLocFilePath :: LocFilePath a
-               , rfLocParams   :: [QParam a] }
+data URL a
+  = LocalFile { filePath :: PathWithExtension a }
+  | RemoteFile { rfProtocol          :: String
+               , rfServerName        :: String
+               , rfPortNumber        :: Maybe Integer
+               , rfPathWithExtension :: PathWithExtension a
+               , rfLocParams         :: [QParam a] }
   deriving ( Eq, Ord, Generic
            , Functor, Foldable, Traversable, Binary, Store )
 
-instance (Monad m, Typeable a, ContentHashable m a) => ContentHashable m (URLLikeLoc a)
+instance (Monad m, Typeable a, ContentHashable m a) => ContentHashable m (URL a)
 
-instance (IsLocString a) => Show (URLLikeLoc a) where
+instance (IsLocString a) => Show (URL a) where
   show LocalFile{ filePath } = show filePath
-  show RemoteFile{ rfProtocol, rfServerName, rfLocFilePath, rfPortNumber, rfLocParams } =
-    rfProtocol ++ "://" ++ rfServerName ++ port ++ "/" ++ show rfLocFilePath ++ qs
+  show RemoteFile{ rfProtocol, rfServerName, rfPathWithExtension, rfPortNumber, rfLocParams } =
+    rfProtocol ++ "://" ++ rfServerName ++ port ++ "/" ++ show rfPathWithExtension ++ qs
     where
       port = case rfPortNumber of
         Nothing -> ""
@@ -153,28 +153,28 @@ instance (IsLocString a) => Show (URLLikeLoc a) where
         [] -> ""
         _  -> "?" ++ URL.exportParams (map (view (from asQParam)) rfLocParams)
 
-locFilePath :: Lens' (URLLikeLoc a) (LocFilePath a)
-locFilePath f (LocalFile fp)                  = LocalFile <$> f fp
-locFilePath f RemoteFile{rfLocFilePath=fp,..} =
-  (\fp' -> RemoteFile{rfLocFilePath=fp',..}) <$> f fp
+urlPathWithExtension :: Lens' (URL a) (PathWithExtension a)
+urlPathWithExtension f (LocalFile fp)                  = LocalFile <$> f fp
+urlPathWithExtension f RemoteFile{rfPathWithExtension=fp,..} =
+  (\fp' -> RemoteFile{rfPathWithExtension=fp',..}) <$> f fp
 
--- | A 'URLLikeLoc' that might contain some names holes, called variables, that we
+-- | A 'URL' that might contain some named holes, called variables, that we
 -- have first to replace by a value before we can get a definite physical
 -- location.
-type LocWithVars = URLLikeLoc StringWithVars
+type LocWithVars = URL StringWithVars
 
--- | A 'URLLikeLoc' that can directly be accessed as is.
-type Loc = URLLikeLoc String
+-- | A 'URL' that can directly be accessed as is.
+type Loc = URL String
 
-type LocalFilePath = LocFilePath String
+type LocalFilePath = PathWithExtension String
 
 -- | Creates a 'Loc' from a simple litteral string
 localFile :: FilePath -> Loc
-localFile s = LocalFile $ s ^. from locFilePathAsRawFilePath
+localFile s = LocalFile $ s ^. from pathWithExtensionAsRawFilePath
 
 -- | Creates a 'LocWithVars' that will only contain a chunk, no variables
 locWithVarsFromLoc :: (Functor f) => f String -> f StringWithVars
-locWithVarsFromLoc = fmap (StringWithVars . (:[]) . SWVB_Chunk)
+locWithVarsFromLoc = fmap (StringWithVars . (:[]) . SoV_String)
 
 -- | A map that can be used to splice variables in a 'LocWithVars'
 type LocVariableMap = HM.HashMap LocVariable String
@@ -182,16 +182,17 @@ type LocVariableMap = HM.HashMap LocVariable String
 -- | Splices in the variables present in the hashmap
 spliceLocVariables :: (Functor f) => LocVariableMap -> f StringWithVars -> f StringWithVars
 spliceLocVariables vars = fmap $ over locStringVariables $ \v -> case v of
-  SWVB_VarRef vname ->
+  SoV_Variable vname ->
     case HM.lookup vname vars of
-      Just val -> SWVB_Chunk val
+      Just val -> SoV_String val
       Nothing  -> v
   _ -> error "spliceLocVariables: Should not happen"
 
+-- | Yields @Left _@ if any of the given StringWithVars contains variables.
 terminateLocWithVars :: (Traversable f) => f StringWithVars -> Either String (f String)
 terminateLocWithVars = traverse terminateStringWithVars
   where
-    terminateStringWithVars (StringWithVars [SWVB_Chunk s]) = Right s
+    terminateStringWithVars (StringWithVars [SoV_String s]) = Right s
     terminateStringWithVars locString = Left $
       "Variable(s) " ++ show (locString ^.. locStringVariables)
       ++ " in '" ++ show locString ++ "' haven't been given a value"
@@ -201,9 +202,9 @@ class (Monoid a) => IsLocString a where
   locStringAsRawString :: Iso' a String
   parseLocString       :: String -> Either String a
 
-parseLocStringAndExt :: (IsLocString a) => String -> Either String (LocFilePath a)
+parseLocStringAndExt :: (IsLocString a) => String -> Either String (PathWithExtension a)
 parseLocStringAndExt s =
-  LocFilePath <$> parseLocString p <*> refuseVarRefs "extension" e
+  PathWithExtension <$> parseLocString p <*> refuseVarRefs "extension" e
     where (p, e) = splitExtension' s
 
 splitExtension' :: FilePath -> (FilePath, String)
@@ -219,34 +220,37 @@ parseStringWithVars :: String -> Either String StringWithVars
 parseStringWithVars s = (StringWithVars . reverse . map (over locBitContent reverse) . filter isFull)
                    <$> foldM oneChar [] s
   where
-    oneChar (SWVB_VarRef _ : _) '{' = Left "Cannot nest {...}"
-    oneChar acc '{' = return $ SWVB_VarRef (LocVariable "") : acc
-    oneChar (SWVB_Chunk _ : _) '}' = Left "'}' terminates nothing"
-    oneChar acc '}' = return $ SWVB_Chunk "" : acc
+    oneChar (SoV_Variable _ : _) '{' = Left "Cannot nest {...}"
+    oneChar acc '{' = return $ SoV_Variable (LocVariable "") : acc
+    oneChar (SoV_String _ : _) '}' = Left "'}' terminates nothing"
+    oneChar acc '}' = return $ SoV_String "" : acc
     oneChar (hd : rest) c = return $ over locBitContent (c:) hd : rest
-    oneChar [] c = return [SWVB_Chunk [c]]
+    oneChar [] c = return [SoV_String [c]]
 
-    isFull (SWVB_Chunk "") = False
+    isFull (SoV_String "") = False
     isFull _               = True
 
+-- | @refuseVarRefs p s == Right s@ if `s` contains no variables.
+-- Otherwise, yields an error message.
 refuseVarRefs :: String -> String -> Either String String
 refuseVarRefs place s = do
   l <- parseStringWithVars s
   case l of
     (StringWithVars []) -> return ""
-    (StringWithVars [SWVB_Chunk p]) -> return p
+    (StringWithVars [SoV_String p]) -> return p
     _ -> Left $ "Variable references {...} are not allowed in the " ++ place ++ " part of a URL"
 
 instance IsLocString StringWithVars where
   locStringAsRawString = iso show from_
-    where from_ s = StringWithVars [SWVB_Chunk s]
+    where from_ s = StringWithVars [SoV_String s]
   parseLocString = parseStringWithVars
 
--- | The main way to parse an 'URLLikeLoc'.
-parseURLLikeLoc :: (IsLocString a) => String -> Either String (URLLikeLoc a)
-parseURLLikeLoc "." = Right $ LocalFile $ LocFilePath ("." ^. from locStringAsRawString) ""
-parseURLLikeLoc litteralPath = do
-  url <- maybe (Left $ "parseURLLikeLoc: Invalid URL '" ++ litteralPath ++ "'") Right $
+-- | The main way to parse an 'URL'. Variables are not allowed in the protocol
+-- and server parts.
+parseURL :: (IsLocString a) => String -> Either String (URL a)
+parseURL "." = Right $ LocalFile $ PathWithExtension ("." ^. from locStringAsRawString) ""
+parseURL litteralPath = do
+  url <- maybe (Left $ "parseURL: Invalid URL '" ++ litteralPath ++ "'") Right $
              URL.importURL litteralPath
   case URL.url_type url of
     URL.Absolute h ->
@@ -264,65 +268,65 @@ parseURLLikeLoc litteralPath = do
         getProtocol (URL.FTP False)  = "ftp"
         getProtocol (URL.FTP True)   = "ftps"
 
-instance (IsLocString a) => IsString (URLLikeLoc a) where
-  fromString s = case parseURLLikeLoc s of
+instance (IsLocString a) => IsString (URL a) where
+  fromString s = case parseURL s of
     Right l -> l
     Left e  -> error e
 
-instance (IsLocString a) => Representable (LocFilePath a) where
+instance (IsLocString a) => Representable (PathWithExtension a) where
   toTextRepr = T.pack . show
   fromTextRepr x = case parseLocStringAndExt $ T.unpack x of
     Left _   -> empty
     Right x' -> pure x'
 
-instance (IsLocString a) => Representable (URLLikeLoc a) where
+instance (IsLocString a) => Representable (URL a) where
   toTextRepr = T.pack . show
-  fromTextRepr x = case parseURLLikeLoc $ T.unpack x of
+  fromTextRepr x = case parseURL $ T.unpack x of
     Left _   -> empty
     Right x' -> pure x'
 
-instance (IsLocString a) => FromJSON (URLLikeLoc a) where
+instance (IsLocString a) => FromJSON (URL a) where
   parseJSON (String j) = fromTextRepr j
-  parseJSON _          = fail "URLLikeLoc must be read from a JSON String"
+  parseJSON _          = fail "URL must be read from a JSON String"
 
-instance (IsLocString a) => ToJSON (URLLikeLoc a) where
+instance (IsLocString a) => ToJSON (URL a) where
   toJSON = String . toTextRepr
 
--- | The equivalent of </> from `filepath` package on 'LocFilePath's
-appendToLocFilePathAsSubdir :: (IsLocString a) => LocFilePath a -> String -> LocFilePath a
-fp `appendToLocFilePathAsSubdir` s = view (from locFilePathAsRawFilePath) $
-    (fp^.locFilePathAsRawFilePath) Path.</> s
+-- | The equivalent of </> from `filepath` package on 'PathWithExtension's
+appendToPathWithExtensionAsSubdir :: (IsLocString a) => PathWithExtension a -> String -> PathWithExtension a
+fp `appendToPathWithExtensionAsSubdir` s = view (from pathWithExtensionAsRawFilePath) $
+    (fp^.pathWithExtensionAsRawFilePath) Path.</> s
 
 -- | Appends a path to a location. The Loc is considered to be a folder, so its
 -- possible extension will be /ignored/.
-(</>) :: (IsLocString a) => URLLikeLoc a -> String -> URLLikeLoc a
-f </> p = f & over locFilePath (`appendToLocFilePathAsSubdir` p)
+(</>) :: (IsLocString a) => URL a -> String -> URL a
+f </> p = f & over urlPathWithExtension (`appendToPathWithExtensionAsSubdir` p)
 infixl 4 </>
 
 -- | Alias for '</>'
-(<//>) :: (IsLocString a) => URLLikeLoc a -> String -> URLLikeLoc a
+(<//>) :: (IsLocString a) => URL a -> String -> URL a
 (<//>) = (</>)
 infixl 4 <//>
 
 -- | Replaces a Loc extension
 (-<.>) :: Loc -> String -> Loc
-f -<.> ext = f & locFilePath . pathExtension .~ ext
+f -<.> ext = f & urlPathWithExtension . pathExtension .~ ext
 infixl 3 -<.>
 
 -- | Initialises a directory from a Loc to it, so that we can safely write in it
 -- afterwards. For a local filesystem, this means creating it.
 initDir :: Loc -> IO ()
 initDir f@LocalFile{} =
-  Dir.createDirectoryIfMissing True $ f ^. locFilePath . pathWithoutExt
+  Dir.createDirectoryIfMissing True $ f ^. urlPathWithExtension . pathWithoutExt
 initDir _ = pure ()
 
 -- | Analog to 'Path.takeDirectory' for generalized locations
 takeDirectory :: Loc -> Loc
-takeDirectory = over (locFilePath . pathWithoutExt) Path.takeDirectory . dropExtension
+takeDirectory = over (urlPathWithExtension . pathWithoutExt) Path.takeDirectory . dropExtension
 
 -- | Analog of 'Path.dropExtension'
-dropExtension :: URLLikeLoc a -> URLLikeLoc a
-dropExtension f = f & locFilePath . pathExtension .~ ""
+dropExtension :: URL a -> URL a
+dropExtension f = f & urlPathWithExtension . pathExtension .~ ""
 
 -- | The class of all locations that can be mapped to VirtualFiles in a
 -- configuration file.
@@ -354,18 +358,19 @@ class (Traversable f
   -- Note: this isn't a path, the subdir shouldn't contain any slashes
   addSubdirToLoc :: (IsLocString a) => f a -> String -> f a
 
-  -- | "Integrate" a mapping shortcut (represented as a partial file path, with
-  -- its extension) to the location. For now, non URL-based locations should
-  -- send an error
+  -- | Apply a mapping shortcut (represented as a partial file path, with its
+  -- extension) to the location. For now, non URL-based locations should send an
+  -- error
   --
-  -- Note: contrary to 'addSubdirToLoc', the filepath MAY contain slashes
-  useLocAsPrefix :: (IsLocString a) => f a -> LocFilePath a -> f a
+  -- Note: contrary to 'addSubdirToLoc', the 'PathWithExtension' MAY contain
+  -- slashes
+  useLocAsPrefix :: (IsLocString a) => f a -> PathWithExtension a -> f a
 
-instance TypedLocation URLLikeLoc where
-  setLocType l f = l & over (locFilePath . pathExtension) f
-  getLocType = view (locFilePath . pathExtension)
+instance TypedLocation URL where
+  setLocType l f = l & over (urlPathWithExtension . pathExtension) f
+  getLocType = view (urlPathWithExtension . pathExtension)
   addSubdirToLoc = (</>)
-  useLocAsPrefix l p = l & over locFilePath (<> p)
+  useLocAsPrefix l p = l & over urlPathWithExtension (<> p)
 
 -- | Sets the file type of a location
 overrideLocType :: (TypedLocation f) => f a -> String -> f a

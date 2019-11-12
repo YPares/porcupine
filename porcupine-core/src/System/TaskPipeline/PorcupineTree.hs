@@ -153,7 +153,10 @@ data SomeDataAccess m where
 -- | Tells the type of accesses that some VirtualFile will undergo. They are
 -- accumulated though the whole pipeline.
 data VFNodeAccessType = ATWrite | ATRead
-  deriving (Eq, Show)
+  deriving (Eq, Show, Generic)
+
+instance ToJSON VFNodeAccessType
+instance FromJSON VFNodeAccessType
 
 -- | The nodes of a "VirtualTree"
 data VirtualFileNode = MbVirtualFileNode [VFNodeAccessType] (Maybe SomeVirtualFile)
@@ -179,8 +182,8 @@ data DataAccessNode m = MbDataAccessNode [SomeLocWithVars m] (First (SomeDataAcc
   -- Data access function isn't a semigroup, hence the use of First here instead
   -- of Maybe.
 -- | A non-empty 'DataAccessNode'
-pattern DataAccessNode l x = MbDataAccessNode l (First (Just (SomeDataAccess x)))
-
+pattern DataAccessNode {danodeLayers, danodeAccessFn} =
+  MbDataAccessNode danodeLayers (First (Just (SomeDataAccess danodeAccessFn)))
 
 instance Semigroup VirtualFileNode where
   MbVirtualFileNode ats vf <> MbVirtualFileNode ats' vf' =
@@ -203,6 +206,7 @@ toJSONTxt (SomeGLoc a) = case toJSON a of
 data PhysicalFileNodeShowOpts = PhysicalFileNodeShowOpts
   { pfshowWithMappings   :: Bool
   , pfshowWithSerials    :: Bool
+  , pfshowWithOptions    :: Bool
   , pfshowWithTypes      :: Bool
   , pfshowWithAccesses   :: Bool
   , pfshowWithExtensions :: Bool
@@ -229,8 +233,11 @@ instance Show (PhysicalFileNodeWithShowOpts m) where
          describeVFileExtensions pfnodeFile)
     ++ (showIf pfshowWithAccesses $
          "Accessed with " ++ show pfnodeAccesses)
+    ++ (showIf pfshowWithOptions $
+         describeVFileAsRecOfOptions pfnodeFile pfshowTypeNumChars)
     where
-      showIf cond content = if cond then [content] else []
+      showIf cond content =
+        if cond && (not $ null content) then [content] else []
   show _ = ""
 
 -- * API for manipulating porcupine trees globally
@@ -263,7 +270,7 @@ virtualTreeToMappings tree = mappingsFromLocTree <$> over filteredLocsInTree rmO
       | Just VFForCLIOptions <- intent = Nothing  -- Nodes with default data are
                                                   -- by default not put in the
                                                   -- mappings
-      where intent = vfileDescIntent $ getVirtualFileDescription vfnodeFile
+      where intent = vfileDescIntent $ getVFileDescription vfnodeFile
     rmOpts n = Just n
 
 -- | Filters the tree to get only the nodes than can be embedded in the config file
@@ -284,7 +291,7 @@ embedDataInVirtualTree = over filteredLocsInTree keepOpts
     keepOpts n@VirtualFileNode{..}
       | Just VFForCLIOptions <- intent = Just n
       | otherwise = Nothing
-      where intent = vfileDescIntent $ getVirtualFileDescription vfnodeFile
+      where intent = vfileDescIntent $ getVFileDescription vfnodeFile
     keepOpts n = Just n
 
 variablesSection :: T.Text
@@ -383,6 +390,7 @@ virtualTreeConfigurationReader VirtualTreeAndMappings{vtamTree=defTree} =
         mappingsParser =
           many (option (eitherReader locBinding)
                  (long "loc"
+               <> short 'l'
                <> help "Map a virtual file path to a physical location"))
         parseLocBinding vpath locOp loc = do
           p <- fromTextRepr vpath
@@ -508,7 +516,7 @@ applyOneVFileMapping variables configLayers mbVF mappingIsExplicit = buildPhysic
     buildPhysicalNode VirtualFileNode{..} = PhysicalFileNode layers vfnodeAccesses vfnodeFile
       where
         First defExt = vfnodeFile ^. vfileSerials . serialDefaultExt
-        intent = vfileDescIntent $ getVirtualFileDescription vfnodeFile
+        intent = vfileDescIntent $ getVFileDescription vfnodeFile
         -- TODO: It seems to be the case that the are some constraints to meet
         -- on a valid physical tree. For instance, that having a VFForCLIOptions
         -- node with derived layers is invalid?
@@ -539,10 +547,11 @@ newtype TaskConstructionError =
   deriving (Show)
 instance Exception TaskConstructionError
 
--- TODO: Is this dead-code?
+-- | Used to add context to log messages
 data DataAccessContext = DAC
   { virtualPath          :: String
   , locationAccessed     :: Value
+  , locationAccessType   :: VFNodeAccessType
   , requiredLocVariables :: [LocVariable]
   , providedLocVariables :: LocVariableMap
   , splicedLocation      :: Value }
@@ -554,24 +563,30 @@ instance LogItem DataAccessContext where
   payloadKeys v _
     | v == V3   = AllKeys
     | v == V2   = SomeKeys ["virtualPath", "locationAccessed", "providedLocVariables"]
-    | v == V1   = SomeKeys ["virtualPath", "locationAccessed"]
+    | v == V1   = SomeKeys ["virtualPath", "locationAccessed", "locationAccessType"]
     | otherwise = SomeKeys []
 
+-- | Where the PhysicalFileNodes are turned into DataAccessNodes. This is where
+-- we create the actions that will pull and/or write data from the
+-- locations. This is also where we handle the merging of the layers if several
+-- physical locations (layers) are mapped to a VirtualFile to be read from.
 makeDataAccessor
-  :: forall m a b. (LogMask m)
+  :: forall m a b a' b'. (LogMask m)
   => String  -- ^ VirtualFile path (for doc)
-  -> VFileImportance  -- ^ How to log the accesses
-  -> [SomeLocWithVars m]  -- ^ Every mapped layer (for doc)
+  -> VirtualFile a' b'  -- ^ The virtual file
+  -> [SomeLocWithVars m]  -- ^ Every mapped layer (only used by makeDataAccessor
+                          -- for documentation purposes)
   -> Maybe b -- ^ Default value (used as base layer)
   -> LayeredReadScheme b  -- ^ How to handle the different layers
   -> [(ToAtomicFn a, SomeLocWithVars m)]  -- ^ Layers to write to
   -> [(FromStreamFn b, SomeLocWithVars m)] -- ^ Layers to read from
   -> LocVariableMap  -- ^ The map of the values of the repetition indices
   -> DataAccessor m a b
-makeDataAccessor vpath (VFileImportance sevRead sevWrite sevError clockAccess)
-                 layers mbDefVal readScheme writeLocs readLocs repetKeyMap =
+makeDataAccessor vpath vf layers mbDefVal readScheme writeLocs readLocs repetKeyMap =
   DataAccessor{..}
   where
+    (VFileImportance sevRead sevWrite sevError clockAccess) = vf ^. vfileImportance
+    rkeys = vf ^. vfileSerials.serialRepetitionKeys
     timeAccess :: String -> Severity -> String -> m t -> m t
     timeAccess prefix sev loc action
       | clockAccess = do
@@ -585,25 +600,25 @@ makeDataAccessor vpath (VFileImportance sevRead sevWrite sevError clockAccess)
           return r
     daLocsAccessed = traverse (\(SomeGLoc loc) -> SomeGLoc <$> fillLoc' repetKeyMap loc) layers
     daPerformWrite input =
-        forM_ writeLocs $ \(ToAtomicFn {-rkeys-} f, SomeGLoc loc) ->
+        forM_ writeLocs $ \(ToAtomicFn f, SomeGLoc loc) ->
           case cast (f input) of
             Nothing -> error "Some atomic serializer isn't converting to a lazy ByteString"
             Just bs -> do
               loc' <- fillLoc repetKeyMap loc
               katipAddNamespace "dataAccessor" $ katipAddNamespace "writer" $
-                katipAddContext (DAC vpath (toJSON loc) {-rkeys-}mempty repetKeyMap (toJSON loc')) $ do
+                katipAddContext (DAC vpath (toJSON loc) ATWrite rkeys repetKeyMap (toJSON loc')) $ do
                   let runWrite = writeBSS loc' (BSS.fromLazy bs)
                   timeAccess "Wrote" sevWrite (show loc') $
                     withException runWrite $ \ioError ->
                       logFM sevError $ logStr $ displayException (ioError :: IOException)
     daPerformRead = do
-        dataFromLayers <- forM readLocs (\(FromStreamFn {-rkeys-} (f :: Stream (Of i) m () -> m b), SomeGLoc loc) ->
+        dataFromLayers <- forM readLocs (\(FromStreamFn (f :: Stream (Of i) m () -> m b), SomeGLoc loc) ->
           case eqT :: Maybe (i :~: Strict.ByteString) of
             Nothing -> error "Some stream reader isn't expecting a stream of strict ByteStrings"
             Just Refl -> do
               loc' <- fillLoc repetKeyMap loc
               katipAddNamespace "dataAccessor" $ katipAddNamespace "reader" $
-                katipAddContext (DAC vpath (toJSON loc) {-rkeys-}mempty repetKeyMap (toJSON loc')) $ do
+                katipAddContext (DAC vpath (toJSON loc) ATRead rkeys repetKeyMap (toJSON loc')) $ do
                   let runRead = readBSS loc' (f . BSS.toChunks)
                   r <- timeAccess "Read" sevRead (show loc') $ withException runRead $ \ioError ->
                     logFM sevError $ logStr $ displayException (ioError :: IOException)
@@ -654,7 +669,7 @@ resolveDataAccess (PhysicalFileNode{pfnodeFile=vf, ..}) = do
   readLocs <- findFunctions (typeOf (undefined :: Strict.ByteString)) readers
   return $
     DataAccessNode pfnodeLayers $
-      makeDataAccessor vpath (vf^.vfileImportance) pfnodeLayers
+      makeDataAccessor vpath vf pfnodeLayers
                        mbEmbeddedVal readScheme
                        writeLocs readLocs
   where
