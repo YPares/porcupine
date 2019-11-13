@@ -54,7 +54,7 @@ Funflow provides a worker demon that the main pipeline can distribute docker-con
 
 So it could be used with funflow-jobs, but for now porcupine has only ever been used for parallel execution of tasks. We plan to look at integration with Streamly and/or Hailstorm to see how it would go.
 
-Another solution (which is the one used by our client) is to use an external job queue (like barista, celery, etc.) which starts porcupine pipeline instances. This is made easy by the fact that all the configuration of a pipeline instance is exposed by porcupine, and therefore can be set by the program that puts the jobs in the queue (as one JSON file).
+Another solution (which is the one used by our client) is to use an external job queue (like celery) which starts porcupine pipeline instances. This is made easy by the fact that all the configuration of a pipeline instance is exposed by porcupine, and therefore can be set by the program that puts the jobs in the queue (as one JSON file).
 
 #### I like the idea of tasks that automatically maintain and merge their requirements when they compose, but I want to deal with configuration, CLI and everything myself. Can I do that?
 
