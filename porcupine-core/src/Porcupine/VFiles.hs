@@ -8,7 +8,9 @@ module Porcupine.VFiles
   , usesCacherWithIdent
   , clockVFileAccesses
   , bidirVirtualFile, dataSource, dataSink
-  , makeSource, makeSink )
+  , makeSource, makeSink
+  , plainTextVFile
+  )
 where
 
 import           Data.Locations.VirtualFile

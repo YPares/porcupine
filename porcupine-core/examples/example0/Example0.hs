@@ -9,9 +9,8 @@ import qualified Data.Text.Lazy as T
 import           Porcupine
 
 
-resultFile :: DataSink T.Text
-resultFile = dataSink ["result"] $
-  somePureSerial (PlainTextSerial (Just "txt"))
+resultFile :: BidirVirtualFile T.Text
+resultFile = plainTextVFile ["result"]
 
 myTask :: (LogThrow m) => PTask m () ()
 myTask = proc () -> do

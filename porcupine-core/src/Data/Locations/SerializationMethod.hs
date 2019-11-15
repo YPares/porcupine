@@ -32,7 +32,7 @@ import           Data.Char                       (ord)
 import qualified Data.Csv                        as Csv
 import qualified Data.Csv.Builder                as CsvBuilder
 import qualified Data.Csv.Parser                 as CsvParser
-import           Data.DocRecord
+import           Data.DocRecord                  hiding (rmap)
 import           Data.DocRecord.OptParse         (RecordUsableWithCLI)
 import qualified Data.HashMap.Strict             as HM
 import           Data.Locations.LocVariable
@@ -547,14 +547,6 @@ newtype PlainTextSerial = PlainTextSerial { plainTextSerialSpecificExt :: Maybe 
 instance SerializationMethod PlainTextSerial where
   getSerialDefaultExt (PlainTextSerial ext) = ext
 
-instance SerializesWith PlainTextSerial T.Text where
-  getSerialWriters (PlainTextSerial ext) = mempty
-    { _serialWritersToAtomic =
-      toAtomicFn [Nothing] (\t -> LT.fromChunks [t]) -- To lazy text
-      <> toAtomicFn [ext] (\t -> LTE.encodeUtf8 $ LT.fromChunks [t]) -- To lazy bytestring
-      <> toAtomicFn [ext] toJSON  -- To A.Value
-    }
-
 instance SerializesWith PlainTextSerial LT.Text where
   getSerialWriters (PlainTextSerial ext) = mempty
     { _serialWritersToAtomic =
@@ -562,6 +554,9 @@ instance SerializesWith PlainTextSerial LT.Text where
       <> toAtomicFn [ext] LTE.encodeUtf8 -- To lazy bytestring
       <> toAtomicFn [ext] toJSON  -- To A.Value
     }
+
+instance SerializesWith PlainTextSerial T.Text where
+  getSerialWriters = contramap (\t -> LT.fromChunks [t]) . getSerialWriters
 
 instance DeserializesWith PlainTextSerial T.Text where
   getSerialReaders (PlainTextSerial ext) = mempty
@@ -574,6 +569,9 @@ instance DeserializesWith PlainTextSerial T.Text where
         <>
         fromStreamFn [ext] (fmap TE.decodeUtf8 . S.mconcat_)
     }
+
+instance DeserializesWith PlainTextSerial LT.Text where
+  getSerialReaders = fmap (\t -> LT.fromChunks [t]) . getSerialReaders
 
 -- * Serialization of options
 
