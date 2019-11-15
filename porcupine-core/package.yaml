@@ -99,6 +99,11 @@ tests:
       - hedgehog
     
 executables:
+  stress-write:
+    source-dirs: examples/stress-write
+    main: Main.hs
+    dependencies:
+      - porcupine-core
   example0:
     source-dirs: examples/example0
     main: Example0.hs
