@@ -53,7 +53,7 @@ instance (MonadAWS m, MonadMask m, MonadResource m)
     deriving (Functor, Foldable, Traversable, ToJSON, TypedLocation)
   locExists _ = return True -- TODO: Implement it
   writeBSS (S l) = writeBSS_S3 l
-  readBSS (S l) f = readBSS_S3 l f
+  readBSS (S l) = readBSS_S3 l
   copy (S l1) (S l2) = copy_S3 l1 l2
 
 instance (MonadAWS m, MonadMask m, MonadResource m)
@@ -80,22 +80,17 @@ writeBSS_S3 S3Obj { bucketName, objectName } body = do
 writeBSS_S3 _ _ = undefined
 
 readBSS_S3
-  :: (MonadAWS m)
+  :: (MonadAWS m, MonadResource m)
   => Loc
-  -> (BSS.ByteString m () -> m b)
-  -> m b
-readBSS_S3 S3Obj{ bucketName, objectName } k = do
-  r <- S3.streamObjInto
-         (fromString bucketName)
-         (fromString $ objectName ^. pathWithExtensionAsRawFilePath)
-         k
-  case r of
-    Left e  -> throw e
-    Right r -> return r
-readBSS_S3 _ _ = undefined
+  -> BSS.ByteString m ()
+readBSS_S3 S3Obj{ bucketName, objectName } = do
+  S3.streamObj
+    (fromString bucketName)
+    (fromString $ objectName ^. pathWithExtensionAsRawFilePath)
+readBSS_S3 _ = undefined
 
 copy_S3
-  :: (MonadResource m, MonadAWS m)
+  :: (MonadAWS m, MonadResource m)
   => Loc
   -> Loc
   -> m ()
@@ -106,7 +101,7 @@ copy_S3 locFrom@(S3Obj bucket1 obj1) locTo@(S3Obj bucket2 obj2)
              (fromString $ obj1^.pathWithExtensionAsRawFilePath)
              (fromString $ obj2^.pathWithExtensionAsRawFilePath)
       return ()
-  | otherwise = readBSS_S3 locFrom (writeBSS_S3 locTo)
+  | otherwise = writeBSS_S3 locTo (readBSS_S3 locFrom)
 copy_S3 _ _ = undefined
 
 -- | Just a shortcut for when you want ONLY local files and S3 support, with AWS

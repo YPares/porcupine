@@ -14,8 +14,7 @@ module Network.AWS.S3.TaskPipelineUtils
   , uploadObj
   , uploadFolder
   , streamS3Folder
-  , streamObjInto
-  , streamObjIntoExt
+  , streamObj
   , downloadFolder
   , copyObj
   )
@@ -24,19 +23,22 @@ where
 import           Control.Exception.Safe
 import           Control.Lens                 hiding ((:>))
 import           Control.Monad                (when)
-import           Control.Monad.Trans.Resource
+import           Control.Monad.Trans.Resource (liftResourceT, MonadResource)
+import           Control.Monad.Morph
 import           Control.Retry                (RetryPolicyM (..), limitRetries,
                                                retrying, rsIterNumber)
 import qualified Data.ByteString.Streaming    as BSS
-import           Data.Conduit.Binary          (sinkLbs)
+import qualified Data.Conduit                 as C
 import           Data.String
 import           Data.Text                    (Text)
 import qualified Data.Text                    as T
 import           Network.AWS
 import           Network.AWS.Auth             (AuthError)
+import           Network.AWS.Data.Body
 import           Network.AWS.Env              (Env, HasEnv, environment)
 import           Network.AWS.S3
 import qualified Network.AWS.S3.ListObjects   as LO
+import qualified Streaming.Conduit            as SC
 import qualified Streaming.Prelude            as S
 import           Streaming.TaskPipelineUtils  as S
 import           System.Directory             (createDirectoryIfMissing)
@@ -55,10 +57,10 @@ instance {-# OVERLAPPABLE #-} HasEnv a => HasEnv (a `With` b) where environment 
 instance HasEnv (a `With` Env)
   where environment = ann.environment
 
+-- | Reads env vars AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY
 getEnv :: Bool -- ^ Verbose
        -> IO Env
 getEnv verbose = do
-  -- Reads env vars AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY
   env <-
     catch (newEnv Discover) (handleException :: AuthError -> IO Env)
   pure $ env & envRegion .~ Frankfurt
@@ -73,12 +75,12 @@ getEnv verbose = do
       newEnv (FromKeys "foo" "bar")
 
 uploadObj :: (MonadAWS m)
-             => BucketName
-             -> ObjectKey
-             -> BSS.ByteString m a
-             -> m (PutObjectResponse, a)
+          => BucketName
+          -> ObjectKey
+          -> BSS.ByteString m a
+          -> m (PutObjectResponse, a)
 uploadObj buck object source = do
-  (bs :> r) <- BSS.toStrict source
+  (bs :> r) <- BSS.toStrict source  -- TODO: Replace that by proper multipart sending
   por <- send $ putObject buck object $ toBody bs
   return (por, r)
 
@@ -111,7 +113,7 @@ streamS3Folder ::
      MonadAWS m => BucketName -> Maybe FilePath -> Stream (Of FilePath) m ()
 streamS3Folder bucketName prefix = do
   let listCommand = LO.listObjects bucketName
-                      & LO.loPrefix .~ ((fromString . normalise) <$> prefix)
+                    & LO.loPrefix .~ ((fromString . normalise) <$> prefix)
   rs <- lift $ liftAWS $ send listCommand
   view LO.lorsContents rs
     & S.each
@@ -119,29 +121,28 @@ streamS3Folder bucketName prefix = do
     & S.map (\(ObjectKey k) -> T.unpack k)
 
 downloadFolder :: (MonadAWS m, MonadResource m)
-                  => BucketName
-                  -> Maybe FilePath -- ^ The folder to download
-                  -> FilePath -- ^ The path in which to save the download
-                  -> m ()
+               => BucketName
+               -> Maybe FilePath -- ^ The folder to download
+               -> FilePath -- ^ The path in which to save the download
+               -> m ()
 downloadFolder srcBuck srcPath dest =
-  streamS3Folder
-    srcBuck
-    srcPath
+  streamS3Folder srcBuck srcPath
   & S.mapM_ (\f -> do
                 let outFile = dest </> f
                 liftIO $ createDirectoryIfMissing True $ takeDirectory outFile
-                streamObjIntoExt srcBuck (fromString f) $ BSS.writeFile outFile)
+                BSS.writeFile outFile $ streamObj srcBuck (fromString f))
 
-streamObjInto :: (MonadAWS m)
-                 => BucketName
-                 -> ObjectKey
-                 -> (BSS.ByteString m () -> m b)
-                 -> m (Either SomeException b)
-streamObjInto srcBuck srcObj f = retry (_svcRetry s3) . try $ do
-  let g = getObject srcBuck srcObj
-  rs <- send g
-  resultingBS <- view gorsBody rs `sinkBody` sinkLbs
-  f (BSS.fromLazy resultingBS)
+streamObj :: (MonadAWS m, MonadResource m, MonadThrow m)
+          => BucketName
+          -> ObjectKey
+          -> BSS.ByteString m ()
+streamObj srcBuck srcObj = do
+  mbR <- lift $ retry (_svcRetry s3) $ try $
+           send $ getObject srcBuck srcObj
+  case mbR of
+    Right rs ->
+      hoist liftResourceT $ SC.toBStream $ C.toProducer $ _streamBody $ view gorsBody rs
+    Left exc -> throwM (exc :: SomeException)
 
 -- |
 -- Retries the given action until it succeeds or the maximum attemps has been
@@ -172,19 +173,3 @@ retry awsRetry action =
         Left _  -> pure True
   in
   retrying retryPolicy shouldRetry (const action)
-
-
-streamObjIntoExt :: (MonadAWS m)
-                     => BucketName
-                     -> ObjectKey
-                     -> (BSS.ByteString m () -> m b)
-                     -> m b
-streamObjIntoExt srcBuck srcObj f = do
-  streamResult <- streamObjInto srcBuck srcObj f
-  case streamResult of
-    Right x -> do
-      liftIO $ putStrLn $ show srcObj ++ " downloaded."
-      pure x
-    Left err -> do
-      liftIO $ putStrLn $ show srcObj ++ " download failed: " ++ show err
-      f mempty

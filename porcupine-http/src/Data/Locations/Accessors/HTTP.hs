@@ -78,7 +78,7 @@ instance (MonadResource m, MonadMask m)
             (setRequestHeader "Content-type" . (:[]))
             (TE.encodeUtf8 <$> acceptContentType l)
     return r
-  readBSS l f = do
+  readBSS l = do
     req <- makeReq $ url l
     let
       req' = req
@@ -88,7 +88,7 @@ instance (MonadResource m, MonadMask m)
            & maybeUpdate
              (setRequestHeader "Accept" . (:[]))
              (TE.encodeUtf8 <$> acceptContentType l)
-    f $ SC.toBStream $ httpSource req' getResponseBody
+    SC.toBStream $ httpSource req' getResponseBody
 
 instance (MonadResource m, MonadMask m) => MayProvideLocationAccessors m "http"
 

@@ -28,7 +28,7 @@ myTask = proc () -> do  -- proc can't pattern match directly on GADTs
                            writeData output -< txt
                            ioTask -< threadDelay (waitMS*1000)
                            loadData output -< ())
-    -< [ (x,mkTxt x,waitMS) | x <- [(1::Int)..numF] ]
+    -< [ (TRIndex ("in" ++ show x ++ "dex"),mkTxt x,waitMS) | x <- [(1::Int)..numF] ]
   returnA -< ()
   where
     defOpts = docField @"num-files" (1000::Int) "The number of files to write"

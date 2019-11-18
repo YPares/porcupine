@@ -23,10 +23,12 @@ dependencies:
   - katip
   - lens
   - monad-control
+  - mmorph
   - resourcet
   - bytestring
   - streaming
   - streaming-bytestring
+  - streaming-conduit
   - directory
   - reader-soup == 0.1.*
   - porcupine-core == 0.1.*
@@ -34,7 +36,6 @@ dependencies:
   - text
   - filepath
   - conduit
-  - conduit-extra
 
 library:
   source-dirs: src

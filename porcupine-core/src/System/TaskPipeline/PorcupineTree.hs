@@ -619,7 +619,7 @@ makeDataAccessor vpath vf layers mbDefVal readScheme writeLocs readLocs repetKey
               loc' <- fillLoc repetKeyMap loc
               katipAddNamespace "dataAccessor" $ katipAddNamespace "reader" $
                 katipAddContext (DAC vpath (toJSON loc) ATRead rkeys repetKeyMap (toJSON loc')) $ do
-                  let runRead = readBSS loc' (f . BSS.toChunks)
+                  let runRead = f $ BSS.toChunks $ readBSS loc'
                   r <- timeAccess "Read" sevRead (show loc') $ withException runRead $ \ioError ->
                     logFM sevError $ logStr $ displayException (ioError :: IOException)
                   return r)
