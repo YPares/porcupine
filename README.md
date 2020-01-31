@@ -52,7 +52,8 @@ and transition to Funflow's level.
 
 Funflow provides a worker demon that the main pipeline can distribute docker-containerized tasks to. For pure Haskell functions, there is [funflow-jobs](https://github.com/tweag/funflow/tree/master/funflow-jobs) but it's experimental.
 
-So it could be used with funflow-jobs, but for now porcupine has only ever been used for parallel execution of tasks. We plan to look at integration with Streamly and/or Hailstorm to see how it would go.
+So it could be used with funflow-jobs, but for now porcupine has only ever been used for parallel execution of tasks.
+We recently started thinking about how the funflow/porcupine's model could be adapted to run a pipeline in a cluster in a decentralized fashion, and we have some promising ideas so that feature may appear in the future.
 
 Another solution (which is the one used by our client) is to use an external job queue (like celery) which starts porcupine pipeline instances. This is made easy by the fact that all the configuration of a pipeline instance is exposed by porcupine, and therefore can be set by the program that puts the jobs in the queue (as one JSON file).
 
