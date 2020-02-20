@@ -37,6 +37,7 @@ module Data.Locations.VirtualFile
   , describeVFileAsRecOfOptions
   , clockVFileAccesses
   , defaultCacherWithIdent
+  , plainTextVFile
   ) where
 
 import           Control.Funflow
@@ -299,6 +300,12 @@ dataSource path = makeSource . virtualFile path
 -- data.
 dataSink :: [LocationTreePathItem] -> SerialsFor a b -> DataSink a
 dataSink path = makeSink . virtualFile path
+
+-- | Create a bidir virtual file for .txt files
+plainTextVFile :: (SerializesWith PlainTextSerial a, DeserializesWith PlainTextSerial a)
+               => [LocationTreePathItem] -> BidirVirtualFile a
+plainTextVFile path = virtualFile path $
+  someBidirSerial (PlainTextSerial (Just $ T.pack "txt"))
 
 -- | Like 'virtualFile', but constrained to bidirectional serials, for clarity
 bidirVirtualFile :: [LocationTreePathItem] -> BidirSerials a -> BidirVirtualFile a

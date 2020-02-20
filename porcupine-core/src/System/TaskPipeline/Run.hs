@@ -242,7 +242,7 @@ bindVirtualTreeAndRun (FullConfig progName defConfigFileURL defRoot defRetVal) a
                       -- TODO: Implement locExists in each accessor and use it
                       -- here. For now we fail if given a remote config that
                       -- doesn't exist.
-                    readBSS loc decodeYAMLStream
+                    decodeYAMLStream (readBSS loc)
     parser <- pipelineCliParser virtualTreeConfigurationReader progName $
               BaseInputConfig (case configFileSource of
                                  ConfigFileURL (LocalFile filep) -> Just filep

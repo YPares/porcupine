@@ -81,6 +81,18 @@ instance HasTRIndex Integer where
 instance (HasTRIndex i) => HasTRIndex (i,a) where
   getTRIndex (i,_) = getTRIndex i
 
+instance (HasTRIndex i) => HasTRIndex (i,a,b) where
+  getTRIndex (i,_,_) = getTRIndex i
+
+instance (HasTRIndex i) => HasTRIndex (i,a,b,c) where
+  getTRIndex (i,_,_,_) = getTRIndex i
+
+instance (HasTRIndex i) => HasTRIndex (i,a,b,c,d) where
+  getTRIndex (i,_,_,_,_) = getTRIndex i
+
+instance (HasTRIndex i) => HasTRIndex (i,a,b,c,d,e) where
+  getTRIndex (i,_,_,_,_,_) = getTRIndex i
+
 -- | Turns a task into one that can be called several times, each time with a
 -- different index value @i@. This index will be used to alter every path
 -- accessed by the task. The first argument gives a name to that index, that

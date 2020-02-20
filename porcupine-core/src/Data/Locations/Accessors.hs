@@ -98,10 +98,10 @@ class ( MonadMask m, MonadIO m
 
   writeBSS :: LocOf l -> BSS.ByteString m r -> m r
 
-  readBSS :: LocOf l -> (BSS.ByteString m () -> m b) -> m b
+  readBSS :: LocOf l -> BSS.ByteString m ()
 
   copy :: LocOf l -> LocOf l -> m ()
-  copy locFrom locTo = readBSS locFrom (writeBSS locTo)
+  copy locFrom locTo = writeBSS locTo (readBSS locFrom)
 
   withLocalBuffer :: (FilePath -> m a) -> LocOf l -> m a
   -- If we have a local resource accessor, we use it:
@@ -113,7 +113,7 @@ class ( MonadMask m, MonadIO m
       writeAndUpload tmpDir = do
         let tmpFile = tmpDir Path.</> "out"
         res <- f tmpFile
-        _ <- readBSS (L (localFile tmpFile)) (writeBSS loc)
+        writeBSS loc $ readBSS (L (localFile tmpFile))
         return res
 
 -- | Reifies an instance of LocationAccessor
@@ -179,8 +179,8 @@ instance (MonadResource m, MonadMask m) => LocationAccessor m "resource" where
     let raw = path ^. pathWithExtensionAsRawFilePath
     liftIO $ createDirectoryIfMissing True (Path.takeDirectory raw)
     BSS.writeFile raw body
-  readBSS (L l) f = checkLocal "readBSS" l $ \path ->
-    f $ BSS.readFile $ path ^. pathWithExtensionAsRawFilePath
+  readBSS (L l) = checkLocal "readBSS" l $ \path ->
+    BSS.readFile $ path ^. pathWithExtensionAsRawFilePath
   withLocalBuffer f (L l) = checkLocal "withLocalBuffer" l $ \path ->
     f $ path ^. pathWithExtensionAsRawFilePath
   copy (L l1) (L l2) =
@@ -259,7 +259,7 @@ readLazyByte
   :: (LocationAccessor m l)
   => LocOf l
   -> m LBS.ByteString
-readLazyByte loc = readBSS loc BSS.toLazy_
+readLazyByte loc = BSS.toLazy_ $ readBSS loc
 
 readText
   :: (LocationAccessor m l)
