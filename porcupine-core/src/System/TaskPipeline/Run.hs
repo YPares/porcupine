@@ -175,7 +175,7 @@ getFunflowOpts = do
     parseIdentity (Just "") = return Nothing
     parseIdentity (Just s) = case reads s of
       [(i,_)] -> return $ Just i
-      _       -> fail $ identityVar ++ " isn't a valid integer"
+      _       -> liftIO . fail $ identityVar ++ " isn't a valid integer"
     warnAboutIdentity var = $(logTM) WarningS $ logStr $
       var ++ " has been given but no " ++ identityVar ++
       " has been provided. Caching will NOT be performed."
