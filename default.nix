@@ -65,16 +65,9 @@ overlayHaskell = _:pkgs:
       rev = "3166c357cd455607e4b5081a1019557e7bbf99f6";  # hoistFlowEff branch
       sha256 = "1ygds96ph6mdrjm8cmq7yrghp9f6y5kswii9p5jp2byg8n4p6z0a";
     };
-    monadBayesSource = pkgs.fetchFromGitHub {
-      owner = "tweag"; # Using our fork until https://github.com/adscib/monad-bayes/pull/54 is merged
-      repo = "monad-bayes";
-      rev = "ffd695379fefc056e99c43e3ca4d79be9a6372af";
-      sha256 = "1qikvzpkpm255q3mgpc0x9jipxg6kya3pxgkk043vk25h2j11l0p";
-    };
 
     extendWithPorcupinePackages = self: _:
-      pkgs.lib.mapAttrs (name: src:
-                           self.callCabal2nixWithOptions name src "--flag=useMonadBayes" {})
+      pkgs.lib.mapAttrs (name: src: self.callCabal2nix name src {})
                         porcupineSources;
 
     inherit (pkgs.haskell.lib) doJailbreak dontCheck;
@@ -89,7 +82,6 @@ overlayHaskell = _:pkgs:
         # vinyl hasn't been updated for hspec >= 2.7:
         vinyl = dontCheck super.vinyl;
         hvega = super.hvega_0_4_1_0;
-        monad-bayes = self.callCabal2nix "monad-bayes" monadBayesSource {};
 
         funflow = dontCheck (self.callCabal2nix "funflow" "${funflowSource}/funflow" {});
                   # Check are failing for funflow, this should be investigated
