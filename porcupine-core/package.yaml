@@ -52,6 +52,7 @@ dependencies:
   - hashable
   - katip == 0.8.*
   - lens
+  - monad-bayes == 0.1.*
   - monad-control
   - mtl
   - optparse-applicative
@@ -81,11 +82,6 @@ dependencies:
 
 library:
   source-dirs: src
-
-flags:
-  useMonadBayes:
-    manual: True
-    default: False  # monad-bayes isn't on Hackage
 
 tests:
   tasty-tests:
@@ -125,12 +121,6 @@ executables:
     dependencies:
       - porcupine-core
   example-radon:
-    when:
-      condition: flag(useMonadBayes)
-      then:
-        buildable: True
-      else:
-        buildable: False
     source-dirs: examples/example-radon
     main: ExampleRadon.hs
     dependencies:
