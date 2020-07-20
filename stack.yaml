@@ -62,6 +62,7 @@ extra-deps:
   subdirs:
     - funflow
 - monad-bayes-0.1.1.0@sha256:57d96f530a37a1c8efed0830c7f2bcf86da05d0d53324aebdd5b5aa165d72829,5132
+- kqueue-0.2@sha256:47d6c1083e60d55a64511c944629a507bda70906e5317bb6f906d64b2cb78a9f,1369
 
 # Override default flag values for local packages and extra-deps
 # flags: {}
