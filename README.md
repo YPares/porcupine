@@ -23,11 +23,37 @@ data scientists to those of data/software engineers.
 - [Introduction to porcupine @Haskell Exchange, in London, October 11th, 2019](https://skillsmatter.com/skillscasts/14236-porcupine-flows-your-rows-with-arrows)
 - [Porcupine announcement blog post](https://www.tweag.io/posts/2019-10-30-porcupine.html)
 
+## Porcupine's development
+
+Porcupine's development happens mainly inside [NovaDiscovery](https://www.novadiscovery.com)'s internal codebase, where a porcupine's fork resides.
+But we often synchronise this internal repo and [porcupine's github repo](https://github.com/tweag/porcupine).
+This is why commits tend to appear by batches on porcupine's github.
+
+Lately, a lot of effort has been invested in developping [Kernmantle](https://github.com/tweag/kernmantle) which should provide the new task representation (see below in Future plans).
+
+### Participating to porcupine's development
+
+Issues and MRs are welcome :)
+
+### Future plans
+
+These features are being developed and should land soon:
+
+- `porcupine-servant`: a servant app can directly serve porcupine's pipelines as routes, and expose a single configuration for the whole server
+- enhancement of the API to run tasks: `runPipelineTask` would remain in place but be a tiny wrapper over a slightly lower-level API. This makes it easier to run pipelines in different contexts (like that of `porcupine-servant`)
+- common configuration representation: for now porcupine can only handle config via a yaml/json file + CLI. Some applications can require other configuration sources (GraphQL, several config files that override one another, etc). We want to have a common tree format that every configuration source get translated too, and just merge all these trees afterwards, so each config source is fully decoupled from the others and can be activated at will
+
+The following are things we'd like to start working on:
+
+- switch to [`cas-store`](http://hackage.haskell.org/package/cas-store-1.0.1): porcupine's dependency on `funflow` is mainly for the purpose of caching. Now that `cas-store` is a separate project, porcupine can directly depend on it. This will simplify the implementation of `PTask` and make it easier to integrate `PTask`s with other libraries.
+- implement `PTask` over a [Kernmantle Rope](https://github.com/tweag/kernmantle): this is the main reason we started the work on Kernmantle, so it could become a uniform pipeline API, independent of the effects the pipeline performs (caching, collecting options or required resources, etc). Both porcupine and [funflow](https://github.com/tweag/funflow) would become collections of Kernmantle effects and handlers, and would therefore be seamlessly interoperable. Developpers would also be able to add their own custom effects to a pipeline. This would probably mean the death of `reader-soup`, as the LocationAccessors could directly be embedded as Kernmatle effects.
+- package porcupine's `VirtualTree` as a separate package: all the code that is not strictly speaking related to tasks would be usable separately (for instance to be used in Kernmantle effects handlers).
+
 ## F.A.Q.
 
 #### How are Porcupine and [Funflow](https://github.com/tweag/funflow) related?
 
-Porcupine uses Funflow internally. Funflow's API is centered around the
+Porcupine uses Funflow internally to provide caching. Funflow's API is centered around the
 ArrowFlow class. PTask (porcupine's main computation unit) implements ArrowFlow
 too, so usual funflow operations are usable on PTasks too.
 
