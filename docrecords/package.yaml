@@ -18,7 +18,7 @@ ghc-options: -Wall
 
 dependencies:
   - base >=4.10 && <5
-  - aeson
+  - aeson >= 2.0.0
   - data-default
   - lens
   - optparse-applicative
