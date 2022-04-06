@@ -113,6 +113,8 @@ import           Control.Applicative
 import qualified Control.Category     as Cat
 import qualified Control.Lens         as L
 import           Data.Aeson
+import qualified Data.Aeson.Key       as Aeson
+import qualified Data.Aeson.KeyMap    as KM
 import           Data.Default
 import qualified Data.HashMap.Strict  as HM
 import           Data.Maybe           (fromMaybe)
@@ -319,10 +321,10 @@ jsonAtPath [] f x = f x
 jsonAtPath (p:ps) f val = rebuild <$> recur
   where
     (obj, recur) = case val of
-      Just (Object o) -> (o,        jsonAtPath ps f $ HM.lookup p o)
-      _               -> (HM.empty, jsonAtPath ps f $ Just $ Object HM.empty)
-    rebuild Nothing  = Just $ Object $ HM.delete p obj
-    rebuild (Just v) = Just $ Object $ HM.insert p v obj
+      Just (Object o) -> (o,        jsonAtPath ps f $ KM.lookup (Aeson.fromText p) o)
+      _               -> (KM.empty, jsonAtPath ps f $ Just $ Object KM.empty)
+    rebuild Nothing  = Just $ Object $ KM.delete (Aeson.fromText p) obj
+    rebuild (Just v) = Just $ Object $ KM.insert (Aeson.fromText p) v obj
 
 instance FromJSON (Rec PossiblyEmptyField '[]) where
   parseJSON (Object _) = pure RNil
